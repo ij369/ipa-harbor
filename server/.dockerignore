@@ -1,0 +1,66 @@
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.pnpm-debug.log*
+
+# 开发工具
+.cursorignore
+nodemon.json
+README.md
+
+# git 相关
+.git/
+.gitignore
+
+# 环境变量文件
+.env
+.env.local
+.env.*.local
+
+# 数据目录内容（目录结构会保留，但不复制内容）
+data/**
+!data/
+
+# ipatool源码目录
+ipatool/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+
+# 日志文件
+*.log
+
+# 临时文件
+*.tmp
+*.temp
+tmp/**
+!tmp/
+
+# IDE文件
+.vscode/
+
+# 测试文件
+test/
+tests/
+*.test.js
+*.spec.js
+
+# 文档
+docs/
+*.md
+!README.md
+
+# 构建文件
+dist/
+build/
+
+# 证书文件（应该通过 volume 挂载）
+certs/**
+!certs/
+
+# 其他
+tmp/

@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  ipa-harbor:
+    build: .
+    ports:
+      - "3080:3080"
+      - "3443:3443"
+    environment:
+      - NODE_ENV=production
+      # 终端生成KEYCHAIN_PASSPHRASE的值
+      # openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10; echo
+      # 最重要：建议随机一个字符串替换keychain_passphrase_here, 出于安全考虑不设置这个就禁止启动，是有必要的，这个字符串泄露会导致 Keychain 解开，Apple ID访问权限就打开了，所以放在环境变量里
+      - KEYCHAIN_PASSPHRASE=keychain_passphrase_here
+      # http 端口
+      - PORT=3080
+      # https 端口
+      - HTTPS_PORT=3443
+      # 如果你部署在公网一定要有ALLOWED_DOMAINS, 实现前端访问白名单，仅在浏览器层面禁止
+      - ALLOWED_DOMAINS=your-domain.com,another-domain.com
+    volumes:
+      # 持久化数据目录，ipa，tmp(下载到一半的ipa)，还有管理员数据库存在这里
+      - ./data:/app/data
+      # 持久化证书目录, 如果自签需要server.crt，server.key在certs这个文件夹下，建议持久化为卷或者绑一个系统路径
+      - ./certs:/app/certs
+    restart: unless-stopped
