@@ -1,0 +1,48 @@
+{
+    "name": "ipa-harbor-server",
+    "version": "0.0.1",
+    "description": "RESTful API wrapper for ipatool",
+    "main": "app.js",
+    "scripts": {
+        "start": "node app.js",
+        "dev": "nodemon app.js",
+        "docker:build": "docker build -t ipa-harbor .",
+        "docker:run": "docker run -p 3000:3000 -e KEYCHAIN_PASSPHRASE=1122 ipa-harbor",
+        "health": "curl -f http://localhost:3000/health || exit 1"
+    },
+    "dependencies": {
+        "bcrypt": "^6.0.0",
+        "bplist-parser": "^0.3.2",
+        "chokidar": "^4.0.3",
+        "cookie-parser": "^1.4.7",
+        "cors": "^2.8.5",
+        "dayjs": "^1.11.18",
+        "dotenv": "^16.3.1",
+        "express": "^4.18.2",
+        "express-rate-limit": "^8.1.0",
+        "helmet": "^7.1.0",
+        "jsonwebtoken": "^9.0.2",
+        "morgan": "^1.10.0",
+        "node-cron": "^4.2.1",
+        "plist": "^3.1.0",
+        "sqlite3": "^5.1.7",
+        "uuid": "^9.0.1",
+        "ws": "^8.18.3",
+        "yauzl": "^3.2.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1"
+    },
+    "keywords": [
+        "ipa",
+        "history",
+        "ipa-harbor",
+        "ipatool",
+        "api",
+        "restful",
+        "ios",
+        "docker"
+    ],
+    "author": "https://github.com/ij369",
+    "license": "MIT"
+}

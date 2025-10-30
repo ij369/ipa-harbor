@@ -1,0 +1,7 @@
+node_modules
+.DS_Store
+server/data/users.db
+server/bin/*
+push.sh
+*.tmp
+*.ipa
