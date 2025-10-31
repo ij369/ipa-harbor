@@ -5,10 +5,11 @@ const dayjs = require('dayjs');
 async function logoutHandler(req, res) {
     try {
         // 清除认证cookie
+        const isLanAccess = process.env.ALLOW_LAN_ACCESS === 'true';
         res.clearCookie('authToken', {
             httpOnly: true,
-            secure: process.env.NODE_ENV === 'production',
-            sameSite: 'strict'
+            secure: process.env.NODE_ENV === 'production' && !isLanAccess,
+            sameSite: isLanAccess ? 'lax' : 'strict'
         });
 
         console.log(`管理员退出登录: ${req.user.username} , time: ${dayjs().format('YYYY-MM-DD HH:mm:ss')}`);

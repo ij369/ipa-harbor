@@ -10,6 +10,7 @@ const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const DATA_DIR = path.join(__dirname, '../../data');
 const MAX_CONCURRENT = parseInt(process.env.MAX_CONCURRENT_DOWNLOADS) || 2;
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+const ENABLE_MORE_LOGS = process.env.ENABLE_MORE_LOGS === 'true';
 
 // 任务状态
 const TASK_STATUS = {
@@ -185,7 +186,7 @@ class TaskManager {
                 const trimmedLine = line.trim();
 
                 // 调试日志 - 输出所有非空行
-                if (trimmedLine) {
+                if (trimmedLine && ENABLE_MORE_LOGS) {
                     console.log(`[DEBUG] stdout ${taskId}: ${trimmedLine}`);
                 }
 

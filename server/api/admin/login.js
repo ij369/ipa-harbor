@@ -45,10 +45,11 @@ async function loginHandler(req, res) {
         });
 
         // 设置cookie
+        const isLanAccess = process.env.ALLOW_LAN_ACCESS === 'true';
         res.cookie('authToken', token, {
             httpOnly: true,           // 防止XSS攻击
-            secure: process.env.NODE_ENV === 'production', // 生产环境使用HTTPS
-            sameSite: 'strict',       // 防止CSRF攻击
+            secure: process.env.NODE_ENV === 'production' && !isLanAccess, // 局域网访问时不强制HTTPS
+            sameSite: isLanAccess ? 'lax' : 'strict',       // 局域网访问时放宽同站策略
             maxAge: 2 * 24 * 60 * 60 * 1000 // 2天，单位毫秒
         });
 

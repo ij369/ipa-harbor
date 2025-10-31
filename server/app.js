@@ -37,6 +37,8 @@ if (NODE_ENV !== 'development') {
     console.log(`当前环境: development\n`);
 }
 
+console.log(`---`);
+
 // === Express 基础配置 ===
 const app = express();
 const HOST = 'localhost';
@@ -186,8 +188,8 @@ try {
     wsManager.attach(wssSecure, 'https');
 
     httpsServer.listen(HTTPS_PORT, () => {
-        console.log(`HTTPS 服务器运行在 https://${HOST}:${HTTPS_PORT}`);
-        console.log(`WebSocket: wss://${HOST}:${HTTPS_PORT}/download-task`);
+        console.log(`HTTPS 服务器运行在  https://${HOST}:${HTTPS_PORT}`);
+        // console.log(`WebSocket: wss://${HOST}:${HTTPS_PORT}/download-task`);
     });
 } catch (err) {
     if (process.env.NODE_ENV === 'production') {
@@ -197,9 +199,9 @@ try {
 
 // === 启动 HTTP 服务器 ===
 httpServer.listen(PORT, async () => {
-    console.log(`---`);
-    console.log(`HTTP 服务器运行在 http://${HOST}:${PORT}`);
-    console.log(`健康检查: http://${HOST}:${PORT}/health`);
+
+    console.log(`HTTP 服务器运行在   http://${HOST}:${PORT}`);
+    // console.log(`健康检查: http://${HOST}:${PORT}/health`);
 
     // 初始化数据库
     try {

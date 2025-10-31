@@ -445,11 +445,12 @@ export default function AppDetail({ app }) {
                     <>
                         <Box sx={{ flex: 1 }}>
                             <Button fullWidth onClick={() => {
+                                const forceDownload = true; // 强制下载，忽略检查, 因为目前无法实现安装
                                 const isFQDN = isValidDomain(window.location.hostname);
                                 const isSecureContext = window.isSecureContext;
                                 console.log(isFQDN, isSecureContext);
                                 // 只有isFQDN为true时，才提示用户，否则直接跳转
-                                if (!isSecureContext || !isFQDN) {
+                                if (forceDownload || !isSecureContext || !isFQDN) {
                                     window.open(getAppDownloadPackageUrl(app.trackId, 'latest'), '_blank');
                                     return;
                                 }
@@ -677,11 +678,12 @@ export default function AppDetail({ app }) {
                             >
                                 <Delete />
                             </IconButton>
-                            <Tooltip variant="outlined" color="warning" arrow size="sm" title={<Typography>需要 https 环境下使用, 暂不支持 macOS 安装</Typography>}>
+                            {/* 该功能是有问题的，暂时移除 */}
+                            {/* <Tooltip variant="outlined" color="warning" arrow size="sm" title={<Typography>需要 https 环境下使用, 暂不支持 macOS 安装</Typography>}>
                                 <Link href={`${getAppInstallPackageUrl(app.trackId, version.versionId)}`}>
                                     <Button size="sm" color="success" startDecorator={<InstallMobile />}>安装</Button>
                                 </Link>
-                            </Tooltip>
+                            </Tooltip> */}
                             <Link href={`${getAppDownloadPackageUrl(app.trackId, version.versionId)}`}>
                                 <Button size="sm" startDecorator={<Download />}>下载IPA</Button>
                             </Link>
