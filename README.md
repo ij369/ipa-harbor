@@ -32,17 +32,28 @@ docker run -d \
 
 ### 参数说明
 
--p 3388:3080：将容器的 3080 端口映射到本地 3388 端口。
+`-p 3388:3080`：将容器的 3080 端口映射到本地 3388 端口。
 
-KEYCHAIN_PASSPHRASE：随机生成密钥，保证 Keychain 安全, 因为 Keychain 内存着 Apple ID 的访问权。
+`-e ENABLE_MORE_LOGS=true` 会有更详细的日志
 
--v ipa_data:/app/data：持久化数据（IPA 文件、数据库等）。
+`-e KEYCHAIN_PASSPHRASE=X96A49763R`：随机生成密钥，保证 Keychain 安全, 因为 Keychain 内存着 Apple ID 的访问权。
 
--v ipa_certs:/app/certs：持久化证书。
+`-e ALLOW_LAN_ACCESS=true` 允许局域网IP访问，默认开启，如果部署到公网建议设置为`false`
 
---name ipa-harbor：容器名称。
+`-e PORT=3080` 指定 http 访问端口，默认3080，可选
 
-如果你部署在公网一定要有`ALLOWED_DOMAINS`, 实现前端访问白名单，仅在浏览器层面禁止:
+`-e HTTPS_PORT=3443` 指定 https 访问端口，默认3443，可选
+
+`-e ALLOWED_DOMAINS=your-domain.com,another-domain.com`，在非 loaclhost 的情况下使用域名连接时，需要指定origin，否则无法访问，使用docker的network时并通过其他容器代理访问时，建议加上主机名，使用`,`隔开
+
+`-v ipa_data:/app/data`：持久化数据（IPA 文件、数据库等）。
+
+`-v ipa_certs:/app/certs`：持久化证书。
+
+`--name ipa-harbor`：容器名称。
+
+
+如果你部署在公网一定要有`ALLOWED_DOMAINS`, 并`ALLOW_LAN_ACCESS=false`实现前端访问白名单，仅在浏览器层面禁止:
 
 ```
 -e ALLOWED_DOMAINS=your-domain.com,another-domain.com \

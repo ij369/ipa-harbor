@@ -18,6 +18,9 @@ services:
       - HTTPS_PORT=3443
       # 如果你部署在公网一定要有ALLOWED_DOMAINS, 实现前端访问白名单，仅在浏览器层面禁止
       - ALLOWED_DOMAINS=your-domain.com,another-domain.com
+      # 是否允许局域网访问, 如果部署在公网一定要禁用, 将允许以下网段访问
+      # 192.168.x.x,10.x.x.x,172.16-31.x.x
+      - ALLOW_LAN_ACCESS=true
     volumes:
       # 持久化数据目录，ipa，tmp(下载到一半的ipa)，还有管理员数据库存在这里
       - ./data:/app/data

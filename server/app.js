@@ -20,8 +20,22 @@ const { NODE_ENV, KEYCHAIN_PASSPHRASE } = require('./config/keychain');
 process.stdout.write('\x1Bc');
 console.clear();
 
-console.log(`当前环境: ${NODE_ENV}`);
-console.log('提交 issue: https://github.com/ij369/ipa-harbor/issues\n')
+const allowLAN = process.env.ALLOW_LAN_ACCESS === 'true';
+const allowedDomains = process.env.ALLOWED_DOMAINS?.split(',').map(d => d.trim()) || [];
+
+if (NODE_ENV !== 'development') {
+    const green = '\x1b[32m';
+    const red = '\x1b[31m';
+    const yellow = '\x1b[33m';
+    const cyan = '\x1b[36m';
+    const reset = '\x1b[0m'; // 结束样式
+
+    console.log(`${cyan}局域网访问:${reset} ${allowLAN ? green + '已启用' : red + '已禁用'}${reset}`);
+    console.log(`${cyan}允许的域名:${reset} ${allowedDomains.join(',') || yellow + '无'}${reset}`);
+    console.log(`以上由环境变量决定，参考:\nhttps://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml\n`);
+} else {
+    console.log(`当前环境: development\n`);
+}
 
 // === Express 基础配置 ===
 const app = express();
@@ -33,49 +47,56 @@ const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 app.use(helmet({
     crossOriginOpenerPolicy: { policy: "same-origin" },
     crossOriginResourcePolicy: { policy: "same-origin" },
-    contentSecurityPolicy: NODE_ENV === 'production' ? {
+    contentSecurityPolicy: (NODE_ENV === 'production' && !allowLAN) ? {
         useDefaults: true,
         directives: {
             defaultSrc: ["'self'"],
-            imgSrc: ["'self'", "data:", "https:"],
+            imgSrc: ["'self'", "data:", "https:", "http:"],
             scriptSrc: ["'self'", "'unsafe-inline'"], // React inline script
             styleSrc: ["'self'", "'unsafe-inline'"], // React style-loader inline CSS
+            upgradeInsecureRequests: null, // 禁用自动升级HTTP到HTTPS
         },
-    } : false,
+    } : false, // 局域网访问时禁用CSP
     referrerPolicy: { policy: "no-referrer" },
 }));
+
 app.disable('x-powered-by');
 
-// === CORS 配置：开发仅 localhost，生产 localhost + ALLOWED_DOMAINS ===
+// 配置 CORS 
+
+const patterns = []; // 允许的源匹配规则
+
+// 开发环境默认允许 localhost
+if (NODE_ENV !== 'production') {
+    patterns.push(/^https?:\/\/localhost(:\d+)?$/);
+}
+
+// 生产环境允许配置的域名
+if (NODE_ENV === 'production') {
+    patterns.push(
+        ...allowedDomains.map(
+            domain => new RegExp(`^https?://${domain.replace(/\./g, '\\.')}(?::\\d+)?$`)
+        )
+    );
+}
+
+// 局域网访问规则
+if (allowLAN) {
+    patterns.push(
+        /^https?:\/\/localhost(:\d+)?$/,
+        /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
+        /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
+        /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,
+        /^https?:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+(:\d+)?$/
+    );
+}
+
 app.use(cors({
-    origin: function (origin, callback) {
-        if (!origin) return callback(null, true);
-
-        const env = process.env.NODE_ENV || 'development';
-        const allowedDomains = [];
-
-        if (env === 'production' && process.env.ALLOWED_DOMAINS) {
-            allowedDomains.push(...process.env.ALLOWED_DOMAINS.split(',').map(d => d.trim()));
-        }
-
-        const localhostPatterns = [
-            /^https?:\/\/localhost(:\d+)?$/,
-            /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
-        ];
-
-        const matchesLocalhost = localhostPatterns.some(re => re.test(origin));
-        const matchesAllowedDomain = allowedDomains.some(domain => {
-            const domainPattern = new RegExp(`^https?://${domain.replace(/\./g, '\\.')}(?::\\d+)?$`);
-            return domainPattern.test(origin);
-        });
-
-        const isAllowed =
-            env === 'production'
-                ? (matchesLocalhost || matchesAllowedDomain)
-                : matchesLocalhost;
-
-        if (!isAllowed) return callback(new Error('Not allowed by CORS'), false);
-        return callback(null, true);
+    origin: (origin, callback) => {
+        const isAllowed = !origin || patterns.some(re => re.test(origin));
+        return isAllowed
+            ? callback(null, true)
+            : callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],

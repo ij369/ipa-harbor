@@ -1,0 +1,144 @@
+.dialog-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    margin: 0 !important;
+    background-color: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: fadeIn 0.2s ease-out;
+}
+
+.dialog-content {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    max-width: 90vw;
+    max-height: 90vh;
+    animation: slideIn 0.2s ease-out;
+    display: flex;
+    flex-direction: column;
+}
+
+.dialog-medium {
+    width: 400px;
+}
+
+.dialog-large {
+    width: 800px;
+    max-width: 90vw;
+}
+
+.dialog-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #e5e7eb;
+    flex-shrink: 0;
+}
+
+.dialog-title {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 600;
+    color: #111827;
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.dialog-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+.dialog-nav-btn {
+    background: none;
+    border: 1px solid #d1d5db;
+    font-size: 18px;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    line-height: 1;
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dialog-nav-btn:hover:not(:disabled) {
+    background-color: #f3f4f6;
+    color: #374151;
+    border-color: #9ca3af;
+}
+
+.dialog-nav-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.dialog-close {
+    background: none;
+    border: none;
+    font-size: 24px;
+    color: #6b7280;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    transition: all 0.2s;
+    line-height: 1;
+}
+
+.dialog-close:hover {
+    background-color: #f3f4f6;
+    color: #374151;
+}
+
+.dialog-body {
+    padding: 20px 24px;
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.dialog-actions {
+    padding: 16px 24px;
+    border-top: 1px solid #e5e7eb;
+    background-color: #f9fafb;
+    border-radius: 0 0 12px 12px;
+    flex-shrink: 0;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+@keyframes slideIn {
+    from {
+        opacity: 0;
+        transform: translateY(-20px) scale(0.95);
+    }
+
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}

@@ -40,6 +40,7 @@ ENV KEYCHAIN_PASSPHRASE=""
 ENV PORT=3080
 ENV ALLOWED_DOMAINS=""
 ENV ENABLE_MORE_LOGS=false
+ENV ALLOW_LAN_ACCESS=true
 
 # 创建非 root 用户和数据目录
 RUN addgroup -g 1001 -S nodejs && \
