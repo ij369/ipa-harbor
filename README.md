@@ -13,6 +13,7 @@
 
 ## 快速开始
 ### 本机快速启动命令
++ 适用 Docker 就装在本机的，例如Docker Desktop 或者 OrbStack
 
 ```bash
 docker run -d \
@@ -20,12 +21,94 @@ docker run -d \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
   -e PORT=3080 \
   -v ipa_data:/app/data \
-  -v ipa_certs:/app/certs \
   --name ipa-harbor \
   uuphy/ipa-harbor:latest
 ```
 
 然后打开浏览器访问： http://localhost:3388
+
+首次登录会进入配置管理员密码，用于后续进入面板。
+
+<br />
+
+### 公网环境启动命令（自签证书或者指定证书）
+
+```bash
+docker run -d \
+  -p 80:3080 \
+  -p 443:3443 \
+  -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e PORT=3080 \
+  -e HTTPS_PORT=3443 \
+  -e ALLOW_LAN_ACCESS=false \
+  -e ALLOWED_DOMAINS=example.com \
+  -v ipa_data:/app/data \
+  -v ipa_certs:/app/certs \
+  --name ipa-harbor \
+  uuphy/ipa-harbor:latest
+```
+
+ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，你也可以直接绑定`/app/certs/server.crt` 和 `/app/certs/server.key` 到指定文件
+然后打开浏览器访问： http://your-domain.com 和 https://your-domain.com 即可访问。
+注意，局域网访问需要 `ALLOW_LAN_ACCESS=true`。
+
+首次登录会进入配置管理员密码，用于后续进入面板。
+
+<br />
+
+### 公网环境启动命令（nginx 反向代理）
++ 这样简化成直接代理http端口（环境变量PORT）
+
+假设你拥有一个域名 `example.com`
+使用了 `docker network create my_network` 来创建了一个`my_network`网络
+并将 nginx 的容器加入到了该 `my_network` 内
+这时，给`ipa-harbor` 设置一个 hostname 为 `ipa_harbor`
+
+对应的命令为
+```bash
+docker run -d \
+  -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e PORT=3080 \
+  -e ALLOW_LAN_ACCESS=false \s
+  -e ALLOWED_DOMAINS=example.com \
+  -v ipa_data:/app/data \
+  -v ipa_certs:/app/certs \
+  --hostname ipa_harbor \
+  --name ipa-harbor \
+  uuphy/ipa-harbor:latest
+```
+
+```
+server {
+    listen 80;
+    server_name example.com;
+        
+    location = /robots.txt {
+        add_header  Content-Type  text/plain;
+        return 200 "User-agent: *\nDisallow: /\n";
+    }
+    location / {
+        proxy_pass http://ipa_harbor:3080;
+
+        # --- 前端包含 WebSocket 功能用于进度展示 必须添加这个 ---
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        #  --- 可选：防止长连接超时 --- 
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+}
+
+```
+
+然后打开浏览器访问： http://example.com 即可访问，同样的也可以 nginx 监听 443 端口配置好证书反代`http://ipa_harbor:3080` 实现 https 访问
 
 首次登录会进入配置管理员密码，用于后续进入面板。
 
@@ -53,7 +136,7 @@ docker run -d \
 `--name ipa-harbor`：容器名称。
 
 
-如果你部署在公网一定要有`ALLOWED_DOMAINS`, 并`ALLOW_LAN_ACCESS=false`实现前端访问白名单，仅在浏览器层面禁止:
+如果你部署在公网一定要有`ALLOWED_DOMAINS`, 并`ALLOW_LAN_ACCESS=false`实现前端访问白名单，在浏览器层面会受这个影响禁止访问:
 
 ```
 -e ALLOWED_DOMAINS=your-domain.com,another-domain.com \
@@ -68,18 +151,67 @@ docker run -d \
 server/
 ├── api/
 ├── app.js
-├── bin/
+├── bin/     
+├──── ipatool          - 解压后的 ipatool 二进制文件 (需要符合当前架构)
 ├── certs/
 ├── config/
 ├── data/
 ├── Dockerfile
-├── ipatool/
 ├── middleware/
+├── node_modules/
 ├── nodemon.json
 ├── package-lock.json
 ├── package.json
 ├── static/
 └── utils/
+client/
+├── node_modules/
+├── public/
+├── src/
+├── eslint.config.js
+├── index.html
+├── package.json
+├── pnpm-lock.yaml
+└── vite.config.js
+```
+### 开发
+先下载 ipatool 最新的资产, 按照开发时电脑的 CPU 架构进行下载
+`https://github.com/majd/ipatool/releases`
+
+解压，然后将二进制文件重命名为 `ipatool`, 目录结构为
+```text
+server/bin/ipatool
+```
+
+#### 后端
+```bash
+npm i
+nodemon
+```
+有个小坑
+如果是 macOS, 每次利用 nodemon 重启时或者请求时会触发系统的 keychain 提醒, 这里必须要授权, 因为 macOS 的 keychain 没有放到 ~/.ipatool 目录, 而是放到了系统的 keychain。
+
+#### 前端
+```bash
+pnpm i
+pnpm dev
+```
+目前都是使用 `localhost:5173` 进入，如果需要允许局域网 IP:5173 的形式, 需要在后端设置环境变量, 详细见 参数说明 `allowLAN`
+
+#### 构建
+
+这里用脚本进行下载最新镜像
+```bash
+chmod +x dl_latest.sh
+```
+```bash
+dl_latest.sh
+```
+下载完毕后，文件不要对 gz 文件进行解压和修改文件名操作, Dockerfile 会自动处理
+
+构建镜像并加载本地镜像库
+```
+docker build -t ipaharbor . --load
 ```
 
 ---
