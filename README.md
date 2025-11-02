@@ -3,6 +3,18 @@
 
 [快速开始](#快速开始)
 
+## 什么是 IPA
+IPA 文件是苹果 iOS 和 iPadOS 应用的存档文件，你可以理解成安装包，本工具下载的 IPA 都会经过签名，早期的 iTunes 就可以直接下载到一样的档案，如果当作压缩包解压后能看到详尽的元数据。
+
+### 下载后的 ipa 档案如何安装到 iPad/ iPhone？
+比较新版本的系统直接走 Airdrop，如果设备为老系统，Mac 可以 Apple Configurator, Windows 建议去下载 12.6.3 的 iTunes, 目前不建议任何其他第三方的侧载工具。
+
+> iTunes 可以去 https://ipsw.me/iTunes 找到
+
+### 下载后的 ipa 档案如何安装到 Mac？
+如果是安装到 Apple Silicon 的 Mac，直接双击就能安装到 Mac。
+
+
 ## 项目如何开始的
 我以前每次想下一个旧版 ipa 都要抓包，然后 AirDrop 给 iPhone 后面逛帖子时发现 ipatool ，后面拿电脑扣命令，是在是厌烦了，可读的版本号也没有，所以有了想法写这个。
 
