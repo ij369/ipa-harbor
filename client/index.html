@@ -3,14 +3,285 @@
 
 <head>
   <meta charset="UTF-8" />
-  <!-- <link rel="icon" type="image/svg+xml" href="/vite.svg" /> -->
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>ipa-harbor</title>
+  <style>
+    #env-warning {
+      display: none;
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      max-width: 600px;
+      min-width: 300px;
+      padding: 3rem 2.1rem;
+      text-align: center;
+      background: #fff;
+      border-radius: 12px;
+      line-height: 1.6;
+      animation: fadeIn 0.3s ease-in-out;
+      background-color: #FBFCFE;
+      outline: 1px solid #CDD7E1;
+      user-select: none;
+    }
+
+    #env-warning h2 {
+      margin-top: 0;
+      color: #dc2626;
+    }
+
+    #env-warning ul {
+      text-align: left;
+      display: inline-block;
+      margin: 1rem 0;
+      padding-left: 1.5rem;
+      color: #374151;
+    }
+
+    #env-warning li {
+      margin-bottom: 0.5rem;
+    }
+
+    #env-warning code {
+      background: #f3f4f6;
+      padding: 0.15rem 0.4rem;
+      border-radius: 4px;
+      font-family: monospace;
+      user-select: text !important;
+    }
+
+    #env-warning span {
+      color: #374151;
+      font-size: 0.825rem;
+    }
+
+    #env-warning a {
+      color: #2563eb;
+      text-decoration: none;
+    }
+
+    #env-warning a:hover {
+      text-decoration: underline;
+    }
+
+    /* Material 风格按钮，无类名 */
+    #env-warning button {
+      position: relative;
+      display: inline-block;
+      box-sizing: border-box;
+      border: none;
+      border-radius: 4px;
+      padding: 0 16px;
+      min-width: 64px;
+      height: 36px;
+      vertical-align: middle;
+      text-align: center;
+      text-overflow: ellipsis;
+      text-transform: uppercase;
+      color: #FFF;
+      background-color: #2563eb;
+      box-shadow: 0 3px 1px -2px rgba(0, 0, 0, 0.2),
+        0 2px 2px 0 rgba(0, 0, 0, 0.14),
+        0 1px 5px 0 rgba(0, 0, 0, 0.12);
+      font-family: "Roboto", "Segoe UI", BlinkMacSystemFont, system-ui, -apple-system;
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 36px;
+      overflow: hidden;
+      outline: none;
+      cursor: pointer;
+      transition: box-shadow 0.2s;
+      margin-top: 1rem;
+    }
+
+    #env-warning button::-moz-focus-inner {
+      border: none;
+    }
+
+    #env-warning button::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-color: #FFF;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    #env-warning button::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      border-radius: 50%;
+      padding: 50%;
+      width: 32px;
+      height: 32px;
+      background-color: #FFF;
+      opacity: 0;
+      transform: translate(-50%, -50%) scale(1);
+      transition: opacity 1s, transform 0.5s;
+    }
+
+    #env-warning button:hover,
+    #env-warning button:focus {
+      box-shadow: 0 2px 4px -1px rgba(0, 0, 0, 0.2),
+        0 4px 5px 0 rgba(0, 0, 0, 0.14),
+        0 1px 10px 0 rgba(0, 0, 0, 0.12);
+    }
+
+    #env-warning button:hover::before {
+      opacity: 0.08;
+    }
+
+    #env-warning button:focus::before {
+      opacity: 0.24;
+    }
+
+    #env-warning button:hover:focus::before {
+      opacity: 0.3;
+    }
+
+    #env-warning button:active {
+      box-shadow: 0 5px 5px -3px rgba(0, 0, 0, 0.2),
+        0 8px 10px 1px rgba(0, 0, 0, 0.14),
+        0 3px 14px 2px rgba(0, 0, 0, 0.12);
+    }
+
+    #env-warning button:active::after {
+      opacity: 0.32;
+      transform: translate(-50%, -50%) scale(0);
+      transition: transform 0s;
+    }
+
+    #env-warning button:disabled {
+      color: #374151;
+      background-color: #F3F4F6;
+      box-shadow: none;
+      cursor: initial;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translate(-50%, -48%);
+      }
+
+      to {
+        opacity: 1;
+        transform: translate(-50%, -50%);
+      }
+    }
+
+    #gtx-trans {
+      display: none !important;
+    }
+  </style>
 </head>
 
 <body>
   <div id="root"></div>
+
+  <div id="env-warning">
+    <h2 id="warn-title"></h2>
+    <p id="warn-desc"></p>
+    <ul></ul>
+    <p id="warn-doc"></p>
+    <button id="reload-btn"></button>
+  </div>
+
   <script type="module" src="/src/main.jsx"></script>
+
+  <script>
+    const i18n = {
+      zh: {
+        title: "JS 资源请求被阻止",
+        desc: "请检查对应的环境变量是否正确配置：",
+        doc: {
+          text: "查看配置说明请访问 GitHub 文档。",
+          url: "https://github.com/ij369/ipa-harbor?tab=readme-ov-file"
+        },
+        reload: "刷新页面",
+        ALLOWED_DOMAINS: "允许的域名，多个域名使用`,`隔开",
+        ALLOW_LAN_ACCESS: "是否允许局域网访问",
+      },
+      en: {
+        title: "JS resources request blocked",
+        desc: "Please check that the following environment variables are correctly configured:",
+        doc: {
+          text: "For configuration details, visit GitHub Docs.",
+          url: "https://github.com/ij369/ipa-harbor?tab=readme-ov-file"
+        },
+        reload: "Reload Page",
+        ALLOWED_DOMAINS: "Allowed domains, multiple domains separated by`,`",
+        ALLOW_LAN_ACCESS: "Whether to allow LAN access",
+      }
+    };
+
+    const userLang = navigator.language || navigator.userLanguage;
+    const shortLang = userLang.slice(0, 2);
+    const lang = i18n[shortLang] ? shortLang : 'en';
+    const t = i18n[lang];
+    const ul = document.querySelector("#env-warning ul");
+    const envCodes = [{
+      code: "ALLOWED_DOMAINS",
+      desc: t.ALLOWED_DOMAINS,
+      value: window.location.host,
+    },
+    {
+      code: "ALLOW_LAN_ACCESS",
+      desc: t.ALLOW_LAN_ACCESS,
+      value: "true",
+    },
+      // {
+      //   code: "KEYCHAIN_PASSPHRASE",
+      //   desc: "Keychain 密码",
+      //   value: crypto.randomUUID().split("-").join("").slice(0, 10),
+      // }
+    ];
+
+    envCodes.forEach(codeText => {
+      const li = document.createElement("li");
+      li.title = `Suggested value: ${codeText.value}`;
+      const code = document.createElement("code");
+      code.setAttribute('translate', 'no');
+      code.classList.add("notranslate");
+      code.textContent = codeText.code;
+      const desc = document.createElement("span");
+      desc.textContent = codeText.desc;
+      li.appendChild(code);
+      li.appendChild(desc);
+      ul.appendChild(li);
+    });
+
+    document.getElementById("warn-title").textContent = t.title;
+    document.getElementById("warn-desc").textContent = t.desc;
+
+    const docP = document.getElementById("warn-doc");
+    const link = document.createElement("a");
+    link.href = t.doc.url;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = t.doc.text;
+    docP.appendChild(link);
+
+    document.getElementById("reload-btn").textContent = t.reload;
+
+    if (localStorage.getItem("firstLoadSuccess") === "true") {
+      console.debug("[ipa-harbor] Previous load success detected. Skipping warning check.");
+    } else {
+      setTimeout(() => {
+        const root = document.getElementById("root");
+        const envWarning = document.getElementById("env-warning");
+        const hasReactMounted = root && root.children.length > 0;
+
+        if (!hasReactMounted) {
+          envWarning.style.display = "block";
+        } else {
+          localStorage.setItem("firstLoadSuccess", "true");
+        }
+      }, 600);
+    }
+  </script>
 </body>
 
 </html>
