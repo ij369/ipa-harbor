@@ -3,9 +3,11 @@ import { Box, Typography, Grid, Chip, Stack, Divider } from '@mui/joy';
 import { useApp } from '../contexts/AppContext';
 import IpaIcon from '../components/IpaIcon';
 import { Check } from '@mui/icons-material';
-import formatFileSize from '../utils/formatFileSize.js'
+import formatFileSize from '../utils/formatFileSize.js';
+import { useTranslation } from 'react-i18next';
 
 export default function DownloadManager() {
+    const { t } = useTranslation();
     const { taskList, fileList } = useApp();
     const [selectedFilter, setSelectedFilter] = useState('all');
 
@@ -131,7 +133,8 @@ export default function DownloadManager() {
         <Box>
             <Stack onClick={() => { setSelectedFilter('all') }} direction="row" gap={2} sx={{ mb: 3, flexWrap: 'wrap', cursor: 'pointer' }}>
                 <Typography level="h2" >
-                    下载管理
+                    {/* 下载管理 */}
+                    {t('ui.downloadManagerTitle')}
                 </Typography>
                 {allItems.length}
             </Stack>
@@ -144,7 +147,8 @@ export default function DownloadManager() {
                     sx={{ cursor: 'pointer' }}
                     startDecorator={selectedFilter !== 'pending' ? null : <Check />}
                 >
-                    等待中: {statusCounts.pending}
+                    {/* 等待中: {statusCounts.pending} */}
+                    {t('ui.pending')}: {statusCounts.pending}
                 </Chip>
                 <Chip
                     color="primary"
@@ -153,7 +157,8 @@ export default function DownloadManager() {
                     sx={{ cursor: 'pointer' }}
                     startDecorator={selectedFilter !== 'running' ? null : <Check />}
                 >
-                    下载中: {statusCounts.running}
+                    {/* 下载中: {statusCounts.running} */}
+                    {t('ui.running')}: {statusCounts.running}
                 </Chip>
                 <Chip
                     color="danger"
@@ -162,7 +167,8 @@ export default function DownloadManager() {
                     sx={{ cursor: 'pointer' }}
                     startDecorator={selectedFilter !== 'failed' ? null : <Check />}
                 >
-                    失败: {statusCounts.failed}
+                    {/* 失败: {statusCounts.failed} */}
+                    {t('ui.failed')}: {statusCounts.failed}
                 </Chip>
                 <Chip
                     color="success"
@@ -171,7 +177,8 @@ export default function DownloadManager() {
                     sx={{ cursor: 'pointer' }}
                     startDecorator={selectedFilter !== 'completed' ? null : <Check />}
                 >
-                    完成: {statusCounts.completed}
+                    {/* 完成: {statusCounts.completed} */}
+                    {t('ui.completed')}: {statusCounts.completed}
                 </Chip>
                 <Chip
                     color="neutral"
@@ -180,7 +187,8 @@ export default function DownloadManager() {
                     sx={{ cursor: 'pointer' }}
                     startDecorator={selectedFilter !== 'downloaded' ? null : <Check />}
                 >
-                    已下载: {statusCounts.downloaded}
+                    {/* 已下载: {statusCounts.downloaded} */}
+                    {t('ui.downloaded')}: {statusCounts.downloaded}
                 </Chip>
             </Stack>
 
@@ -214,10 +222,12 @@ export default function DownloadManager() {
             ) : (
                 <Box sx={{ textAlign: 'center', py: 8 }}>
                     <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                        暂无记录
+                        {/* 暂无记录 */}
+                        {t('ui.noRecords')}
                     </Typography>
                     <Typography level="body-sm" sx={{ color: 'text.tertiary', mt: 1, cursor: selectedFilter === 'all' ? 'auto' : 'pointer' }} onClick={() => { setSelectedFilter('all') }}>
-                        {selectedFilter === 'all' ? '前往首页搜索并下载应用' : '点击标题可以清除筛选'}
+                        {/* {selectedFilter === 'all' ? '前往首页搜索并下载应用' : '点击标题可以清除筛选'} */}
+                        {selectedFilter === 'all' ? t('ui.goToHomeSearch') : t('ui.clearFilter')}
                     </Typography>
                 </Box>
             )}
@@ -225,7 +235,8 @@ export default function DownloadManager() {
             {fileList.totalSize > 0 && (
                 <Box sx={{ mt: 4, p: 2, backgroundColor: 'background.level1', borderRadius: 'md' }}>
                     <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                        总计 {fileList.total} 个文件，占用 {formatFileSize(fileList.totalSize)} 存储空间
+                        {/* 总计 {fileList.total} 个文件，占用 {formatFileSize(fileList.totalSize)} 存储空间 */}
+                        {t('ui.totalFiles', { count: fileList.total, size: formatFileSize(fileList.totalSize) })}
                     </Typography>
                 </Box>
             )}

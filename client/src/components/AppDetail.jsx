@@ -29,8 +29,10 @@ import Swal from 'sweetalert2';
 import isValidDomain from 'is-valid-domain';
 import { getAppIconUrl } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 
 export default function AppDetail({ app }) {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const [versions, setVersions] = useState([]);
     const [versionsLoading, setVersionsLoading] = useState(false);
@@ -38,7 +40,6 @@ export default function AppDetail({ app }) {
     const [downloadingVersions, setDownloadingVersions] = useState(new Set());
     const [dataSource, setDataSource] = useState(null); // 数据源标记
     const [activeTab, setActiveTab] = useState(0); // 管理tabs状态
-
 
     const { taskList } = useApp();
 
@@ -54,14 +55,16 @@ export default function AppDetail({ app }) {
 
         if (isFree) {
             const result = await Swal.fire({
-                title: '无法查询版本列表',
-                html: '当前应用似乎未获取；<br/>如果确认从未获取过，可以尝试领取该应用。<br/>如果确认已经获取过，可以稍后再试，或者点击加载第三方 API 版本列表按钮。',
+                // title: '无法查询版本列表',
+                title: t('ui.cannotQueryVersions'),
+                // html: '当前应用似乎未获取；<br/>如果确认从未获取过，可以尝试领取该应用。<br/>如果确认已经获取过，可以稍后再试，或者点击加载第三方 API 版本列表按钮。',
+                html: t('ui.cannotQueryVersionsHint'), // 
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: '领取',
-                cancelButtonText: '取消',
+                confirmButtonText: t('ui.claim'), // 领取
+                cancelButtonText: t('ui.cancel'),
                 showDenyButton: true,
-                denyButtonText: '加载第三方 API 版本列表'
+                denyButtonText: t('ui.loadThirdPartyVersions') // 加载第三方 API 版本列表
             });
 
             if (result.isConfirmed) {
@@ -69,8 +72,8 @@ export default function AppDetail({ app }) {
                     await purchaseApp(app.bundleId);
                     Swal.fire({
                         icon: 'success',
-                        title: '已获取成功, 你可以在 App Store 中已购项目里找到该应用',
-                        text: '正在重新获取版本列表...',
+                        title: t('ui.claimSuccessHint'), // '已获取成功, 你可以在 App Store 中已购项目里找到该应用'
+                        text: t('ui.refetchingVersions'), // '正在重新获取版本列表...'
                         timer: 1500,
                         showConfirmButton: false
                     });
@@ -79,9 +82,9 @@ export default function AppDetail({ app }) {
                 } catch (purchaseError) {
                     Swal.fire({
                         icon: 'error',
-                        title: '获取失败, 请在 App Store 中获取该应用再次尝试',
+                        title: t('ui.claimFailedHint'), // 获取失败, 请在 App Store 中获取该应用再次尝试
                         text: purchaseError.message,
-                        confirmButtonText: '好的'
+                        confirmButtonText: t('ui.ok')
                     });
                 }
             } else if (result.isDenied) {
@@ -90,12 +93,12 @@ export default function AppDetail({ app }) {
             }
         } else {
             const result = await Swal.fire({
-                title: '需要购买',
-                text: '该应用为收费应用，需要在设备的 App Store 上执行购买。',
+                title: t('ui.needPurchase'), // 需要购买
+                text: t('ui.paidAppHint'), // 该应用为收费应用，需要在设备的 App Store 上执行购买。
                 icon: 'info',
                 showCancelButton: true,
-                confirmButtonText: '获取历史',
-                cancelButtonText: '取消'
+                confirmButtonText: t('ui.getHistory'), // 获取历史
+                cancelButtonText: t('ui.cancel')
             });
 
             if (result.isConfirmed) {
@@ -108,7 +111,7 @@ export default function AppDetail({ app }) {
         return (
             <Box sx={{ textAlign: 'center', py: 4 }}>
                 <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                    加载中...
+                    {t('ui.loading')}
                 </Typography>
             </Box>
         );
@@ -116,12 +119,12 @@ export default function AppDetail({ app }) {
 
     // 格式化价格
     const formatPrice = (price) => {
-        return price === 0 ? '免费' : `${price}`;
+        return price === 0 ? t('ui.free') : `${price}`;
     };
 
     // 格式化文件大小
     const formatFileSize = (bytes) => {
-        if (!bytes) return '未知';
+        if (!bytes) return t('ui.unknown');
         const sizes = ['B', 'KB', 'MB', 'GB'];
         const i = Math.floor(Math.log(bytes) / Math.log(1024));
         return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
@@ -129,13 +132,14 @@ export default function AppDetail({ app }) {
 
     // 格式化日期
     const formatDate = (dateString) => {
-        if (!dateString) return '未知';
+        if (!dateString) return t('ui.unknown');
         try {
             // 处理第三方API返回的日期格式 "2025-10-18 02:33:52"
             const date = new Date(dateString.replace(' ', 'T'));
-            return date.toLocaleDateString('zh-CN');
+            const lng = localStorage.getItem('language') || 'en';
+            return date.toLocaleDateString(lng.startsWith('zh') ? 'zh-CN' : 'en-US');
         } catch (error) {
-            return '日期格式错误';
+            return t('ui.dateFormatError'); // 日期格式错误
         }
     };
 
@@ -181,12 +185,12 @@ export default function AppDetail({ app }) {
                 const isFree = app.price === 0;
                 if (isFree) {
                     const result = await Swal.fire({
-                        title: '需要先领取该应用',
-                        html: '该应用需要先领取许可证才能查看版本列表。<br/>点击"领取"按钮来获取该应用的许可证。',
+                        title: t('ui.needClaimFirst'), // 需要先领取该应用
+                        html: t('ui.claimAppHint'), // 该应用需要先领取许可证才能查看版本列表。<br/>点击"领取"按钮来获取该应用的许可证。
                         icon: 'info',
                         showCancelButton: true,
-                        confirmButtonText: '领取',
-                        cancelButtonText: '取消'
+                        confirmButtonText: t('ui.claim'), // 领取
+                        cancelButtonText: t('ui.cancel')
                     });
 
                     if (result.isConfirmed) {
@@ -194,8 +198,8 @@ export default function AppDetail({ app }) {
                             await purchaseApp(app.bundleId);
                             Swal.fire({
                                 icon: 'success',
-                                title: '已获取成功',
-                                text: '正在重新获取版本列表...',
+                                title: t('ui.claimSuccess'), // 已获取成功
+                                text: t('ui.refetchingVersions'), // 正在重新获取版本列表...
                                 timer: 1500,
                                 showConfirmButton: false
                             });
@@ -204,18 +208,18 @@ export default function AppDetail({ app }) {
                         } catch (purchaseError) {
                             Swal.fire({
                                 icon: 'error',
-                                title: '获取失败',
+                                title: t('ui.claimFailed'), // 获取失败
                                 text: purchaseError.message,
-                                confirmButtonText: '好的'
+                                confirmButtonText: t('ui.ok')
                             });
                         }
                     }
                 } else {
                     Swal.fire({
-                        title: '需要购买',
-                        text: '该应用为收费应用，需要在设备的 App Store 上执行购买后才能查看版本列表。',
+                        title: t('ui.needPurchase'), // 需要购买
+                        text: t('ui.paidAppHint'), // 该应用为收费应用，需要在设备的 App Store 上执行购买后才能查看版本列表。
                         icon: 'info',
-                        confirmButtonText: '好的'
+                        confirmButtonText: t('ui.ok')
                     });
                 }
             } else if (error.errorType === 'TOKEN_EXPIRED') {
@@ -223,10 +227,10 @@ export default function AppDetail({ app }) {
             } else if (error.message.includes('第三方API未找到该应用的版本信息')) {
                 // 第三方API未找到数据的情况
                 Swal.fire({
-                    title: '第三方API无数据',
-                    text: '第三方API中未找到该应用的版本信息，请尝试其他方式获取版本列表。',
+                    title: t('ui.loadThirdPartyVersions'), // 第三方API无数据
+                    text: t('ui.thirdPartyApiWarning'), // 第三方API中未找到该应用的版本信息，请尝试其他方式获取版本列表。
                     icon: 'info',
-                    confirmButtonText: '好的'
+                    confirmButtonText: t('ui.ok')
                 });
             } else if (error.message.includes('获取版本列表时发生错误')) {
                 handleVersionsError();
@@ -239,12 +243,12 @@ export default function AppDetail({ app }) {
     // 处理密码令牌过期错误
     const handleTokenExpiredError = async () => {
         const result = await Swal.fire({
-            title: '登录已过期',
-            text: '您的登录状态已过期，需要重新登录才能继续操作。',
+            title: t('ui.loginExpired'), // 登录已过期
+            text: t('ui.loginExpiredHint'), // 您的登录状态已过期，需要重新登录才能继续操作。
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: '重新登录',
-            cancelButtonText: '取消'
+            confirmButtonText: t('ui.relogin'),
+            cancelButtonText: t('ui.cancel')
         });
 
         if (result.isConfirmed) {
@@ -264,8 +268,8 @@ export default function AppDetail({ app }) {
             if (response.success) {
                 Swal.fire({
                     icon: 'success',
-                    title: '下载任务已创建',
-                    text: `任务ID: ${response.taskId}`,
+                    title: t('ui.taskCreated'), // 下载任务已创建
+                    text: `${t('ui.taskId')}: ${response.taskId}`, // 任务ID: ${response.taskId}
                     position: 'top', toast: true,
                     timer: 1500,
                     showConfirmButton: false
@@ -279,11 +283,11 @@ export default function AppDetail({ app }) {
             if (error.errorType === 'LICENSE_REQUIRED') {
                 const result = await Swal.fire({
                     icon: 'info',
-                    title: '需要先领取该应用',
-                    text: '该应用需要先领取许可证才能下载。',
+                    title: t('ui.needClaimBeforeDownload'), // 需要先领取该应用
+                    text: t('ui.claimRequiredForDownload'), // 该应用需要先领取许可证才能下载。
                     showCancelButton: true,
-                    confirmButtonText: '去领取',
-                    cancelButtonText: '取消'
+                    confirmButtonText: t('ui.goToClaim'), // 去领取
+                    cancelButtonText: t('ui.cancel')
                 });
 
                 if (result.isConfirmed && app.price === 0) {
@@ -291,28 +295,28 @@ export default function AppDetail({ app }) {
                         await purchaseApp(app.bundleId);
                         Swal.fire({
                             icon: 'success',
-                            title: '已获取成功',
-                            text: '现在可以重新尝试下载了',
+                            title: t('ui.claimSuccess'), // 已获取成功
+                            text: t('ui.claimSuccessNowRetry'), // 现在可以重新尝试下载了
                             timer: 1500,
                             showConfirmButton: false
                         });
                     } catch (purchaseError) {
                         Swal.fire({
                             icon: 'error',
-                            title: '获取失败',
+                            title: t('ui.claimFailed'), // 获取失败
                             text: purchaseError.message,
-                            confirmButtonText: '好的'
+                            confirmButtonText: t('ui.ok')
                         });
                     }
                 }
             } else if (error.errorType === 'TOKEN_EXPIRED') {
                 const result = await Swal.fire({
                     icon: 'warning',
-                    title: '登录已过期',
-                    text: '您的登录状态已过期，需要重新登录才能继续下载。',
+                    title: t('ui.loginExpired'), // 登录已过期
+                    text: t('ui.downloadLoginExpired'), // 您的登录状态已过期，需要重新登录才能继续下载。
                     showCancelButton: true,
-                    confirmButtonText: '重新登录',
-                    cancelButtonText: '取消'
+                    confirmButtonText: t('ui.relogin'),
+                    cancelButtonText: t('ui.cancel')
                 });
 
                 if (result.isConfirmed) {
@@ -321,9 +325,9 @@ export default function AppDetail({ app }) {
             } else {
                 Swal.fire({
                     icon: 'error',
-                    title: '下载失败',
+                    title: t('ui.failedToDownload'), // 下载失败
                     text: error.message,
-                    confirmButtonText: '确定'
+                    confirmButtonText: t('ui.confirm')
                 });
             }
         } finally {
@@ -339,12 +343,12 @@ export default function AppDetail({ app }) {
     // 删除任务
     const handleDeleteTask = async (taskId) => {
         const result = await Swal.fire({
-            title: '确认删除',
-            text: '确定要删除这个任务和对应的 ipa 文件吗？',
+            title: t('ui.confirmDelete'), // 确认删除
+            text: t('ui.confirmDeleteTask'), // 确定要删除这个任务和对应的 ipa 文件吗？
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: '删除',
-            cancelButtonText: '取消',
+            confirmButtonText: t('ui.delete'),
+            cancelButtonText: t('ui.cancel'),
             confirmButtonColor: '#d33'
         });
 
@@ -354,7 +358,7 @@ export default function AppDetail({ app }) {
                 if (response.success) {
                     Swal.fire({
                         icon: 'success',
-                        title: '任务已删除',
+                        title: t('ui.taskDeleted'), // 任务已删除
                         timer: 1500,
                         showConfirmButton: false
                     });
@@ -363,9 +367,9 @@ export default function AppDetail({ app }) {
                 console.error('删除任务失败:', error);
                 Swal.fire({
                     icon: 'error',
-                    title: '删除失败',
+                    title: t('ui.deleteFailed'), // 删除失败
                     text: error.message,
-                    confirmButtonText: '确定'
+                    confirmButtonText: t('ui.confirm')
                 });
             }
         }
@@ -395,7 +399,8 @@ export default function AppDetail({ app }) {
                     loading={downloadingVersions.has('latest')}
                     onClick={() => handleDownload('latest', app.bundleId)}
                 >
-                    下载最新版
+                    {/* 下载最新版 */}
+                    {t('ui.downloadLatest')}
                 </Button>
             );
         }
@@ -405,7 +410,8 @@ export default function AppDetail({ app }) {
                 return (
                     <>
                         <Button fullWidth>
-                            下载中... {taskInfo.percentage}%
+                            {/* 下载中... {taskInfo.percentage}% */}
+                            {t('ui.downloading')} {taskInfo.percentage}%
                         </Button>
                         <Stack direction="row" gap={1} justifyContent="center">
                             <IconButton
@@ -424,7 +430,8 @@ export default function AppDetail({ app }) {
                 return (
                     <>
                         <Box sx={{ flex: 1 }}>
-                            <Button fullWidth loading>等待下载...</Button>
+                            {/* <Button fullWidth loading>等待下载...</Button> */}
+                            <Button fullWidth loading>{t('ui.waitingDownload')}</Button>
                         </Box>
                         <Stack direction="row" gap={1} justifyContent="center">
                             <IconButton
@@ -455,8 +462,8 @@ export default function AppDetail({ app }) {
                                     return;
                                 }
                                 Swal.fire({
-                                    title: '请问是下载 IPA 档案还是安装应用？',
-                                    text: '请选择',
+                                    title: t('ui.installOrDownload'), // 请问是下载 IPA 档案还是安装应用？
+                                    text: t('ui.pleaseSelect'), // 请选择
                                     icon: 'question',
                                     showCancelButton: false,
                                     showConfirmButton: false,
@@ -473,7 +480,7 @@ export default function AppDetail({ app }) {
              text-decoration:none;
              font-size:14px;
            ">
-           安装
+           ${t('ui.install')}
         </a>
 
         <a href="${getAppDownloadPackageUrl(app.trackId, 'latest')}"
@@ -487,13 +494,13 @@ export default function AppDetail({ app }) {
              text-decoration:none;
              font-size:14px;
            ">
-           下载 IPA
+           ${t('ui.downloadIPA')}
         </a>
       </div>
     `,
 
                                 });
-                            }}>安装</Button>
+                            }}>{t('ui.install')}</Button>
                         </Box>
                         <Stack direction="row" gap={1} justifyContent="center">
                             <Button
@@ -503,7 +510,8 @@ export default function AppDetail({ app }) {
                                 startDecorator={<Refresh />}
                                 onClick={() => handleDownload('latest', app.bundleId)}
                             >
-                                重新下载最新版
+                                {/* 重新下载最新版 */}
+                                {t('ui.redownloadLatest')}
                             </Button>
                             <IconButton
                                 size="sm"
@@ -521,7 +529,8 @@ export default function AppDetail({ app }) {
                 return (
                     <>
                         <Box sx={{ flex: 1 }}>
-                            <Button fullWidth variant='soft' color='danger'>{taskInfo.status === 'failed' ? '下载失败' : '已取消'}</Button>
+                            {/* <Button fullWidth variant='soft' color='danger'>{taskInfo.status === 'failed' ? '下载失败' : '已取消'}</Button> */}
+                            <Button fullWidth variant='soft' color='danger'>{taskInfo.status === 'failed' ? t('ui.downloadFailed') : t('ui.cancelled')}</Button>
                         </Box>
                         <Stack direction="row" gap={1} justifyContent="center">
                             <IconButton
@@ -545,7 +554,8 @@ export default function AppDetail({ app }) {
                         loading={downloadingVersions.has('latest')}
                         onClick={() => handleDownload('latest', app.bundleId)}
                     >
-                        下载最新版
+                        {/* 下载最新版 */}
+                        {t('ui.downloadLatest')}
                     </Button>
                 );
         }
@@ -564,7 +574,7 @@ export default function AppDetail({ app }) {
                     startDecorator={<Download />}
                     onClick={() => handleDownload(version.versionId, app.bundleId)}
                 >
-                    下载
+                    {t('ui.download')}
                 </Button>
             );
         }
@@ -578,7 +588,7 @@ export default function AppDetail({ app }) {
                     loading
                     disabled
                 >
-                    创建中...
+                    {t('ui.creating')}
                 </Button>
             );
         }
@@ -661,7 +671,7 @@ export default function AppDetail({ app }) {
                                 }}
                                 onClick={() => handleDeleteTask(taskInfo.taskId)}
                             >
-                                等待中
+                                {t('ui.waiting')}
                             </Button>
 
                         </Box>
@@ -685,7 +695,8 @@ export default function AppDetail({ app }) {
                                 </Link>
                             </Tooltip> */}
                             <Link href={`${getAppDownloadPackageUrl(app.trackId, version.versionId)}`}>
-                                <Button size="sm" startDecorator={<Download />}>下载IPA</Button>
+                                {/* <Button size="sm" startDecorator={<Download />}>下载IPA</Button> */}
+                                <Button size="sm" startDecorator={<Download />}>{t('ui.downloadIPA')}</Button>
                             </Link>
                         </Stack>
                     );
@@ -724,7 +735,7 @@ export default function AppDetail({ app }) {
                                     fontSize: 'xs'
                                 }}
                             >
-                                失败
+                                {t('ui.failed')}
                             </Button>
                             <IconButton
                                 size="sm"
@@ -846,8 +857,10 @@ export default function AppDetail({ app }) {
                         },
                     }}
                 >
-                    <Tab disableIndicator sx={{ flex: 1 }}>当前版本</Tab>
-                    <Tab disableIndicator sx={{ flex: 1 }}>历史版本</Tab>
+                    {/* <Tab disableIndicator sx={{ flex: 1 }}>当前版本</Tab>
+                    <Tab disableIndicator sx={{ flex: 1 }}>历史版本</Tab> */}
+                    <Tab disableIndicator sx={{ flex: 1 }}>{t('ui.currentVersion')}</Tab>
+                    <Tab disableIndicator sx={{ flex: 1 }}>{t('ui.historicalVersions')}</Tab>
                 </TabList>
 
                 <TabPanel value={0} sx={{ p: 0, pt: 1.5 }}>
@@ -855,43 +868,43 @@ export default function AppDetail({ app }) {
                     <Stack gap={2}>
                         {/* 版本信息 */}
                         <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
-                            <Typography level="title-sm" sx={{ mb: 1 }}>版本信息</Typography>
+                            <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.versionInfo')}</Typography>
                             <Stack gap={1}>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">当前版本:</Typography>
+                                    <Typography level="body-sm">{t('ui.currentVersion')}:</Typography>
                                     <Typography level="body-sm" fontWeight="md">{app.version}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">文件大小:</Typography>
+                                    <Typography level="body-sm">{t('ui.fileSize')}:</Typography>
                                     <Typography level="body-sm">{formatFileSize(app.fileSizeBytes)}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">更新时间:</Typography>
+                                    <Typography level="body-sm">{t('ui.updateTime')}:</Typography>
                                     <Typography level="body-sm">{formatDate(app.currentVersionReleaseDate)}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">年龄评级:</Typography>
-                                    <Typography level="body-sm">{app.contentAdvisoryRating || '未知'}</Typography>
+                                    <Typography level="body-sm">{t('ui.ageRating')}:</Typography>
+                                    <Typography level="body-sm">{app.contentAdvisoryRating || t('ui.unknown')}</Typography>
                                 </Stack>
                             </Stack>
                         </Sheet>
 
                         {/* 支持信息 */}
                         <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
-                            <Typography level="title-sm" sx={{ mb: 1 }}>支持信息</Typography>
+                            <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.supportInfo')}</Typography>
                             <Stack gap={1}>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">支持语言:</Typography>
+                                    <Typography level="body-sm">{t('ui.languages')}:</Typography>
                                     <Typography level="body-sm">
-                                        {app.languageCodesISO2A ? app.languageCodesISO2A.join(', ') : '未知'}
+                                        {app.languageCodesISO2A ? app.languageCodesISO2A.join(', ') : t('ui.unknown')}
                                     </Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">兼容性:</Typography>
-                                    <Typography level="body-sm">{app.minimumOsVersion ? `iOS ${app.minimumOsVersion}+` : '未知'}</Typography>
+                                    <Typography level="body-sm">{t('ui.compatibility')}:</Typography>
+                                    <Typography level="body-sm">{app.minimumOsVersion ? `iOS ${app.minimumOsVersion}+` : t('ui.unknown')}</Typography>
                                 </Stack>
                                 <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">Bundle ID:</Typography>
+                                    <Typography level="body-sm">{t('ui.bundleId')}:</Typography>
                                     <Typography level="body-sm" sx={{ fontFamily: 'monospace' }}>
                                         {app.bundleId}
                                     </Typography>
@@ -902,7 +915,7 @@ export default function AppDetail({ app }) {
                         {/* 应用描述 */}
                         {app.description && (
                             <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
-                                <Typography level="title-sm" sx={{ mb: 1 }}>应用描述</Typography>
+                                <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.appDescription')}</Typography>
                                 <Typography level="body-sm" sx={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                                     {app.description}
                                 </Typography>
@@ -912,7 +925,8 @@ export default function AppDetail({ app }) {
                         {/* 版本更新说明 */}
                         {app.releaseNotes && (
                             <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
-                                <Typography level="title-sm" sx={{ mb: 1 }}>版本更新说明</Typography>
+                                {/* <Typography level="title-sm" sx={{ mb: 1 }}>版本更新说明</Typography> */}
+                                <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.releaseNotes')}</Typography>
                                 <Typography level="body-sm" sx={{ lineHeight: 1.6, whiteSpace: 'pre-wrap' }}>
                                     {app.releaseNotes}
                                 </Typography>
@@ -934,7 +948,8 @@ export default function AppDetail({ app }) {
                                 fontStyle: 'italic'
                             }}
                         >
-                            ⚠️注意: 当前显示的是第三方 API 数据，可能与实际版本有差异, 请在下载前确保已经获取过该应用
+                            {/* ⚠️注意: 当前显示的是第三方 API 数据，可能与实际版本有差异, 请在下载前确保已经获取过该应用 */}
+                            {t('ui.thirdPartyApiWarning')}
                         </Typography>
                     )}
 
@@ -948,8 +963,10 @@ export default function AppDetail({ app }) {
                             <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
                                 {versionsError}
                             </Typography>
-                            <Button size="sm" color="danger" variant="soft" onClick={() => handleVersionsError()}>解决方法</Button>
-                            <Button size="sm" color="primary" variant="soft" onClick={() => fetchVersions()}>重新获取版本列表</Button>
+                            {/* <Button size="sm" color="danger" variant="soft" onClick={() => handleVersionsError()}>解决方法</Button>
+                            <Button size="sm" color="primary" variant="soft" onClick={() => fetchVersions()}>重新获取版本列表</Button> */}
+                            <Button size="sm" color="danger" variant="soft" onClick={() => handleVersionsError()}>{t('ui.solution')}</Button>
+                            <Button size="sm" color="primary" variant="soft" onClick={() => fetchVersions()}>{t('ui.refetchVersionList')}</Button>
                         </Stack>
                     ) : versions.length > 0 ? (
                         <List>
@@ -964,7 +981,8 @@ export default function AppDetail({ app }) {
                                                 {version.displayName}
                                             </Typography>
                                             <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                                                {version.releaseDate ? formatDate(version.releaseDate) : '发布日期未知'}
+                                                {/* {version.releaseDate ? formatDate(version.releaseDate) : '发布日期未知'} */}
+                                                {version.releaseDate ? formatDate(version.releaseDate) : t('ui.releaseDateUnknown')}
                                             </Typography>
                                             <Typography level="body-xs" sx={{ color: 'text.tertiary', fontFamily: 'monospace' }}>
                                                 ID: {version.versionId}
@@ -979,7 +997,8 @@ export default function AppDetail({ app }) {
                     ) : (
                         <Box sx={{ textAlign: 'center', py: 4 }}>
                             <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                                暂无历史版本
+                                {/* 暂无历史版本 */}
+                                {t('ui.noHistoricalVersions')}
                             </Typography>
                         </Box>
                     )}

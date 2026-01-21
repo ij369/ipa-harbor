@@ -11,11 +11,15 @@ import {
     Button,
     Alert,
     Divider,
-    Chip
+    Chip,
+    Stack
 } from '@mui/joy';
 import { useAdmin } from '../contexts/AdminContext';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 
 const AdminLogin = () => {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { isLoggedIn, user, login, logout, getFormattedExpiresAt, isExpiringSoon, loading, error } = useAdmin();
 
@@ -45,7 +49,7 @@ const AdminLogin = () => {
         e.preventDefault();
 
         if (!formData.username || !formData.password) {
-            setLoginError('请输入用户名和密码');
+            setLoginError(t('ui.usernamePlaceholder') + ' & ' + t('ui.passwordPlaceholder_admin'));
             return;
         }
 
@@ -57,7 +61,8 @@ const AdminLogin = () => {
             setFormData({ username: '', password: '' });
             // navigate('/');
         } catch (error) {
-            setLoginError(error.message || '登录失败');
+            // setLoginError(error.message || '登录失败');
+            setLoginError(error.message || t('ui.searchFailed'));
         } finally {
             setLoginLoading(false);
         }
@@ -81,7 +86,8 @@ const AdminLogin = () => {
                     minHeight: '60vh'
                 }}
             >
-                <Typography>加载中...</Typography>
+                {/* <Typography>加载中...</Typography> */}
+                <Typography>{t('ui.loading')}</Typography>
             </Box>
         );
     }
@@ -158,10 +164,12 @@ const AdminLogin = () => {
                     {!isLoggedIn ? (
                         <>
                             <Typography level="h3" sx={{ mb: 2, textAlign: 'center' }}>
-                                登入系统
+                                {/* 登入系统 */}
+                                {t('ui.adminLoginTitle')}
                             </Typography>
                             <Typography level="body-sm" sx={{ mb: 3, textAlign: 'center', color: 'text.secondary' }}>
-                                请输入管理员账户
+                                {/* 请输入管理员账户 */}
+                                {t('ui.adminLoginSubtitle')}
                             </Typography>
                             {error && (
                                 <Alert color="danger" sx={{ mb: 2 }}>
@@ -177,24 +185,25 @@ const AdminLogin = () => {
 
                             <form onSubmit={handleLogin}>
                                 <FormControl sx={{ mb: 2 }}>
-                                    <FormLabel>用户名</FormLabel>
+                                    {/* <FormLabel>用户名</FormLabel> */}
+                                    <FormLabel>{t('ui.username')}</FormLabel>
                                     <Input
                                         name="username"
                                         value={formData.username}
                                         onChange={handleInputChange}
-                                        placeholder="请输入用户名"
+                                        placeholder={t('ui.usernamePlaceholder')} // 请输入用户名
                                         required
                                     />
                                 </FormControl>
 
                                 <FormControl sx={{ mb: 3 }}>
-                                    <FormLabel>密码</FormLabel>
+                                    <FormLabel>{t('ui.password')}</FormLabel>
                                     <Input
                                         name="password"
                                         type="password"
                                         value={formData.password}
                                         onChange={handleInputChange}
-                                        placeholder="请输入密码"
+                                        placeholder={t('ui.passwordPlaceholder_admin')} // 请输入密码
                                         required
                                     />
                                 </FormControl>
@@ -205,23 +214,35 @@ const AdminLogin = () => {
                                     loading={loginLoading}
                                     disabled={loginLoading}
                                 >
-                                    登录
+                                    {/* 登录 */}
+                                    {t('ui.login')}
                                 </Button>
                             </form>
+                            <Divider sx={{ mt: 1.5 }} />
+                            {/* 语言切换器 */}
+                            <Stack direction="row" alignItems="center" gap={1} sx={{ mt: 1.5 }}>
+                                <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                                    {t('ui.language')}:
+                                </Typography>
+                                <LanguageSwitcher variant="select" size="sm" />
+                            </Stack>
                         </>
                     ) : (
                         <>
                             <Typography level="h3" sx={{ mb: 2, textAlign: 'center' }}>
-                                系统信息
+                                {/* 系统信息 */}
+                                {t('ui.systemInfo')}
                             </Typography>
 
                             <Alert color="success" sx={{ mb: 2 }}>
-                                已登录
+                                {/* 已登录 */}
+                                {t('ui.loggedIn')}
                             </Alert>
 
                             <Box sx={{ mb: 2 }}>
                                 <Typography level="body-sm" sx={{ mb: 1 }}>
-                                    用户名
+                                    {/* 用户名 */}
+                                    {t('ui.username')}
                                 </Typography>
                                 <Typography level="body-md" sx={{ fontWeight: 'bold' }}>
                                     {user.username}
@@ -230,7 +251,8 @@ const AdminLogin = () => {
 
                             <Box sx={{ mb: 2 }}>
                                 <Typography level="body-sm" sx={{ mb: 1 }}>
-                                    登录过期时间
+                                    {/* 登录过期时间 */}
+                                    {t('ui.loginExpiry')}
                                 </Typography>
                                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                                     <Typography level="body-md">
@@ -238,7 +260,8 @@ const AdminLogin = () => {
                                     </Typography>
                                     {isExpiringSoon() && (
                                         <Chip color="warning" size="sm">
-                                            即将过期
+                                            {/* 即将过期 */}
+                                            {t('ui.expiringSoon')}
                                         </Chip>
                                     )}
                                 </Box>
@@ -251,7 +274,8 @@ const AdminLogin = () => {
                                 fullWidth
                                 onClick={handleLogout}
                             >
-                                退出系统
+                                {/* 退出系统 */}
+                                {t('ui.logoutSystem')}
                             </Button>
                         </>
                     )}

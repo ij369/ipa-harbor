@@ -14,8 +14,10 @@ import AdminPanelSettingsIcon from '@mui/icons-material/AdminPanelSettings';
 import { ExitToApp, Person } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { useAdmin } from '../contexts/AdminContext';
+import { useTranslation } from 'react-i18next';
 
 const AdminStatus = () => {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { isLoggedIn, user, logout, getFormattedExpiresAt, isExpiringSoon } = useAdmin();
     const [logoutLoading, setLogoutLoading] = useState(false);
@@ -44,7 +46,8 @@ const AdminStatus = () => {
                 startDecorator={<Person />}
                 onClick={handleGoToLogin}
             >
-                登录系统
+                {/* 登录系统*/}
+                {t('ui.loginSystem')}
             </Button>
         );
     }
@@ -64,7 +67,8 @@ const AdminStatus = () => {
                 {user.username}
                 {isExpiringSoon() && (
                     <Chip color="warning" size="sm" sx={{ ml: 1 }}>
-                        即将过期
+                        {/* 即将过期 */}
+                        {t('ui.expiringSoon')}
                     </Chip>
                 )}
             </MenuButton>
@@ -75,7 +79,8 @@ const AdminStatus = () => {
                             {user.username}
                         </Typography>
                         <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                            系统管理员账户
+                            {/* 系统管理员账户 */}
+                            {t('ui.adminAccount')}
                         </Typography>
                     </Box>
                 </MenuItem>
@@ -83,14 +88,16 @@ const AdminStatus = () => {
                 <MenuItem disabled>
                     <Box>
                         <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
-                            过期时间
+                            {/* 过期时间 */}
+                            {t('ui.expiryTime')}
                         </Typography>
                         <Typography level="body-xs">
                             {getFormattedExpiresAt()}
                         </Typography>
                         {isExpiringSoon() && (
                             <Chip color="warning" size="sm" sx={{ mt: 0.5 }}>
-                                即将过期
+                                {/* 即将过期 */}
+                                {t('ui.expiringSoon')}
                             </Chip>
                         )}
                     </Box>
@@ -109,7 +116,8 @@ const AdminStatus = () => {
                     color="danger"
                 >
                     <ExitToApp sx={{ mr: 1 }} />
-                    {logoutLoading ? '退出中...' : '退出系统'}
+                    {/* {logoutLoading ? '退出中...' : '退出系统'} */}
+                    {logoutLoading ? t('ui.loggingOut') : t('ui.logoutSystem')}
                 </MenuItem>
             </Menu>
         </Dropdown>

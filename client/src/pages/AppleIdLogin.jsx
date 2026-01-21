@@ -18,8 +18,10 @@ import { ArrowBack, } from '@mui/icons-material';
 import { login, revokeAuth } from '../utils/api';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
+import { useTranslation } from 'react-i18next';
 
 const AppleIdLogin = () => {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { setUser, user, isAuthenticated, checkAuthStatus, logout } = useApp();
 
@@ -43,12 +45,12 @@ const AppleIdLogin = () => {
         e.preventDefault();
 
         if (!formData.email || !formData.password) {
-            setError('邮箱和密码不能为空');
+            setError(t('ui.appleIdPlaceholder') + ' & ' + t('ui.passwordPlaceholder'));
             return;
         }
 
         if (showTwoFactor && !formData.twoFactor) {
-            setError('请输入二次验证码');
+            setError(t('ui.twoFactorPlaceholder'));
             return;
         }
 
@@ -95,12 +97,12 @@ const AppleIdLogin = () => {
     const handleLogout = async () => {
         try {
             const result = await Swal.fire({
-                title: '确认撤销登录',
-                text: '确定要撤销当前 Apple ID 的登录吗？',
+                title: t('ui.confirmRevokeLogin'),
+                text: t('ui.confirmRevokeAppleId'),
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: '确定',
-                cancelButtonText: '取消'
+                confirmButtonText: t('ui.confirm'),
+                cancelButtonText: t('ui.cancel')
             });
 
             if (result.isConfirmed) {
@@ -109,7 +111,7 @@ const AppleIdLogin = () => {
                     logout();
                     Swal.fire({
                         icon: 'success',
-                        title: '退出成功',
+                        title: t('ui.logoutSuccess'),
                         timer: 1500,
                         toast: true,
                         position: 'top',
@@ -118,9 +120,9 @@ const AppleIdLogin = () => {
                 } catch (error) {
                     Swal.fire({
                         icon: 'error',
-                        title: '退出失败',
+                        title: t('ui.logoutFailed'),
                         text: error.message,
-                        confirmButtonText: '确定'
+                        confirmButtonText: t('ui.confirm')
                     });
                     logout();
                 }
@@ -143,12 +145,12 @@ const AppleIdLogin = () => {
             {isAuthenticated ?
                 <Card sx={{ width: '100%', maxWidth: 400 }}>
                     <CardContent>
-                        <h1>Apple ID 已登录</h1>
+                        <h1>{t('ui.appleIdLoggedIn')}</h1>
                         <Typography level="body-lg" sx={{ color: 'text.secondary' }}>{user.name}</Typography>
                         <Typography level="body-md" sx={{ color: 'text.secondary' }}>{user.email}</Typography>
                         <Divider sx={{ my: 2 }} />
                         <Button variant="outlined" color="danger" size="lg" onClick={handleLogout}>
-                            撤销登录
+                            {t('ui.revokeLogin')}
                         </Button>
                     </CardContent>
                 </Card>
@@ -165,7 +167,7 @@ const AppleIdLogin = () => {
                                 <ArrowBack />
                             </IconButton>
                             <Typography level="h3" sx={{ flex: 1, textAlign: 'center' }}>
-                                登录 Apple ID
+                                {t('ui.appleIdLogin')}
                             </Typography>
                             <Box sx={{ width: 32 }} /> {/* 占位符保持居中 */}
                         </Stack>
@@ -194,18 +196,18 @@ const AppleIdLogin = () => {
                                 {!showTwoFactor && (
                                     <Box sx={{ textAlign: 'center', mb: 2 }}>
                                         <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                                            请使用您的 Apple ID 登录
+                                            {t('ui.loginWithAppleId')}
                                         </Typography>
                                     </Box>
                                 )}
 
                                 <FormControl sx={{ display: showTwoFactor ? 'none' : 'block' }}>
-                                    <FormLabel>Apple ID</FormLabel>
+                                    <FormLabel>{t('ui.appleId')}</FormLabel>
                                     <Input
                                         type="text"
                                         value={formData.email}
                                         onChange={(e) => handleInputChange('email', e.target.value)}
-                                        placeholder="请输入Apple ID邮箱"
+                                        placeholder={t('ui.appleIdPlaceholder')}
                                         autoComplete="username"
                                         required
                                         disabled={loading}
@@ -213,12 +215,12 @@ const AppleIdLogin = () => {
                                 </FormControl>
 
                                 <FormControl sx={{ display: showTwoFactor ? 'none' : 'block' }}>
-                                    <FormLabel>密码</FormLabel>
+                                    <FormLabel>{t('ui.password')}</FormLabel>
                                     <Input
                                         type="password"
                                         value={formData.password}
                                         onChange={(e) => handleInputChange('password', e.target.value)}
-                                        placeholder="请输入密码"
+                                        placeholder={t('ui.passwordPlaceholder')}
                                         autoComplete="current-password"
                                         required
                                         disabled={loading}
@@ -226,12 +228,12 @@ const AppleIdLogin = () => {
                                 </FormControl>
 
                                 <FormControl sx={{ display: showTwoFactor ? 'block' : 'none' }}>
-                                    <FormLabel>二次验证码</FormLabel>
+                                    <FormLabel>{t('ui.twoFactorCode')}</FormLabel>
                                     <Input
                                         type="text"
                                         value={formData.twoFactor}
                                         onChange={(e) => handleInputChange('twoFactor', e.target.value)}
-                                        placeholder="请输入6位验证码"
+                                        placeholder={t('ui.twoFactorPlaceholder')}
                                         disabled={loading}
                                         autoComplete="one-time-code"
                                         slotProps={{
@@ -242,7 +244,7 @@ const AppleIdLogin = () => {
                                         }}
                                     />
                                     <Typography level="body-xs" sx={{ mt: 1, color: 'text.secondary' }}>
-                                        请查看您的受信任设备或短信/邮件获取验证码
+                                        {t('ui.twoFactorHint')}
                                     </Typography>
                                 </FormControl>
 
@@ -253,7 +255,7 @@ const AppleIdLogin = () => {
                                     disabled={loading}
                                     size="lg"
                                 >
-                                    {loading ? '登录中...' : (showTwoFactor ? '验证并登录' : '登录')}
+                                    {loading ? t('ui.loggingIn') : (showTwoFactor ? t('ui.verifyAndLogin') : t('ui.login'))}
                                 </Button>
                             </Stack>
                         </form>
@@ -262,7 +264,7 @@ const AppleIdLogin = () => {
                             <>
                                 <Divider sx={{ my: 3 }} />
                                 <Typography level="body-xs" sx={{ textAlign: 'center', color: 'text.secondary' }}>
-                                    需要登录后才能搜索应用、领取应用和下载 App Store 中的 IPA
+                                    {t('ui.loginRequiredHint')}
                                 </Typography>
                             </>
                         )}

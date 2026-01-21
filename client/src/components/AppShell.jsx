@@ -4,11 +4,14 @@ import { useNavigate, useLocation } from 'react-router-dom';
 import { AddToHomeScreen as AddToHomeScreenIcon } from '@mui/icons-material';
 import UserStatus from './UserStatus';
 import AdminStatus from './AdminStatus';
+import LanguageSwitcher from './LanguageSwitcher';
 import { useApp } from '../contexts/AppContext';
 import { useAdmin } from '../contexts/AdminContext';
 import GitHubIcon from '@mui/icons-material/GitHub';
+import { useTranslation } from 'react-i18next';
 
 export default function AppShell({ children }) {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const location = useLocation();
     const { taskList, user, isAuthenticated, loading, logout } = useApp();
@@ -88,7 +91,7 @@ export default function AppShell({ children }) {
                             onClick={() => handleNavigate('/')}
                             color={location.pathname === '/' ? 'primary' : 'neutral'}
                         >
-                            首页
+                            {t('ui.home')}
                         </Button>
                         <Badge
                             badgeContent={badgeInfo.count > 0 ? badgeInfo.count : null}
@@ -101,20 +104,23 @@ export default function AppShell({ children }) {
                                 onClick={() => handleNavigate('/dl')}
                                 color={location.pathname === '/dl' ? 'primary' : 'neutral'}
                             >
-                                下载管理
+                                {t('ui.downloadManager')}
                             </Button>
                         </Badge>
 
                         {isAuthenticated ? <UserStatus /> : (
-                            <Button
-                                variant="outlined"
-                                size="sm"
-                                onClick={() => handleNavigate('/apple-id')}
-                                color={location.pathname === '/apple-id' ? 'primary' : 'danger'}
-                            >
-                                {location.pathname === '/apple-id' ? '登录 Apple ID' : '需要登录 Apple ID'}
-                            </Button>
+                            <Badge color="danger" size="md" invisible={location.pathname === '/apple-id'} >
+                                <Button
+                                    variant="outlined"
+                                    size="sm"
+                                    onClick={() => handleNavigate('/apple-id')}
+                                    color={location.pathname === '/apple-id' ? 'primary' : 'danger'}
+                                >
+                                    {location.pathname === '/apple-id' ? t('ui.appleIdLogin') : t('ui.needAppleIdLogin')}
+                                </Button>
+                            </Badge>
                         )}
+                        <LanguageSwitcher />
                         {/* <AdminStatus /> */}
                     </Stack>
                 </Stack>
@@ -172,13 +178,13 @@ export default function AppShell({ children }) {
 
                             }}
                                 onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
-                                startDecorator={<GitHubIcon sx={{ fontSize: '0.75rem' }} />}>一个基于 ipatool 的开源 IPA 可视化 Web 管理工具</Typography>
+                                startDecorator={<GitHubIcon sx={{ fontSize: '0.75rem' }} />}>{t('ui.footer')}</Typography>
                             <Typography level="body-xs" sx={{
                                 fontSize: '0.625rem', fontWeight: 'normal',
                                 display: { xs: 'none', sm: 'none', md: 'block' }
                             }}
                                 onClick={() => window.open('https://github.com/ij369/ipa-harbor', '_blank')}
-                            >, 支持 App 搜索、历史版本下载与容器化部署。</Typography>
+                            >{t('ui.footerSuffix')}</Typography>
                         </Stack>
                     </Stack>
 

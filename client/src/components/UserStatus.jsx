@@ -16,20 +16,22 @@ import { revokeAuth } from '../utils/api';
 
 import Swal from 'sweetalert2';
 import LogoutIcon from '@mui/icons-material/Logout';
+import { useTranslation } from 'react-i18next';
 
 export default function UserStatus() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { user, isAuthenticated, loading, logout } = useApp();
 
     const handleLogout = async () => {
         try {
             const result = await Swal.fire({
-                title: '确认撤销登录',
-                text: '确定要撤销当前 Apple ID 的登录吗？',
+                title: t('ui.confirmRevokeLogin'), // 确认撤销登录
+                text: t('ui.confirmRevokeAppleId'), // 确定要撤销当前 Apple ID 的登录吗？
                 icon: 'question',
                 showCancelButton: true,
-                confirmButtonText: '确定',
-                cancelButtonText: '取消'
+                confirmButtonText: t('ui.confirm'),
+                cancelButtonText: t('ui.cancel')
             });
 
             if (result.isConfirmed) {
@@ -38,16 +40,16 @@ export default function UserStatus() {
                     logout();
                     Swal.fire({
                         icon: 'success',
-                        title: '退出成功',
+                        title: t('ui.logoutSuccess'), // 退出成功
                         timer: 1500,
                         showConfirmButton: false
                     });
                 } catch (error) {
                     Swal.fire({
                         icon: 'error',
-                        title: '退出失败',
+                        title: t('ui.logoutFailed'), // 退出失败
                         text: error.message,
-                        confirmButtonText: '确定'
+                        confirmButtonText: t('ui.confirm')
                     });
                     logout();
                 }
@@ -64,7 +66,8 @@ export default function UserStatus() {
     if (loading) {
         return (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <Typography level="body-sm">加载中...</Typography>
+                {/* <Typography level="body-sm">加载中...</Typography> */}
+                <Typography level="body-sm">{t('ui.loading')}</Typography>
             </Box>
         );
     }
@@ -72,7 +75,8 @@ export default function UserStatus() {
     if (!isAuthenticated || !user) {
         return (
             <Button variant="outlined" size="sm" onClick={handleLogin}>
-                Apple ID 登录
+                {/* Apple ID 登录 */}
+                {t('ui.appleIdLogin')}
             </Button>
         );
     }
@@ -94,14 +98,17 @@ export default function UserStatus() {
             </MenuButton>
 
             <Menu placement="bottom-end" sx={{ minWidth: 180 }}>
-                <MenuItem disabled>当前 Apple ID 已登录</MenuItem>
+                {/* <MenuItem disabled>当前 Apple ID 已登录</MenuItem> */}
+                <MenuItem disabled>{t('ui.currentAppleIdLoggedIn')}</MenuItem>
                 <MenuItem disabled>
                     <Stack spacing={0.3}>
                         <Typography level="body-sm" fontWeight="md">
-                            {user.name || '未知用户'}
+                            {/* {user.name || '未知用户'} */}
+                            {user.name || t('ui.unknownUser')}
                         </Typography>
                         <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-                            {user.email || '未知邮箱'}
+                            {/* {user.email || '未知邮箱'} */}
+                            {user.email || t('ui.unknownEmail')}
                         </Typography>
                     </Stack>
                 </MenuItem>
@@ -109,7 +116,8 @@ export default function UserStatus() {
                 <MenuItem onClick={handleLogout} color="danger"
                 >
                     <LogoutIcon />
-                    撤销登录
+                    {/* 撤销登录 */}
+                    {t('ui.revokeLogin')}
                 </MenuItem>
             </Menu>
         </Dropdown>

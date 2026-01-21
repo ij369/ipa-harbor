@@ -2,6 +2,7 @@ import React, { useEffect } from 'react';
 import './Dialog.css';
 import { Close as CloseIcon } from '@mui/icons-material';
 import { IconButton } from '@mui/joy';
+import { useTranslation } from 'react-i18next';
 export default function Dialog({
     isOpen,
     onClose,
@@ -14,6 +15,7 @@ export default function Dialog({
     hasPrevious,
     hasNext
 }) {
+    const { t } = useTranslation();
     // 处理ESC键关闭
     useEffect(() => {
         const handleEscape = (e) => {
@@ -47,7 +49,8 @@ export default function Dialog({
                                     className="dialog-nav-btn"
                                     onClick={onPrevious}
                                     disabled={!hasPrevious}
-                                    title="上一个"
+                                    // 上一个
+                                    title={t('ui.previous')}
                                 >
                                     ‹
                                 </button>
@@ -55,13 +58,14 @@ export default function Dialog({
                                     className="dialog-nav-btn"
                                     onClick={onNext}
                                     disabled={!hasNext}
-                                    title="下一个"
+                                    // 下一个
+                                    title={t('ui.next')}
                                 >
                                     ›
                                 </button>
                             </>
                         )}
-                        <IconButton className="dialog-close" onClick={onClose}>
+                        <IconButton className="dialog-close" onClick={onClose} aria-label={t('ui.close')}>
                             <CloseIcon />
                         </IconButton>
                     </div>

@@ -18,7 +18,10 @@ import AppDetail from '../components/AppDetail';
 import Swal from 'sweetalert2';
 import { isMobile as isMobile } from 'react-device-detect';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
+
 export default function Home() {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const [keyword, setKeyword] = useState('');
     const [loading, setLoading] = useState(false);
@@ -32,8 +35,8 @@ export default function Home() {
         if (!keyword.trim()) {
             Swal.fire({
                 icon: 'warning',
-                title: '请输入搜索关键词',
-                confirmButtonText: '确定'
+                title: t('ui.searchPlaceholder'), // 输入应用名称进行搜索...
+                confirmButtonText: t('ui.confirm') // 确定
             });
             return;
         }
@@ -48,9 +51,9 @@ export default function Home() {
             console.error('搜索失败:', error.message);
             Swal.fire({
                 icon: 'error',
-                title: '搜索失败',
+                title: t('ui.searchFailed'), // 搜索失败
                 text: error.message,
-                confirmButtonText: '确定'
+                confirmButtonText: t('ui.confirm')
             }).then(() => {
                 if (error.message.includes('认证') || error.message.includes('登录') || error.message.includes('token')) {
                     // window.location.href = '/apple-id';
@@ -69,7 +72,7 @@ export default function Home() {
     };
 
     const formatPrice = (price) => {
-        return price === 0 ? '免费' : `¥${price}`;
+        return price === 0 ? t('ui.free') : `¥${price}`;
     };
 
     const handleRowClick = async (clickedApp) => {
@@ -93,9 +96,9 @@ export default function Home() {
             console.error('获取应用详情失败:', error.message);
             Swal.fire({
                 icon: 'error',
-                title: '获取详情失败',
+                title: t('ui.getDetailsFailed'),// 获取详情失败
                 text: error.message,
-                confirmButtonText: '确定'
+                confirmButtonText: t('ui.confirm')
             });
             setShowDetailDialog(false);
         } finally {
@@ -124,12 +127,13 @@ export default function Home() {
     return (
         <Box>
             <Typography level="h2" sx={{ mb: 3 }}>
-                应用搜索
+                {/* 应用搜索 */}
+                {t('ui.appSearch')}
             </Typography>
 
             <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
                 <Input
-                    placeholder="输入应用名称进行搜索..."
+                    placeholder={t('ui.searchPlaceholder')}
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                     onKeyPress={handleKeyPress}
@@ -143,14 +147,16 @@ export default function Home() {
                     disabled={loading || !keyword.trim()}
                     startDecorator={!loading && <Search />}
                 >
-                    {loading ? '搜索中...' : '搜索'}
+                    {/*  {loading ? '搜索中...' : '搜索'} */}
+                    {loading ? t('ui.searching') : t('ui.search')}
                 </Button>
             </Stack>
 
             {searchResults && (
                 <Box>
                     <Typography level="h4" sx={{ mb: 2 }}>
-                        搜索结果 - "{searchResults.keyword}"
+                        {/* 搜索结果 - "{searchResults.keyword}" */}
+                        {t('ui.searchResults')} - "{searchResults.keyword}"
                     </Typography>
 
                     {searchResults.data?.apps?.length > 0 ? (
@@ -158,11 +164,11 @@ export default function Home() {
                             <Table stickyHeader>
                                 <thead>
                                     <tr>
-                                        <th style={{ minWidth: '200px' }}>应用名称</th>
-                                        <th style={{ width: '100px', display: isMobile ? 'none' : 'table-cell' }}>ID</th>
-                                        <th style={{ display: isMobile ? 'none' : 'table-cell' }}>Bundle ID</th>
-                                        <th style={{ width: '100px' }}>版本</th>
-                                        <th style={{ width: '80px' }}>价格</th>
+                                        <th style={{ minWidth: '200px' }}>{t('ui.appName_label')}</th>
+                                        <th style={{ width: '100px', display: isMobile ? 'none' : 'table-cell' }}>{t('ui.appId')}</th>
+                                        <th style={{ display: isMobile ? 'none' : 'table-cell' }}>{t('ui.bundleId')}</th>
+                                        <th style={{ width: '100px' }}>{t('ui.appVersion')}</th>
+                                        <th style={{ width: '80px' }}>{t('ui.appPrice')}</th>
                                     </tr>
                                 </thead>
                                 <tbody>
@@ -217,14 +223,16 @@ export default function Home() {
                     ) : (
                         <Box sx={{ textAlign: 'center', py: 4 }}>
                             <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
-                                没有找到相关应用
+                                {/* 没有找到相关应用 */}
+                                {t('ui.noResults')}
                             </Typography>
                         </Box>
                     )}
 
                     {searchResults.data?.count && (
                         <Typography level="body-sm" sx={{ mt: 2, color: 'text.secondary' }}>
-                            找到 {searchResults.data.count} 个结果
+                            {/* 找到 {searchResults.data.count} 个结果 */}
+                            {t('ui.resultsCount', { count: searchResults.data.count })}
                         </Typography>
                     )}
                 </Box>

@@ -11,15 +11,18 @@ import {
     Button,
     Alert,
     LinearProgress,
-    List,
-    ListItem,
-    ListItemDecorator
+    Stack
 } from '@mui/joy';
 import { CheckCircle } from '@mui/icons-material';
 import { adminSetup } from '../utils/api';
 import { useAdmin } from '../contexts/AdminContext';
+import { useTranslation } from 'react-i18next';
+import LanguageSwitcher from '../components/LanguageSwitcher';
+import RadioButtonCheckedIcon from '@mui/icons-material/RadioButtonChecked';
+import InfoOutlineIcon from '@mui/icons-material/InfoOutline';
 
 const AdminSetup = () => {
+    const { t } = useTranslation();
     const navigate = useNavigate();
     const { checkAdminStatus } = useAdmin();
 
@@ -41,17 +44,17 @@ const AdminSetup = () => {
 
     const validateForm = () => {
         if (!formData.username || !formData.password) {
-            setError('请填写所有字段');
+            setError(t('ui.usernamePlaceholder') + ' & ' + t('ui.passwordPlaceholder_admin')); // 请输入用户名 & 请输入密码
             return false;
         }
 
         if (formData.username.length < 3) {
-            setError('用户名长度至少为3个字符');
+            setError(t('ui.usernameMinLength')); // 用户名长度至少3个字符
             return false;
         }
 
         if (formData.password.length < 6) {
-            setError('密码长度至少为6个字符');
+            setError(t('ui.passwordMinLength')); // 密码长度至少6个字符
             return false;
         }
 
@@ -94,15 +97,18 @@ const AdminSetup = () => {
                     minHeight: '60vh',
                     p: 2
                 }}
+                className="full-height"
             >
                 <Card sx={{ width: '100%', maxWidth: 500 }}>
                     <CardContent sx={{ textAlign: 'center' }}>
                         <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
                         <Typography level="h3" sx={{ mb: 2, color: 'success.main' }}>
-                            设置完成！
+                            {/* 设置完成！ */}
+                            {t('ui.setupComplete')}
                         </Typography>
                         <Typography level="body-md" sx={{ mb: 2 }}>
-                            管理员账户创建成功，正在跳转到登录页面...
+                            {/* 管理员账户创建成功，正在跳转到登录页面... */}
+                            {t('ui.adminCreatedSuccess')}
                         </Typography>
                         <LinearProgress sx={{ mt: 2 }} />
                     </CardContent>
@@ -112,76 +118,59 @@ const AdminSetup = () => {
     }
 
     return (
-        <Box
+        <Stack
+            direction="column"
+            gap={1.8}
+            alignItems="center"
+            justifyContent="center"
             sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '60vh',
                 p: 2
             }}
+            className="full-height"
         >
             <Card sx={{ width: '100%', maxWidth: 500 }}>
                 <CardContent>
-                    <Typography level="h2" sx={{ mb: 1, textAlign: 'center' }}>
-                        欢迎使用 IPA Harbor
+                    <Typography color='text.primary' sx={{ mb: 1, textAlign: 'center', fontSize: '1.625rem', fontWeight: 'bold' }}>
+                        {t('ui.adminSetupTitle', { appName: 'IPA Harbor' })}
                     </Typography>
-                    <Typography level="body-md" sx={{ mb: 3, textAlign: 'center', color: 'text.secondary' }}>
-                        首次运行需要设置访问账户
+                    <Typography level="body-md" sx={{ my: 1, textAlign: 'center' }}>
+                        {/* 首次运行需要设置访问账户 */}
+                        {t('ui.firstRunSetup')}
                     </Typography>
 
-                    <Alert color="primary" sx={{ mb: 3 }}>
-                        <Typography level="body-sm">
-                            请创建一个管理员账户。此账户将用于进入系统功能。
+                    <Alert color="primary" sx={{ my: 2 }}>
+                        <Typography level="body-xs" startDecorator={<InfoOutlineIcon sx={{ fontSize: '0.75rem', color: 'primary.main' }} />}>
+                            {/* 请创建一个管理员账户。此账户将用于进入系统功能。 */}
+                            {t('ui.createAdminHint')}
                         </Typography>
                     </Alert>
-
-                    <Typography level="title-md" sx={{ mb: 2 }}>
-                        安全要求：
-                    </Typography>
-                    <List size="sm" sx={{ mb: 3 }}>
-                        <ListItem>
-                            <ListItemDecorator>•</ListItemDecorator>
-                            用户名长度至少3个字符
-                        </ListItem>
-                        <ListItem>
-                            <ListItemDecorator>•</ListItemDecorator>
-                            密码长度至少6个字符
-                        </ListItem>
-                        <ListItem>
-                            <ListItemDecorator>•</ListItemDecorator>
-                            建议使用强密码
-                        </ListItem>
-                    </List>
-
-                    {error && (
-                        <Alert color="danger" sx={{ mb: 2 }}>
-                            {error}
-                        </Alert>
-                    )}
-
                     <form onSubmit={handleSubmit}>
                         <FormControl sx={{ mb: 3 }}>
-                            <FormLabel>用户名</FormLabel>
+                            <FormLabel>{t('ui.username')}</FormLabel>
                             <Input
                                 name="username"
                                 value={formData.username}
                                 onChange={handleInputChange}
-                                placeholder="请输入用户名（至少3个字符）"
+                                placeholder={t('ui.usernameInputPlaceholder')} // 请输入用户名（至少3个字符）
                                 required
                             />
                         </FormControl>
 
                         <FormControl sx={{ mb: 2 }}>
-                            <FormLabel>密码</FormLabel>
+                            <FormLabel>{t('ui.password')}</FormLabel>
                             <Input
                                 name="password"
                                 type="password"
                                 value={formData.password}
                                 onChange={handleInputChange}
-                                placeholder="请输入密码（至少6个字符）"
+                                placeholder={t('ui.passwordInputPlaceholder')} // 请输入密码（至少6个字符）
                                 required
                             />
+                        </FormControl>
+
+                        <FormControl sx={{ mb: 2 }}>
+                            <FormLabel>{t('ui.language')}</FormLabel>
+                            <LanguageSwitcher variant="select" size="md" fullWidth={true} />
                         </FormControl>
 
                         <Button
@@ -191,12 +180,34 @@ const AdminSetup = () => {
                             disabled={loading}
                             size="lg"
                         >
-                            创建管理员账户
+                            {/* 创建管理员账户 */}
+                            {t('ui.createAdminAccount')}
                         </Button>
                     </form>
+
+                    <Typography level="title-sm" sx={{ mt: 2, mb: 1 }}>
+                        {/* 安全要求： */}
+                        {t('ui.securityRequirements')}
+                    </Typography>
+                    <Stack direction="column" gap={1}>
+                        {[t('ui.usernameMinLength'), t('ui.passwordMinLength'), t('ui.strongPasswordRecommend')].map((item, index) => (
+                            <Typography key={'req-' + index} level="body-xs" startDecorator={<RadioButtonCheckedIcon sx={{ fontSize: '0.75rem', color: 'success.main' }} />}>
+                                {item}
+                            </Typography>
+                        ))}
+                    </Stack>
+
+                    {error && (
+                        <Alert color="danger" sx={{ mb: 2 }}>
+                            {error}
+                        </Alert>
+                    )}
+
+
                 </CardContent>
             </Card>
-        </Box>
+
+        </Stack>
     );
 };
 

@@ -7,6 +7,7 @@ import { getAppIconUrl, getAppDownloadPackageUrl, deleteTask, downloadApp } from
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
 import { Close as CloseIcon, Download as DownloadIcon } from '@mui/icons-material';
+import { useTranslation } from 'react-i18next';
 
 function AppIcon({ appId, size = 128, disabled = false }) {
     const [loaded, setLoaded] = useState(false);
@@ -74,6 +75,7 @@ function AppIcon({ appId, size = 128, disabled = false }) {
 }
 
 export default function IpaIcon({ item, size = 128, isDragging = false }) {
+    const { t } = useTranslation();
     const [drawerOpen, setDrawerOpen] = useState(false);
     const {
         id: appId,
@@ -106,28 +108,32 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
     const finalAppId = appId || extractedAppId;
 
     const formatDate = (dateString) => {
-        if (!dateString) return '未知';
+        //  if (!dateString) return '未知';
+        if (!dateString) return t('ui.unknown');
         try {
-            return new Date(dateString).toLocaleString('zh-CN');
+            // return new Date(dateString).toLocaleString('zh-CN');
+            const lng = localStorage.getItem('language') || 'en';
+            return new Date(dateString).toLocaleString(lng.startsWith('zh') ? 'zh-CN' : 'en-US');
         } catch {
-            return '日期格式错误';
+            // return '日期格式错误';
+            return t('ui.dateFormatError');
         }
     };
 
     const getTooltipContent = () => {
         const fields = [
-            { label: '应用名称', value: bundleDisplayName },
-            { label: '开发者', value: artistName },
-            { label: '版本号', value: bundleShortVersionString },
-            { label: '构建版本', value: bundleVersion },
-            { label: 'Bundle ID', value: softwareVersionBundleId },
-            { label: '应用ID', value: itemId },
-            { label: '版本 ID', value: softwareVersionExternalIdentifier },
-            { label: '产品类型', value: productType },
-            { label: '文件大小', value: fileSize ? formatFileSize(fileSize) : null },
-            { label: '发布日期', value: releaseDate ? formatDate(releaseDate) : null },
-            { label: '下载时间', value: createdAt ? formatDate(createdAt) : null },
-            { label: '文件名', value: name },
+            { label: t('ui.appName_label'), value: bundleDisplayName }, // 应用名称
+            { label: t('ui.developer'), value: artistName }, // 开发者
+            { label: t('ui.appVersion'), value: bundleShortVersionString },
+            { label: t('ui.buildVersion'), value: bundleVersion }, // 构建版本
+            { label: t('ui.bundleId'), value: softwareVersionBundleId }, // bundle ID
+            { label: t('ui.appId'), value: itemId }, // 应用 ID
+            { label: t('ui.versionId'), value: softwareVersionExternalIdentifier }, // 版本 ID
+            { label: t('ui.productType'), value: productType }, // 产品类型
+            { label: t('ui.fileSize'), value: fileSize ? formatFileSize(fileSize) : null }, // 文件大小
+            { label: t('ui.releaseDate'), value: releaseDate ? formatDate(releaseDate) : null }, // 发布日期
+            { label: t('ui.downloadTime'), value: createdAt ? formatDate(createdAt) : null }, // 下载时间
+            { label: t('ui.fileName'), value: name }, // 文件名称
         ];
 
         const details = fields
@@ -144,12 +150,12 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
 
         setDrawerOpen(false);
         const result = await Swal.fire({
-            title: '确认删除',
-            text: `确定要删除这个任务和对应的 ipa 文件吗？ ${name}`,
+            title: t('ui.confirmDelete'), // 确认删除
+            text: `${t('ui.confirmDeleteTask')} ${name}`, // 确定要删除这个任务和对应的 ipa 文件吗？ ${name}
             icon: 'warning',
             showCancelButton: true,
-            confirmButtonText: '删除',
-            cancelButtonText: '取消',
+            confirmButtonText: t('ui.delete'), // 删除
+            cancelButtonText: t('ui.cancel'), // 取消
             confirmButtonColor: '#d33'
         });
 
@@ -162,7 +168,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                 if (response.success) {
                     Swal.fire({
                         icon: 'success',
-                        title: '任务已删除',
+                        title: t('ui.taskDeleted'), // 任务已删除
                         timer: 1500,
                         showConfirmButton: false
                     });
@@ -171,9 +177,9 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                 console.error('删除任务失败:', error);
                 Swal.fire({
                     icon: 'error',
-                    title: '删除失败',
+                    title: t('ui.deleteFailed'), // 删除失败
                     text: error.message,
-                    confirmButtonText: '确定'
+                    confirmButtonText: t('ui.confirm') // 确定
                 });
             }
         }
@@ -185,9 +191,9 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
         if (!finalAppId || !bundleId) {
             Swal.fire({
                 icon: 'error',
-                title: '重试失败',
-                text: '无法获取应用ID',
-                confirmButtonText: '确定'
+                title: t('ui.retryFailed'), // 重试失败
+                text: t('ui.cannotGetAppId'), // 无法获取应用ID
+                confirmButtonText: t('ui.confirm') // 确定
             });
             return;
         }
@@ -197,8 +203,8 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             if (response.success) {
                 Swal.fire({
                     icon: 'success',
-                    title: '重试任务已创建',
-                    text: `任务ID: ${response.taskId}`,
+                    title: t('ui.retryTaskCreated'), // 重试任务已创建
+                    text: `${t('ui.taskId')}: ${response.taskId}`, // 任务ID: ${response.taskId}
                     position: 'top',
                     toast: true,
                     timer: 1500,
@@ -209,9 +215,9 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
             console.error('重试下载失败:', error.message);
             Swal.fire({
                 icon: 'error',
-                title: '重试失败',
-                text: error.message,
-                confirmButtonText: '确定'
+                title: t('ui.retryFailed'), // 重试失败
+                text: error.message, // 错误信息
+                confirmButtonText: t('ui.confirm') // 确定
             });
         }
     };
@@ -265,7 +271,8 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                                     width: '100%',
                                 }}
                             >
-                                {status === 'running' ? '下载中' : '等待中'} {progress && progress + '%'}
+                                {/* {status === 'running' ? '下载中' : '等待中'} {progress && progress + '%'} */}
+                                {status === 'running' ? t('ui.downloading') : t('ui.waiting')} {progress && progress + '%'}
                             </Typography>
                             <Typography
                                 sx={{
@@ -312,7 +319,8 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                                     textShadow: '1px 2px 2px black'
                                 }}
                             >
-                                删除
+                                {/* 删除 */}
+                                {t('ui.delete')}
                             </Box>
                         </Box>
 
@@ -328,9 +336,10 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                             }}
                             onClick={handleRetryDownload}
                         >
-                            <Typography sx={{ fontSize: '0.9rem', textAlign: 'center' }}>失败</Typography>
+                            <Typography sx={{ fontSize: '0.9rem', textAlign: 'center' }}>{t('ui.failed')}</Typography>
                             <Link sx={{ fontSize: '0.75rem', textAlign: 'center', color: '#666' }}>
-                                点击这里重试
+                                {/* 点击这里重试 */}
+                                {t('ui.clickToRetry')}
                             </Link>
                         </Stack>
                     </>
@@ -355,7 +364,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                                 {bundleDisplayName || name}
                             </Typography>
                             <Typography sx={{ fontSize: '0.75rem', textAlign: 'center', color: '#666' }}>
-                                {formatFileSize(fileSize) || '下载完成'}
+                                {formatFileSize(fileSize) || t('ui.completed')}
                             </Typography>
                         </Stack>
                     </>
@@ -376,7 +385,8 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                                     width: '100%',
                                 }}
                             >
-                                {name || '未知应用'}
+                                {/* {name || '未知应用'} */}
+                                {name || t('ui.unknown')}
                             </Typography>
                             <Typography sx={{ fontSize: '0.8rem', textAlign: 'center', color: '#666' }}>
                                 —
@@ -466,72 +476,72 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                         <Stack spacing={1}>
                             {bundleDisplayName && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>应用名称</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appName_label')}</Typography>
                                     <Typography level="body-md">{bundleDisplayName}</Typography>
                                 </Box>
                             )}
                             {artistName && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>开发者</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.developer')}</Typography>
                                     <Typography level="body-md">{artistName}</Typography>
                                 </Box>
                             )}
                             {bundleShortVersionString && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>版本号</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appVersion')}</Typography>
                                     <Typography level="body-md">{bundleShortVersionString}</Typography>
                                 </Box>
                             )}
                             {bundleVersion && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>构建版本</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.buildVersion')}</Typography>
                                     <Typography level="body-md">{bundleVersion}</Typography>
                                 </Box>
                             )}
                             {softwareVersionBundleId && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>Bundle ID</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.bundleId')}</Typography>
                                     <Typography level="body-md">{softwareVersionBundleId}</Typography>
                                 </Box>
                             )}
                             {itemId && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>应用ID</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appId')}</Typography>
                                     <Typography level="body-md">{itemId}</Typography>
                                 </Box>
                             )}
                             {softwareVersionExternalIdentifier && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>版本 ID</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.versionId')}</Typography>
                                     <Typography level="body-md">{softwareVersionExternalIdentifier}</Typography>
                                 </Box>
                             )}
                             {productType && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>产品类型</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.productType')}</Typography>
                                     <Typography level="body-md">{productType}</Typography>
                                 </Box>
                             )}
                             {fileSize && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>文件大小</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.fileSize')}</Typography>
                                     <Typography level="body-md">{formatFileSize(fileSize)}</Typography>
                                 </Box>
                             )}
                             {releaseDate && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>发布日期</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.releaseDate')}</Typography>
                                     <Typography level="body-md">{formatDate(releaseDate)}</Typography>
                                 </Box>
                             )}
                             {createdAt && (
                                 <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>下载时间</Typography>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.downloadTime')}</Typography>
                                     <Typography level="body-md">{formatDate(createdAt)}</Typography>
                                 </Box>
                             )}
                             <Box>
-                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>文件名</Typography>
+                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.fileName')}</Typography>
                                 <Typography level="body-md">{name}</Typography>
                             </Box>
                         </Stack>
@@ -550,13 +560,13 @@ export default function IpaIcon({ item, size = 128, isDragging = false }) {
                         color="danger"
                         onClick={handleDeleteTask}
                     >
-                        删除
+                        {t('ui.delete')}
                     </Button>
                     <Button
                         startDecorator={<DownloadIcon />}
                         onClick={handleDownload}
                     >
-                        下载
+                        {t('ui.download')}
                     </Button>
                 </Stack>
             </Sheet>
