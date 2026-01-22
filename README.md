@@ -444,11 +444,6 @@ dl_latest.sh
 docker build -t ipaharbor . --load
 ```
 
----
-
-The open-source release was done rather quickly; i18n translations will be added in future commits.
-
-
 ## 致谢
 
 本项目使用了以下开源项目的官方二进制文件：  
