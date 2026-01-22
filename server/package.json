@@ -1,6 +1,6 @@
 {
     "name": "ipa-harbor-server",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "description": "RESTful API wrapper for ipatool",
     "main": "app.js",
     "scripts": {

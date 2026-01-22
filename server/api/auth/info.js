@@ -54,10 +54,20 @@ async function infoHandler(req, res) {
             const result = await executeIpatool(command);
 
             if (result.success) {
+                const userData = result.data || result.rawOutput;
+
+                // 如果有用户邮箱，尝试从全局 Map 中获取地区信息
+                if (userData && userData.email) {
+                    const userRegion = global.userRegions?.get(userData.email);
+                    if (userRegion) {
+                        userData.region = userRegion;
+                    }
+                }
+
                 return res.json({
                     success: true,
                     message: '获取认证信息成功',
-                    data: result.data || result.rawOutput
+                    data: userData
                 });
             } else {
                 return res.status(500).json({

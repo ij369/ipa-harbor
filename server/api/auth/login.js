@@ -152,7 +152,7 @@ async function loginHandler(req, res) {
 
             return res.status(500).json({
                 success: false,
-                message: '登录过程中发生错误',
+                message: 'APPLE ID 登录过程中发生错误',
                 error: execError.message || '执行命令失败'
             });
         }

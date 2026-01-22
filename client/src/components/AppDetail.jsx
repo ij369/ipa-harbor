@@ -41,7 +41,7 @@ export default function AppDetail({ app }) {
     const [dataSource, setDataSource] = useState(null); // 数据源标记
     const [activeTab, setActiveTab] = useState(0); // 管理tabs状态
 
-    const { taskList } = useApp();
+    const { taskList, user } = useApp();
 
     useEffect(() => {
         setActiveTab(0);
@@ -110,9 +110,19 @@ export default function AppDetail({ app }) {
     if (!app) {
         return (
             <Box sx={{ textAlign: 'center', py: 4 }}>
-                <Typography level="body-lg" sx={{ color: 'text.secondary' }}>
+                <CircularProgress sx={{ mb: 2 }} />
+                <Typography level="body-lg" sx={{ color: 'text.secondary', mb: 2 }}>
                     {t('ui.loading')}
                 </Typography>
+                {user?.region ? (
+                    <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                        {t('ui.currentRegionDisplay', { region: user.region.toUpperCase() })}
+                    </Typography>
+                ) : (
+                    <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                        {t('ui.noRegionHint')}
+                    </Typography>
+                )}
             </Box>
         );
     }
@@ -955,8 +965,17 @@ export default function AppDetail({ app }) {
 
                     {/* 历史版本列表 */}
                     {versionsLoading ? (
-                        <Box sx={{ display: 'flex', justifyContent: 'center', py: 4 }}>
-                            <CircularProgress />
+                        <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', py: 4 }}>
+                            <CircularProgress sx={{ mb: 2 }} />
+                            {user?.region ? (
+                                <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                                    {t('ui.currentRegionDisplay', { region: user.region.toUpperCase() })}
+                                </Typography>
+                            ) : (
+                                <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                                    {t('ui.noRegionHint')}
+                                </Typography>
+                            )}
                         </Box>
                     ) : versionsError ? (
                         <Stack sx={{ textAlign: 'center', alignItems: 'center', py: 4 }} gap={1}>

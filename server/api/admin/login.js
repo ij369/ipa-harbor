@@ -73,7 +73,7 @@ async function loginHandler(req, res) {
         console.error('管理员登录错误:', error);
         return res.status(500).json({
             success: false,
-            message: '登录过程中发生错误',
+            message: '管理员登录过程中发生错误',
             error: error.message
         });
     }

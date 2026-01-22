@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Box,
     Button,
@@ -8,7 +8,8 @@ import {
     Menu,
     MenuItem,
     MenuButton,
-    Dropdown
+    Dropdown,
+    Divider
 } from '@mui/joy';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
@@ -16,12 +17,15 @@ import { revokeAuth } from '../utils/api';
 
 import Swal from 'sweetalert2';
 import LogoutIcon from '@mui/icons-material/Logout';
+import PublicIcon from '@mui/icons-material/Public';
 import { useTranslation } from 'react-i18next';
+import RegionSelector from './RegionSelector';
 
 export default function UserStatus() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { user, isAuthenticated, loading, logout } = useApp();
+    const { user, isAuthenticated, loading, logout, setUser } = useApp();
+    const [regionDialogOpen, setRegionDialogOpen] = useState(false);
 
     const handleLogout = async () => {
         try {
@@ -63,6 +67,17 @@ export default function UserStatus() {
         navigate('/apple-id');
     };
 
+    const handleRegionSelect = () => {
+        setRegionDialogOpen(true);
+    };
+
+    const handleRegionDialogClose = (updatedUserData) => {
+        setRegionDialogOpen(false);
+        if (updatedUserData) {
+            setUser(updatedUserData);
+        }
+    };
+
     if (loading) {
         return (
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -97,7 +112,7 @@ export default function UserStatus() {
                 </Avatar>
             </MenuButton>
 
-            <Menu placement="bottom-end" sx={{ minWidth: 180 }}>
+            <Menu placement="bottom-end" sx={{ minWidth: 200 }}>
                 {/* <MenuItem disabled>当前 Apple ID 已登录</MenuItem> */}
                 <MenuItem disabled>{t('ui.currentAppleIdLoggedIn')}</MenuItem>
                 <MenuItem disabled>
@@ -113,13 +128,36 @@ export default function UserStatus() {
                     </Stack>
                 </MenuItem>
 
-                <MenuItem onClick={handleLogout} color="danger"
-                >
+                <Divider />
+
+                <MenuItem onClick={handleRegionSelect}>
+                    <PublicIcon />
+                    <Stack direction="column" spacing={0.3}>
+                        <Typography level="body-sm">
+                            {t('ui.specifyRegion')}
+                        </Typography>
+                        {user.region && (
+                            <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                                {t('ui.currentRegion', { region: user.region.toUpperCase() })}
+                            </Typography>
+                        )}
+                    </Stack>
+                </MenuItem>
+
+                <Divider />
+
+                <MenuItem onClick={handleLogout} color="danger">
                     <LogoutIcon />
                     {/* 撤销登录 */}
                     {t('ui.revokeLogin')}
                 </MenuItem>
             </Menu>
+
+            <RegionSelector
+                open={regionDialogOpen}
+                onClose={handleRegionDialogClose}
+                currentRegion={user?.region}
+            />
         </Dropdown>
     );
 }

@@ -30,7 +30,7 @@ RUN set -ex && \
     cp "$IPATOOL_BIN" /app/bin/ipatool && \
     chmod +x /app/bin/ipatool && \
     rm -rf /tmp/ipatool && \
-    find /app/bin ! -name "ipatool" -type f -exec rm -f {} + && \
+    find /app/bin ! -name "ipatool" ! -name "LICENSE.txt" -type f -exec rm -f {} + && \
     rm -f /app/Dockerfile /app/.dockerignore && \
     echo "ipatool installed successfully for $TARGETARCH"
 

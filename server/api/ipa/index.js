@@ -3,14 +3,50 @@ const router = express.Router();
 const path = require('path');
 const fs = require('fs');
 const https = require('https');
+const { exec } = require('child_process');
 
 // 导入IPA相关的路由
 const { metadataHandler, parseIpaMetadata } = require('./metadata');
 
+const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
+const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+
+/**
+ * 获取当前用户的地区设置
+ */
+async function getUserRegion() {
+    return new Promise((resolve) => {
+        const command = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+
+        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
+            if (error) {
+                resolve(null);
+            } else {
+                try {
+                    const result = JSON.parse(stdout);
+                    if (result.email) {
+                        const region = global.userRegions?.get(result.email);
+                        resolve(region || null);
+                    } else {
+                        resolve(null);
+                    }
+                } catch (parseError) {
+                    resolve(null);
+                }
+            }
+        });
+    });
+}
+
 // 获取应用图标URL的辅助函数
-async function getAppIconUrls(appId) {
+async function getAppIconUrls(appId, userRegion = null) {
     return new Promise((resolve, reject) => {
-        const lookupUrl = `https://itunes.apple.com/lookup?id=${appId}`;
+        let lookupUrl;
+        if (userRegion) {
+            lookupUrl = `https://itunes.apple.com/${userRegion}/lookup?id=${appId}`;
+        } else {
+            lookupUrl = `https://itunes.apple.com/lookup?id=${appId}`;
+        }
 
         https.get(lookupUrl, (response) => {
             let data = '';
@@ -81,8 +117,11 @@ router.get('/install-package/:fileName/manifest.plist', async (req, res) => {
             // 从文件名中提取appId
             const appId = fileName.split('_')[0];
 
+            // 获取用户地区设置
+            const userRegion = await getUserRegion();
+
             // 获取图标URL
-            const iconUrls = await getAppIconUrls(appId);
+            const iconUrls = await getAppIconUrls(appId, userRegion);
             const iconUrl57 = metadata.softwareIcon57x57URL || iconUrls.iconUrl60 || '';
             const iconUrl512 = iconUrls.iconUrl512 || '';
 

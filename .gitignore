@@ -5,3 +5,5 @@ server/bin/*
 push.sh
 *.tmp
 *.ipa
+.env*
+server/static/

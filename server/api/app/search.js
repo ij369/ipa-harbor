@@ -58,8 +58,26 @@ async function searchHandler(req, res) {
 
         const parsedLimit = isNaN(limit) ? 10 : parseInt(limit); // 如果limit不是数字，则默认为10
 
+        // 获取用户设置的地区（通过 ipatool 获取当前用户邮箱）
+        let userRegion = null;
+        try {
+            const infoCommand = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+            const infoResult = await executeIpatool(infoCommand);
+            if (infoResult.success && infoResult.data?.email) {
+                userRegion = global.userRegions?.get(infoResult.data.email);
+            }
+        } catch (error) {
+        }
+
         // 构建ipatool search命令
-        const command = `"${IPATOOL_PATH}" search "${keyword}" --limit ${parsedLimit} --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+        let command = `"${IPATOOL_PATH}" search "${keyword}" --limit ${parsedLimit}`;
+
+        // 如果用户设置了地区，添加 country 参数
+        if (userRegion) {
+            command += ` --country "${userRegion}"`;
+        }
+
+        command += ` --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
 
         // console.log(`执行搜索命令: ${command}`);
 

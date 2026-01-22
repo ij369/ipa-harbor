@@ -1,9 +1,8 @@
 import React from 'react';
 import { IconButton, Dropdown, Menu, MenuItem, MenuButton, Select, Option } from '@mui/joy';
-import { Language } from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { languages, normalizeLanguageCode } from '../i18n';
-
+import TranslateIcon from '@mui/icons-material/Translate';
 /**
  * 语言切换
  * @param {string} variant - 'icon' 'select' 
@@ -65,7 +64,7 @@ export default function LanguageSwitcher({
                 }}
                 sx={sx}
             >
-                <Language />
+                <TranslateIcon />
             </MenuButton>
             <Menu placement="bottom-end">
                 {languages.map((lang) => (

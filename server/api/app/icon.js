@@ -1,14 +1,47 @@
 const https = require('https');
+const { exec } = require('child_process');
+const path = require('path');
+
+// ipatool二进制文件路径
+const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
+const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
 
 // 1×1 透明 GIF
 const ONE_PIXEL_GIF_BASE64 =
     'R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==';
 
 /**
+ * 获取当前用户的地区设置
+ */
+async function getUserRegion() {
+    return new Promise((resolve) => {
+        const command = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+        
+        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
+            if (error) {
+                resolve(null);
+            } else {
+                try {
+                    const result = JSON.parse(stdout);
+                    if (result.email) {
+                        const region = global.userRegions?.get(result.email);
+                        resolve(region || null);
+                    } else {
+                        resolve(null);
+                    }
+                } catch (parseError) {
+                    resolve(null);
+                }
+            }
+        });
+    });
+}
+
+/**
  * GET /icon/:appid?size=60
  * 从 iTunes Lookup API 获取 App 图标（找不到则返回 1×1 占位图）
  */
-const getAppIcon = (req, res) => {
+const getAppIcon = async (req, res) => {
     const appId = req.params.appid;
     const { size = 100 } = req.query;
 
@@ -17,7 +50,15 @@ const getAppIcon = (req, res) => {
         return sendPlaceholder(res);
     }
 
-    const lookupUrl = `https://itunes.apple.com/lookup?id=${appId}`;
+    // 获取用户地区设置
+    const userRegion = await getUserRegion();
+    
+    let lookupUrl;
+    if (userRegion) {
+        lookupUrl = `https://itunes.apple.com/${userRegion}/lookup?id=${appId}`;
+    } else {
+        lookupUrl = `https://itunes.apple.com/lookup?id=${appId}`;
+    }
 
     https
         .get(lookupUrl, (response) => {
@@ -86,10 +127,19 @@ const getAppIcon = (req, res) => {
 };
 
 // 获取原始应用图标的URL
-const getAppIconUrl = (req, res) => {
+const getAppIconUrl = async (req, res) => {
     const appId = req.params.appid;
     const size = req.params.size;
-    const lookupUrl = `https://itunes.apple.com/lookup?id=${appId}`;
+    
+    // 获取用户地区设置
+    const userRegion = await getUserRegion();
+    
+    let lookupUrl;
+    if (userRegion) {
+        lookupUrl = `https://itunes.apple.com/${userRegion}/lookup?id=${appId}`;
+    } else {
+        lookupUrl = `https://itunes.apple.com/lookup?id=${appId}`;
+    }
     https
         .get(lookupUrl, (response) => {
             let data = '';

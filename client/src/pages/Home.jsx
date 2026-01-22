@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Box,
     Stack,
@@ -9,20 +9,32 @@ import {
     Sheet,
     Chip,
     CircularProgress,
-    Avatar
+    Avatar,
+    IconButton,
+    Dropdown,
+    Menu,
+    MenuItem,
+    MenuButton
 } from '@mui/joy';
-import { Search, Download } from '@mui/icons-material';
+import { Search, Download, Public } from '@mui/icons-material';
 import { searchApps, getAppDetails, getAppIconUrl } from '../utils/api';
 import Dialog from '../components/Dialog';
 import AppDetail from '../components/AppDetail';
+import RegionSelector from '../components/RegionSelector';
 import Swal from 'sweetalert2';
 import { isMobile as isMobile } from 'react-device-detect';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { useApp } from '../contexts/AppContext';
 
 export default function Home() {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const { user, setUser } = useApp();
+    const [searchMode, setSearchMode] = useState(() => {
+        const savedMode = localStorage.getItem('searchMode');
+        return savedMode === 'id' || savedMode === 'keyword' ? savedMode : 'keyword';
+    });
     const [keyword, setKeyword] = useState('');
     const [loading, setLoading] = useState(false);
     const [searchResults, setSearchResults] = useState(null);
@@ -30,38 +42,83 @@ export default function Home() {
     const [appDetails, setAppDetails] = useState([]);
     const [currentDetailIndex, setCurrentDetailIndex] = useState(0);
     const [detailLoading, setDetailLoading] = useState(false);
+    const [regionDialogOpen, setRegionDialogOpen] = useState(false);
+    const [searchModeDropdownOpen, setSearchModeDropdownOpen] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem('searchMode', searchMode);
+    }, [searchMode]);
 
     const handleSearch = async () => {
         if (!keyword.trim()) {
             Swal.fire({
                 icon: 'warning',
-                title: t('ui.searchPlaceholder'), // 输入应用名称进行搜索...
-                confirmButtonText: t('ui.confirm') // 确定
+                title: searchMode === 'keyword' ? t('ui.searchPlaceholder') : t('ui.enterAppId'),
+                confirmButtonText: t('ui.confirm')
             });
             return;
         }
 
         setLoading(true);
+
         try {
-            const response = await searchApps(keyword.trim());
-            if (response.success) {
-                setSearchResults(response);
+            if (searchMode === 'id') {
+                // 按ID搜索：解析ID并直接获取详情
+                const appId = extractAppId(keyword);
+
+                if (!appId) {
+                    Swal.fire({
+                        icon: 'warning',
+                        title: t('ui.invalidAppId'),
+                        text: t('ui.invalidAppIdFormat'),
+                        confirmButtonText: t('ui.confirm')
+                    });
+                    setLoading(false);
+                    return;
+                }
+
+                setDetailLoading(true);
+                setShowDetailDialog(true);
+
+                const response = await getAppDetails([appId]);
+
+                if (response.success && response.data) {
+                    setAppDetails(response.data);
+                    setCurrentDetailIndex(0);
+                    setSearchResults(null);
+                    Swal.fire({
+                        icon: 'error',
+                        title: t('ui.getDetailsFailed'),
+                        text: response.message || 'Failed to get app details',
+                        confirmButtonText: t('ui.confirm')
+                    });
+                    setShowDetailDialog(false);
+                }
+            } else {
+                // 按关键词搜索
+                const response = await searchApps(keyword.trim());
+                if (response.success) {
+                    setSearchResults(response);
+                }
             }
         } catch (error) {
             console.error('搜索失败:', error.message);
             Swal.fire({
                 icon: 'error',
-                title: t('ui.searchFailed'), // 搜索失败
+                title: searchMode === 'keyword' ? t('ui.searchFailed') : t('ui.getDetailsFailed'),
                 text: error.message,
                 confirmButtonText: t('ui.confirm')
             }).then(() => {
                 if (error.message.includes('认证') || error.message.includes('登录') || error.message.includes('token')) {
-                    // window.location.href = '/apple-id';
                     navigate('/apple-id');
                 }
             });
+            if (searchMode === 'id') {
+                setShowDetailDialog(false);
+            }
         } finally {
             setLoading(false);
+            setDetailLoading(false);
         }
     };
 
@@ -124,6 +181,41 @@ export default function Home() {
         setCurrentDetailIndex(0);
     };
 
+    const handleSearchModeChange = (mode) => {
+        setSearchMode(mode);
+        setKeyword('');
+        setSearchResults(null);
+        setAppDetails([]);
+        setShowDetailDialog(false);
+        setCurrentDetailIndex(0);
+    };
+
+    /**
+     * 从输入中提取应用ID
+     * 支持三种格式：
+     * 1. id6755630162
+     * 2. 6755630162
+     * 3. https://apps.apple.com/cn/app/.../id6755630162
+     */
+    const extractAppId = (input) => {
+        const trimmed = input.trim();
+        const urlMatch = trimmed.match(/\/id(\d+)(?:\?|$|\/)/i);
+        if (urlMatch) {
+            return urlMatch[1];
+        }
+
+        const idPrefixMatch = trimmed.match(/^id(\d+)$/i);
+        if (idPrefixMatch) {
+            return idPrefixMatch[1];
+        }
+
+        if (/^\d+$/.test(trimmed)) {
+            return trimmed;
+        }
+
+        return null;
+    };
+
     return (
         <Box>
             <Typography level="h2" sx={{ mb: 3 }}>
@@ -133,13 +225,114 @@ export default function Home() {
 
             <Stack direction="row" spacing={2} sx={{ mb: 4 }}>
                 <Input
-                    placeholder={t('ui.searchPlaceholder')}
+                    placeholder={searchMode === 'keyword' ? t('ui.searchPlaceholder') : t('ui.enterAppId')}
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
                     onKeyPress={handleKeyPress}
                     disabled={loading}
                     sx={{ flex: 1 }}
-                    startDecorator={<Search />}
+                    startDecorator={
+                        <Dropdown
+                            open={searchModeDropdownOpen}
+                            onOpenChange={(event, isOpen) => {
+                                setSearchModeDropdownOpen(isOpen);
+                            }}
+                        >
+                            <MenuButton
+                                slots={{ root: IconButton }}
+                                slotProps={{
+                                    root: {
+                                        variant: 'plain',
+                                        size: 'sm',
+                                        sx: {
+                                            minHeight: 'auto',
+                                            '&:hover': {
+                                                bgcolor: 'background.level1'
+                                            }
+                                        }
+                                    }
+                                }}
+                            >
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                    <Search />
+                                    <Box
+                                        component="span"
+                                        sx={{
+                                            width: 0,
+                                            height: 0,
+                                            borderLeft: '4px solid transparent',
+                                            borderRight: '4px solid transparent',
+                                            borderTop: '4px solid',
+                                            borderTopColor: 'text.tertiary',
+                                            ml: 0.25,
+                                            transition: 'transform 0.2s ease-in-out',
+                                            transform: searchModeDropdownOpen ? 'rotate(180deg)' : 'rotate(0deg)',
+                                            transformOrigin: 'center'
+                                        }}
+                                    />
+                                </Stack>
+                            </MenuButton>
+                            <Menu
+                                placement="bottom-start"
+                                onClose={() => setSearchModeDropdownOpen(false)}
+                            >
+                                <MenuItem
+                                    selected={searchMode === 'keyword'}
+                                    onClick={() => {
+                                        handleSearchModeChange('keyword');
+                                        setSearchModeDropdownOpen(false);
+                                    }}
+                                >
+                                    {t('ui.searchByKeyword')}
+                                </MenuItem>
+                                <MenuItem
+                                    selected={searchMode === 'id'}
+                                    onClick={() => {
+                                        handleSearchModeChange('id');
+                                        setSearchModeDropdownOpen(false);
+                                    }}
+                                >
+                                    {t('ui.searchById')}
+                                </MenuItem>
+                            </Menu>
+                        </Dropdown>
+                    }
+                    endDecorator={
+                        <IconButton
+                            variant="plain"
+                            size="sm"
+                            onClick={() => setRegionDialogOpen(true)}
+                            sx={{
+                                minHeight: 'auto',
+                                '&:hover': {
+                                    bgcolor: 'background.level1',
+                                    '& .MuiChip-root': {
+                                        bgcolor: 'primary.softBg'
+                                    }
+                                }
+                            }}
+                        >
+                            {user?.region ? (
+                                <Chip
+                                    size="sm"
+                                    variant="soft"
+                                    color="primary"
+                                    sx={{
+                                        fontSize: '0.75rem',
+                                        fontWeight: 'bold',
+                                        minHeight: '20px',
+                                        height: '20px',
+                                        px: 0.75,
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {user.region.toUpperCase()}
+                                </Chip>
+                            ) : (
+                                <Public sx={{ fontSize: '1.2rem', color: 'text.tertiary' }} />
+                            )}
+                        </IconButton>
+                    }
                 />
                 <Button
                     onClick={handleSearch}
@@ -260,6 +453,17 @@ export default function Home() {
                     app={detailLoading ? null : appDetails[currentDetailIndex]}
                 />
             </Dialog>
+
+            <RegionSelector
+                open={regionDialogOpen}
+                onClose={(updatedUserData) => {
+                    setRegionDialogOpen(false);
+                    if (updatedUserData) {
+                        setUser(updatedUserData);
+                    }
+                }}
+                currentRegion={user?.region}
+            />
         </Box>
     );
 }

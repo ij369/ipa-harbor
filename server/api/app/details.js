@@ -1,4 +1,30 @@
 const https = require('https');
+const { exec } = require('child_process');
+const path = require('path');
+
+// ipatool二进制文件路径
+const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
+const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+
+/**
+ * 执行ipatool命令获取用户信息
+ */
+function executeIpatool(command) {
+    return new Promise((resolve, reject) => {
+        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
+            if (error) {
+                reject(error);
+            } else {
+                try {
+                    const result = JSON.parse(stdout);
+                    resolve({ success: true, data: result });
+                } catch (parseError) {
+                    resolve({ success: true, rawOutput: stdout });
+                }
+            }
+        });
+    });
+}
 
 /**
  * 获取应用详情
@@ -35,8 +61,24 @@ async function detailsHandler(req, res) {
             });
         }
 
-        // 构建iTunes API URL
-        const itunesUrl = `https://itunes.apple.com/lookup?id=${idArray.join(',')}&lang=${lang}&entity=software`;
+        // 获取用户设置的地区（通过 ipatool 获取当前用户邮箱）
+        let userRegion = null;
+        try {
+            const infoCommand = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+            const infoResult = await executeIpatool(infoCommand);
+            if (infoResult.success && infoResult.data?.email) {
+                userRegion = global.userRegions?.get(infoResult.data.email);
+            }
+        } catch (error) {
+        }
+
+        // 构建iTunes API URL，支持地区参数
+        let itunesUrl;
+        if (userRegion) {
+            itunesUrl = `https://itunes.apple.com/${userRegion}/lookup?id=${idArray.join(',')}&lang=${lang}&entity=software`;
+        } else {
+            itunesUrl = `https://itunes.apple.com/lookup?id=${idArray.join(',')}&lang=${lang}&entity=software`;
+        }
 
         console.log(`调用iTunes API: ${itunesUrl}`);
 

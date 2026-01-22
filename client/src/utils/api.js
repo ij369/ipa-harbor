@@ -257,3 +257,15 @@ export async function adminSetup(username, password) {
         body: JSON.stringify({ username, password })
     });
 }
+
+/**
+ * 设置用户地区
+ * @param {string} region - 地区代码（如 'us', 'cn' 等）
+ * @returns {Promise}
+ */
+export async function setUserRegion(region) {
+    return apiRequest('/v1/auth/region', {
+        method: 'POST',
+        body: JSON.stringify({ region })
+    });
+}
