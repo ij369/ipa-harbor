@@ -213,6 +213,14 @@
         "invalidAppId": "Please enter a valid App ID",
         "invalidAppIdFormat": "Supported formats: id6746177719, 6746177719, or App Store link",
         "currentRegionDisplay": "Region: {{region}}",
-        "noRegionHint": "No region specified. If loading is slow, try specifying a region."
+        "noRegionHint": "No region specified. If loading is slow, try specifying a region.",
+        "newDownload": "New Download",
+        "enterVersionId": "Enter Version ID",
+        "optional": "Optional",
+        "versionIdHint": "Leave empty to download latest version",
+        "memory": "Memory",
+        "memoryNotebook": "Notebook",
+        "memoryPlaceholder": "Memory content will be displayed here...",
+        "memorySaved": "Saved"
     }
 }

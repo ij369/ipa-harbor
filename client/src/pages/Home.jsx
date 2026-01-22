@@ -82,10 +82,11 @@ export default function Home() {
 
                 const response = await getAppDetails([appId]);
 
-                if (response.success && response.data) {
+                if (response.success && response.data && response.data.length > 0) {
                     setAppDetails(response.data);
                     setCurrentDetailIndex(0);
                     setSearchResults(null);
+                } else {
                     Swal.fire({
                         icon: 'error',
                         title: t('ui.getDetailsFailed'),

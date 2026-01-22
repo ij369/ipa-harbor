@@ -13,7 +13,8 @@ export default function Dialog({
     onPrevious,
     onNext,
     hasPrevious,
-    hasNext
+    hasNext,
+    headerActions
 }) {
     const { t } = useTranslation();
     // 处理ESC键关闭
@@ -65,6 +66,7 @@ export default function Dialog({
                                 </button>
                             </>
                         )}
+                        {headerActions}
                         <IconButton className="dialog-close" onClick={onClose} aria-label={t('ui.close')}>
                             <CloseIcon />
                         </IconButton>

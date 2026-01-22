@@ -1,15 +1,19 @@
-import React, { useMemo, useState } from 'react';
-import { Box, Typography, Grid, Chip, Stack, Divider } from '@mui/joy';
+import React, { useMemo, useState, lazy, Suspense } from 'react';
+import { Box, Typography, Grid, Chip, Stack, Divider, CircularProgress } from '@mui/joy';
 import { useApp } from '../contexts/AppContext';
 import IpaIcon from '../components/IpaIcon';
 import { Check } from '@mui/icons-material';
 import formatFileSize from '../utils/formatFileSize.js';
 import { useTranslation } from 'react-i18next';
+import { NewDownloadButton } from '../components/NewDownloadDialog';
+
+const NewDownloadDialog = lazy(() => import('../components/NewDownloadDialog'));
 
 export default function DownloadManager() {
     const { t } = useTranslation();
     const { taskList, fileList } = useApp();
     const [selectedFilter, setSelectedFilter] = useState('all');
+    const [newDownloadDialogOpen, setNewDownloadDialogOpen] = useState(false);
 
     const allItems = useMemo(() => {
         const items = [];
@@ -131,13 +135,34 @@ export default function DownloadManager() {
 
     return (
         <Box>
-            <Stack onClick={() => { setSelectedFilter('all') }} direction="row" gap={2} sx={{ mb: 3, flexWrap: 'wrap', cursor: 'pointer' }}>
-                <Typography level="h2" >
-                    {/* 下载管理 */}
-                    {t('ui.downloadManagerTitle')}
-                </Typography>
-                {allItems.length}
+            <Stack
+                onClick={() => { setSelectedFilter('all') }}
+                direction="row"
+                gap={2}
+                sx={{ mb: 3, flexWrap: 'wrap', cursor: 'pointer', alignItems: 'center' }}
+                justifyContent="space-between"
+            >
+                <Stack direction="row" gap={2} sx={{ alignItems: 'center' }}>
+                    <Typography level="h2" >
+                        {/* 下载管理 */}
+                        {t('ui.downloadManagerTitle')}
+                    </Typography>
+                    {allItems.length}
+                </Stack>
+                <NewDownloadButton
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        setNewDownloadDialogOpen(true);
+                    }}
+                />
             </Stack>
+
+            <Suspense fallback={<CircularProgress />}>
+                <NewDownloadDialog
+                    isOpen={newDownloadDialogOpen}
+                    onClose={() => setNewDownloadDialogOpen(false)}
+                />
+            </Suspense>
 
             <Stack direction="row" gap={2} sx={{ mb: 3, flexWrap: 'wrap' }}>
                 <Chip

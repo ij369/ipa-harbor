@@ -213,6 +213,14 @@
         "invalidAppId": "请输入有效的应用ID",
         "invalidAppIdFormat": "支持的格式：id6755630162、6755630162 或 App Store 链接",
         "currentRegionDisplay": "区域：{{region}}",
-        "noRegionHint": "当前未指定地区，如果长时间未加载，可以尝试指定地区"
+        "noRegionHint": "当前未指定地区，如果长时间未加载，可以尝试指定地区",
+        "newDownload": "新建下载",
+        "enterVersionId": "输入版本ID",
+        "optional": "可选",
+        "versionIdHint": "留空则下载最新版本",
+        "memory": "记忆",
+        "memoryNotebook": "记事本",
+        "memoryPlaceholder": "记忆的内容将显示在这里...",
+        "memorySaved": "已保存"
     }
 }

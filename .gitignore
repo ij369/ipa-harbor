@@ -7,3 +7,4 @@ push.sh
 *.ipa
 .env*
 server/static/
+server/data/*.json

@@ -903,19 +903,19 @@ export default function AppDetail({ app }) {
                         <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
                             <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.supportInfo')}</Typography>
                             <Stack gap={1}>
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">{t('ui.languages')}:</Typography>
-                                    <Typography level="body-sm">
+                                <Stack direction="row" gap={2}>
+                                    <Typography level="body-sm" sx={{ flexShrink: 0 }}>{t('ui.languages')}:</Typography>
+                                    <Typography level="body-sm" sx={{ textAlign: 'right', flex: 1 }}>
                                         {app.languageCodesISO2A ? app.languageCodesISO2A.join(', ') : t('ui.unknown')}
                                     </Typography>
                                 </Stack>
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">{t('ui.compatibility')}:</Typography>
-                                    <Typography level="body-sm">{app.minimumOsVersion ? `iOS ${app.minimumOsVersion}+` : t('ui.unknown')}</Typography>
+                                <Stack direction="row" gap={2}>
+                                    <Typography level="body-sm" sx={{ flexShrink: 0 }}>{t('ui.compatibility')}:</Typography>
+                                    <Typography level="body-sm" sx={{ textAlign: 'right', flex: 1 }}>{app.minimumOsVersion ? `iOS ${app.minimumOsVersion}+` : t('ui.unknown')}</Typography>
                                 </Stack>
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">{t('ui.bundleId')}:</Typography>
-                                    <Typography level="body-sm" sx={{ fontFamily: 'monospace' }}>
+                                <Stack direction="row" gap={2}>
+                                    <Typography level="body-sm" sx={{ flexShrink: 0 }}>{t('ui.bundleId')}:</Typography>
+                                    <Typography level="body-sm" sx={{ fontFamily: 'monospace', textAlign: 'right', flex: 1 }}>
                                         {app.bundleId}
                                     </Typography>
                                 </Stack>
