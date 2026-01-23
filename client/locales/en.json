@@ -190,7 +190,7 @@
         "footerSuffix": ", supports App search, historical version download and containerized deployment.",
         "specifyRegion": "Specify Region",
         "specifyRegionTitle": "Specify App Store Region",
-        "specifyRegionDescription": "Select a specific App Store region to display app details for the specified region.",
+        "specifyRegionDescription": "Select a specific App Store region to display app details for the specified region. It is recommended to use the same region as the currently logged in Apple ID.",
         "searchCountryPlaceholder": "Search for a country...",
         "regionUpdated": "Region Updated",
         "regionSetTo": "Region set to {{name}}",
@@ -210,12 +210,20 @@
         "currentRegionDisplay": "Region: {{region}}",
         "noRegionHint": "No region specified. If loading is slow, try specifying a region.",
         "newDownload": "New Download",
+        "enterAppId": "Enter App ID",
         "enterVersionId": "Enter Version ID",
         "optional": "Optional",
         "versionIdHint": "Leave empty to download latest version",
         "memory": "Memory",
         "memoryNotebook": "Notebook",
         "memoryPlaceholder": "Memory content will be displayed here...",
-        "memorySaved": "Saved"
+        "memorySaved": "Saved",
+        "loginIssuesTitle": "Possible reasons why login may fail",
+        "loginIssue1": "Please check your network connection or proxy",
+        "loginIssue2": "It is recommended to try logging in to this account on an Apple device and use it to download apps from the App Store.",
+        "loginIssue3": "If there are new terms of service that have not been accepted, you need to accept them before logging in",
+        "loginIssue4Part1": "If you have used something like Portainer to rebuild or create a copy, please delete it. This is usually a container network environment issue. If you are not familiar with it, the safest way is to use Docker CLI to create a new one according to the ",
+        "loginIssue4Part2": ".",
+        "githubReadme": "GitHub readme"
     }
 }

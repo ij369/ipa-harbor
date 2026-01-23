@@ -12,9 +12,13 @@ import {
     FormLabel,
     IconButton,
     Alert,
-    Divider
+    Divider,
+    Accordion,
+    AccordionSummary,
+    AccordionDetails,
+    Link
 } from '@mui/joy';
-import { ArrowBack, } from '@mui/icons-material';
+import { ArrowBack, ExpandMore } from '@mui/icons-material';
 import { login, revokeAuth } from '../utils/api';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
@@ -33,6 +37,7 @@ const AppleIdLogin = () => {
     const [loading, setLoading] = useState(false);
     const [showTwoFactor, setShowTwoFactor] = useState(false);
     const [error, setError] = useState('');
+    const [expanded, setExpanded] = useState(false);
 
     const handleInputChange = (field, value) => {
         setFormData(prev => ({
@@ -133,14 +138,16 @@ const AppleIdLogin = () => {
     };
 
     return (
-        <Box
+        <Stack
+            direction="column"
+            spacing={2}
             sx={{
-                display: 'flex',
-                justifyContent: 'center',
-                alignItems: 'center',
-                minHeight: '60vh',
-                p: 2
+                minHeight: 'calc(100vh - 64px)',
+                p: 2,
+                pt: 6
             }}
+            alignItems="center"
+            justifyContent="flex-start"
         >
             {isAuthenticated ?
                 <Card sx={{ width: '100%', maxWidth: 400 }}>
@@ -155,7 +162,7 @@ const AppleIdLogin = () => {
                     </CardContent>
                 </Card>
                 :
-                <Card sx={{ width: '100%', maxWidth: 400 }}>
+                <Card sx={{ width: '100%', maxWidth: 400, mt: 2 }}>
                     <CardContent>
                         <Stack direction="row" alignItems="center" spacing={2} sx={{ mb: 3 }}>
                             <IconButton
@@ -270,7 +277,67 @@ const AppleIdLogin = () => {
                         )}
                     </CardContent>
                 </Card>}
-        </Box>
+
+            {/* 常见问题折叠组件 */}
+            {!isAuthenticated && (
+                <Card sx={{ width: '100%', maxWidth: 400, mt: 2 }}>
+                    <CardContent>
+                        <Accordion expanded={expanded} onChange={(event, isExpanded) => setExpanded(isExpanded)}>
+                            <AccordionSummary
+                                expandIcon={<ExpandMore />}
+                                sx={{ px: 0 }}
+                            >
+                                <Typography level="title-md" color="text.secondary">
+                                    {t('ui.loginIssuesTitle')}
+                                </Typography>
+                            </AccordionSummary>
+                            <Box
+                                sx={{
+                                    px: 0,
+                                    pt: expanded ? 1 : 0,
+                                    maxHeight: expanded ? '500px' : '0px',
+                                    overflow: 'hidden',
+                                    transition: 'max-height 0.4s cubic-bezier(0.4, 0, 0.2, 1), padding-top 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                }}
+                            >
+                                <Box>
+                                    <Stack gap={1} sx={{ pl: 2, py: 1 }}>
+                                        <Stack direction="row" spacing={1}>
+                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>1.</Typography>
+                                            <Typography level="body-xs">
+                                                {t('ui.loginIssue1')}
+                                            </Typography>
+                                        </Stack>
+                                        <Stack direction="row" spacing={1}>
+                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>2.</Typography>
+                                            <Typography level="body-xs">
+                                                {t('ui.loginIssue2')}
+                                            </Typography>
+                                        </Stack>
+                                        <Stack direction="row" spacing={1}>
+                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>3.</Typography>
+                                            <Typography level="body-xs">
+                                                {t('ui.loginIssue3')}
+                                            </Typography>
+                                        </Stack>
+                                        <Stack direction="row" spacing={1}>
+                                            <Typography level="body-xs" sx={{ fontWeight: 'md' }}>4.</Typography>
+                                            <Typography level="body-xs" component="span">
+                                                {t('ui.loginIssue4Part1')}&nbsp;
+                                                <Link href="https://github.com/ij369/ipa-harbor/blob/main/README.md#quick-start" target="_blank" rel="noopener noreferrer">
+                                                    {t('ui.githubReadme')}&nbsp;
+                                                </Link>
+                                                {t('ui.loginIssue4Part2')}
+                                            </Typography>
+                                        </Stack>
+                                    </Stack>
+                                </Box>
+                            </Box>
+                        </Accordion>
+                    </CardContent>
+                </Card>
+            )}
+        </Stack>
     );
 };
 

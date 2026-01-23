@@ -153,7 +153,7 @@ export default function AppShell({ children }) {
                     borderColor: 'divider',
                     bgcolor: 'background.surface',
                     p: 1,
-                    // zIndex: 1000
+                    zIndex: 1
                 }}
             >
 

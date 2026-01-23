@@ -858,7 +858,7 @@ export default function RegionSelector({ open, onClose, currentRegion }) {
 
     return (
         <Modal open={open} onClose={() => onClose(false)}>
-            <ModalDialog sx={{ minWidth: 400 }}>
+            <ModalDialog sx={{ minWidth: 400, maxWidth: 540 }}>
                 <ModalClose />
                 <Typography level="h4" sx={{ mb: 2 }}>
                     {t('ui.specifyRegionTitle')}

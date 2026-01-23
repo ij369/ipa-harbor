@@ -139,7 +139,7 @@ async function loginHandler(req, res) {
                 });
             }
         } catch (execError) {
-            // console.error('执行ipatool命令时出错:', execError);
+            console.error('执行ipatool命令时出错:', execError?.stdout);
 
             // 检查错误信息中是否包含2FA相关内容
             if (execError.stderr && (execError.stderr.includes('2FA') || execError.stderr.includes('two-factor'))) {
@@ -152,7 +152,7 @@ async function loginHandler(req, res) {
 
             return res.status(500).json({
                 success: false,
-                message: 'APPLE ID 登录过程中发生错误',
+                message: execError?.stdout || 'APPLE ID 登录过程中发生错误',
                 error: execError.message || '执行命令失败'
             });
         }
