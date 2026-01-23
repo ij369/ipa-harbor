@@ -70,14 +70,7 @@ async function searchHandler(req, res) {
         }
 
         // 构建ipatool search命令
-        let command = `"${IPATOOL_PATH}" search "${keyword}" --limit ${parsedLimit}`;
-
-        // 如果用户设置了地区，添加 country 参数
-        if (userRegion) {
-            command += ` --country "${userRegion}"`;
-        }
-
-        command += ` --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+        const command = `"${IPATOOL_PATH}" search "${keyword}" --limit ${parsedLimit} --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
 
         // console.log(`执行搜索命令: ${command}`);
 
