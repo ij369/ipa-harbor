@@ -8,24 +8,31 @@ services:
       - "3443:3443"
     environment:
       - NODE_ENV=production
-      # 终端生成KEYCHAIN_PASSPHRASE的值
+      # Generate KEYCHAIN_PASSPHRASE in your terminal:
       # openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10; echo
-      # 最重要：建议随机一个字符串替换keychain_passphrase_here, 出于安全考虑不设置这个就禁止启动，是有必要的，这个字符串泄露会导致 Keychain 解开，Apple ID访问权限就打开了，所以放在环境变量里
+      # Required: replace keychain_passphrase_here with a random string. The app will not start without it.
+      # If this value is leaked, your Keychain can be unlocked and Apple ID access may be exposed.
       - KEYCHAIN_PASSPHRASE=keychain_passphrase_here
-      # Linux Docker 无 GUI keyring 时使用
+      # Use when running Linux Docker without a GUI keyring
       - DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
-      # http 端口
+      # HTTP port
       - PORT=3080
-      # https 端口
+      # Built-in HTTPS port (requires server.crt/server.key in certs/).
+      # Optional: remove this and the 3443 port mapping if you use HTTP only or reverse-proxy HTTP.
       - HTTPS_PORT=3443
-      # 如果你部署在公网一定要有ALLOWED_DOMAINS, 实现前端访问白名单，仅在浏览器层面禁止
+      # Browser access whitelist (CORS). Required when accessing via domain instead of localhost.
       - ALLOWED_DOMAINS=your-domain.com,another-domain.com
-      # 是否允许局域网访问, 如果部署在公网一定要禁用, 将允许以下网段访问
-      # 192.168.x.x,10.x.x.x,172.16-31.x.x
-      - ALLOW_LAN_ACCESS=true
+      # Public deployment: false. Local/LAN only: true (allows 192.168.x.x, 10.x.x.x, 172.16-31.x.x)
+      - ALLOW_LAN_ACCESS=false
+      # Optional: set to true for verbose logs (download debug, request logs, etc.)
+      # - ENABLE_MORE_LOGS=true
+      # Optional: override default concurrent downloads (default: 2)
+      # - MAX_CONCURRENT_DOWNLOADS=2
+      # Optional: change admin JWT secret on production deployments (default is insecure)
+      # - JWT_SECRET=your-random-secret
     volumes:
-      # 持久化数据目录，ipa，tmp(下载到一半的ipa)，还有管理员数据库存在这里
+      # Persist data: IPA files, partial downloads (tmp), admin database, and ipatool config ($HOME/.ipatool)
       - ./data:/app/data
-      # 持久化证书目录, 如果自签需要server.crt，server.key在certs这个文件夹下，建议持久化为卷或者绑一个系统路径
+      # Persist TLS certs. For built-in HTTPS, place server.crt and server.key in certs/
       - ./certs:/app/certs
     restart: unless-stopped

@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  ipa-harbor:
+    build: .
+    ports:
+      - "3080:3080"
+      - "3443:3443"
+    environment:
+      - NODE_ENV=production
+      # 终端生成KEYCHAIN_PASSPHRASE的值
+      # openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10; echo
+      # 最重要：建议随机一个字符串替换keychain_passphrase_here, 出于安全考虑不设置这个就禁止启动，是有必要的，这个字符串泄露会导致 Keychain 解开，Apple ID访问权限就打开了，所以放在环境变量里
+      - KEYCHAIN_PASSPHRASE=keychain_passphrase_here
+      # Linux Docker 无 GUI keyring 时使用
+      - DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
+      # http 端口
+      - PORT=3080
+      # 内置 HTTPS 端口（需在 certs/ 放置 server.crt、server.key）
+      # 可选：仅用 HTTP、localhost 或反向代理 HTTP 时，可删除此项及 ports 中的 3443 映射
+      - HTTPS_PORT=3443
+      # 通过域名访问时的浏览器白名单（CORS），非 localhost 场景必填
+      - ALLOWED_DOMAINS=your-domain.com,another-domain.com
+      # 公网部署：false；仅本地/局域网：true（允许 192.168.x.x、10.x.x.x、172.16-31.x.x）
+      - ALLOW_LAN_ACCESS=false
+      # 可选：设为 true 输出更详细日志（下载调试、请求日志等）
+      # - ENABLE_MORE_LOGS=true
+      # 可选：并发下载数（默认 2）
+      # - MAX_CONCURRENT_DOWNLOADS=2
+      # 可选：生产环境请修改 admin JWT 密钥（默认值不安全）
+      # - JWT_SECRET=your-random-secret
+    volumes:
+      # 持久化 data：IPA、未完成下载(tmp)、管理员数据库、ipatool 配置($HOME/.ipatool)
+      - ./data:/app/data
+      # 持久化证书目录, 如果自签需要server.crt，server.key在certs这个文件夹下，建议持久化为卷或者绑一个系统路径
+      - ./certs:/app/certs
+    restart: unless-stopped

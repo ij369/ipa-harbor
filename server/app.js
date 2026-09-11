@@ -23,23 +23,25 @@ process.stdout.write('\x1Bc');
 console.clear();
 
 const allowLAN = process.env.ALLOW_LAN_ACCESS === 'true';
-const allowedDomains = process.env.ALLOWED_DOMAINS?.split(',').map(d => d.trim()) || [];
+const allowedDomains = process.env.ALLOWED_DOMAINS?.split(',').map(d => d.trim()).filter(Boolean) || [];
+const green = '\x1b[32m';
+const red = '\x1b[31m';
+const yellow = '\x1b[33m';
+const cyan = '\x1b[36m';
+const bold = '\x1b[1m';
+const hrLine = '--------------------------------';
+const reset = '\x1b[0m'; // 结束样式
 
 if (NODE_ENV !== 'development') {
-    const green = '\x1b[32m';
-    const red = '\x1b[31m';
-    const yellow = '\x1b[33m';
-    const cyan = '\x1b[36m';
-    const reset = '\x1b[0m'; // 结束样式
-
-    console.log(`${cyan}局域网访问:${reset} ${allowLAN ? green + '已启用' : red + '已禁用'}${reset}`);
-    console.log(`${cyan}允许的域名:${reset} ${allowedDomains.join(',') || yellow + '无'}${reset}`);
-    console.log(`以上由环境变量决定，参考:\nhttps://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml\n`);
+    console.log(`${bold}IPA Harbor${reset}`);
+    console.log(hrLine);
+    console.log(`${yellow}Access settings:${reset}`);
+    console.log(`${cyan}LAN access:${reset} ${allowLAN ? green + 'enabled' : red + 'disabled'}${reset}`);
+    console.log(`${cyan}Allowed domains:${reset} ${allowedDomains.join(',') || yellow + 'none'}${reset}`);
+    console.log(`↳ For a full env template, see docker-compose.example.yml:\nhttps://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml\n`);
 } else {
-    console.log(`当前环境: development\n`);
+    console.log(`${yellow}Environment: ${NODE_ENV}${reset}\n`);
 }
-
-console.log(`---`);
 
 // === Express 基础配置 ===
 const app = express();
@@ -112,9 +114,9 @@ if (process.env.ENABLE_MORE_LOGS === 'true') {
     app.use(morgan('combined'));
 }
 
-if (KEYCHAIN_PASSPHRASE && NODE_ENV === 'production') {
-    console.log(`KEYCHAIN_PASSPHRASE 已设置`);
-}
+// if (KEYCHAIN_PASSPHRASE && NODE_ENV === 'production') {
+//     console.log(`${green}KEYCHAIN_PASSPHRASE is set${reset}`);
+// }
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
@@ -171,8 +173,8 @@ if (fs.existsSync(staticPath)) {
 // app.use('*', (req, res) => res.status(404).json({ error: 'Not Found' }));
 
 app.use((err, req, res, next) => {
-    if (err && err.message === 'Not allowed by CORS' && process.env.ENABLE_MORE_LOGS === 'true') {
-        console.warn(`拒绝跨域请求资源: ${req.headers.origin || '未知来源'}`);
+    if (err && err.message === 'Not allowed by CORS') {
+        console.warn(`CORS request rejected: ${req.headers.origin || 'unknown origin'}`);
         return sendError(res, 403, {
             message: '跨域请求被拒绝',
             errorMessageCode: 'CORS_NOT_ALLOWED',
@@ -201,24 +203,40 @@ try {
     const cert = fs.readFileSync(path.join(__dirname, 'certs/server.crt'));
     httpsServer = https.createServer({ key, cert }, app);
 
+    if (allowedDomains.length === 0) {
+        console.log(hrLine);
+        console.warn(`${yellow}ALLOWED_DOMAINS is not set:${reset}\n └ Browser access from your domain may be blocked.\n ↳ See docker-compose.example.yml: https://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml\n`);
+        console.log(hrLine);
+    }
+
     const wssSecure = new WebSocket.Server({ server: httpsServer });
     wsManager.attach(wssSecure, 'https');
 
-    httpsServer.listen(HTTPS_PORT, () => {
-        console.log(`HTTPS 服务器运行在  https://${HOST}:${HTTPS_PORT}`);
-        // console.log(`WebSocket: wss://${HOST}:${HTTPS_PORT}/download-task`);
-    });
+    httpsServer.listen(HTTPS_PORT);
 } catch (err) {
-    if (process.env.NODE_ENV === 'production') {
-        console.warn('HTTPS 未启用，certs/server.key 或 certs/server.crt 不存在');
+    const isLocalLanOnly = allowLAN && allowedDomains.length === 0;
+    if (process.env.NODE_ENV === 'production' && !isLocalLanOnly) {
+        console.log(hrLine);
+        console.warn(`${yellow}HTTPS Tutorial:${reset}\n Built-in HTTPS is not configured.\n ├ 1. Choose one:\n |    a) Place certs/server.key and certs/server.crt in certs/\n |    b) Reverse-proxy the HTTP port (e.g. nginx, Caddy) to handle HTTPS\n └ 2. Set ALLOWED_DOMAINS to your public domain\n \n ↳ You can also refer to docker-compose.example.yml\n`);
     }
 }
 
 // === 启动 HTTP 服务器 ===
 httpServer.listen(PORT, async () => {
-
-    console.log(`HTTP 服务器运行在   http://${HOST}:${PORT}`);
-    // console.log(`健康检查: http://${HOST}:${PORT}/health`);
+    console.log(hrLine);
+    console.log(`${green}Server started successfully.${reset}`);
+    if (NODE_ENV === 'production') {
+        console.log(`${green}HTTP port:${reset} ${PORT}`);
+        if (httpsServer) {
+            console.log(`${green}HTTPS port:${reset} ${HTTPS_PORT}`);
+        }
+    } else {
+        console.log(`${green}HTTP:${reset} http://${HOST}:${PORT}`);
+        if (httpsServer) {
+            console.log(`${green}HTTPS:${reset} https://${HOST}:${HTTPS_PORT}`);
+        }
+    }
+    console.log(hrLine);
 
     // 初始化数据库
     try {

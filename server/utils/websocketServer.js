@@ -121,7 +121,7 @@ class WebSocketManager {
                 const authResult = await this.authenticateWebSocket(req);
 
                 if (!authResult.success) {
-                    console.warn(`拒绝未授权的 WebSocket 连接: ${path} (来源: ${req.headers.origin || 'unknown'})`);
+                    console.warn(`Unauthorized WebSocket connection rejected: ${path} (origin: ${req.headers.origin || 'unknown'})`);
 
                     ws.close(authResult.code, JSON.stringify({
                         success: false,

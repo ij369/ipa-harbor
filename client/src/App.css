@@ -73,7 +73,9 @@ body,
   padding-top: var(--app-shell-header-base);
 }
 
-/* IPA Drawer 顶栏材质 */
+/* IPA Drawer 顶栏材质
+ * 含 backdrop-filter / filter 的规则须先写 -webkit- 再写标准属性
+ * 虽然，开发环境正常。但 vite build（rolldown-vite）压缩 CSS 时若顺序相反，会丢弃标准属性 */
 .shelf-wrapper {
   --shelf-background-color: #fff;
   --shelf-background-image: none;
@@ -119,8 +121,8 @@ body,
   z-index: 1;
   opacity: 0;
   contain: strict;
-  backdrop-filter: blur(60px) saturate(1.3);
   -webkit-backdrop-filter: blur(60px) saturate(1.3);
+  backdrop-filter: blur(60px) saturate(1.3);
   pointer-events: none;
   transition: opacity var(--shelf-motion-duration) var(--shelf-motion-ease);
 }
@@ -139,8 +141,8 @@ body,
   transform-origin: top center;
   background-image: var(--shelf-background-image);
   background-repeat: repeat;
-  filter: brightness(1.3) saturate(0) blur(40px);
   -webkit-filter: brightness(1.3) saturate(0) blur(40px);
+  filter: brightness(1.3) saturate(0) blur(40px);
   mix-blend-mode: overlay;
   opacity: 0;
   contain: strict;
@@ -182,7 +184,14 @@ body,
 .shelf-wrapper--active .shelf-drawer-close {
   color: #fff !important;
   --Icon-color: #fff;
-  --IconButton-color: #fff;
+}
+
+.shelf-wrapper--active .shelf-drawer-close:hover {
+  background-color: rgba(255, 255, 255, 0.14);
+}
+
+.shelf-wrapper--active .shelf-drawer-close:active {
+  background-color: rgba(255, 255, 255, 0.28);
 }
 
 .shelf-wrapper__content .shelf-text-secondary {
@@ -233,8 +242,8 @@ body,
 .shelf-wrapper--drawer-animating .shelf-wrapper__rotate,
 .shelf-wrapper--drawer-animating .shelf-wrapper__material {
   opacity: 0 !important;
-  backdrop-filter: none !important;
   -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
   filter: none !important;
   animation: none !important;
   transition: none !important;
@@ -243,13 +252,13 @@ body,
 /* 与 Joy theme.breakpoints.md（900px）对齐 */
 @media (max-width: 899.95px) {
   .shelf-wrapper__blur {
-    backdrop-filter: blur(28px) saturate(1.15);
     -webkit-backdrop-filter: blur(28px) saturate(1.15);
+    backdrop-filter: blur(28px) saturate(1.15);
   }
 
   .shelf-wrapper__rotate {
-    filter: brightness(1.2) saturate(0) blur(24px);
     -webkit-filter: brightness(1.2) saturate(0) blur(24px);
+    filter: brightness(1.2) saturate(0) blur(24px);
   }
 }
 

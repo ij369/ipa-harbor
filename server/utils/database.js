@@ -25,11 +25,11 @@ class Database {
 
             this.db = new sqlite3.Database(this.dbPath, (err) => {
                 if (err) {
-                    console.error('数据库连接失败:', err.message);
+                    console.error('Database connection failed:', err.message);
                     reject(err);
                 } else {
                     if (!dbExists) {
-                        console.log('数据库文件创建并连接成功');
+                        console.log('Database file created and connected successfully');
                     }
                     this.createTables().then(resolve).catch(reject);
                 }
@@ -45,7 +45,7 @@ class Database {
             // 首先检查表是否已存在
             this.db.get("SELECT name FROM sqlite_master WHERE type='table' AND name='users'", (err, row) => {
                 if (err) {
-                    console.error('检查用户表失败:', err.message);
+                    console.error('Failed to check users table:', err.message);
                     reject(err);
                     return;
                 }
@@ -65,11 +65,11 @@ class Database {
 
                 this.db.run(createUserTableSQL, (err) => {
                     if (err) {
-                        console.error('创建用户表失败:', err.message);
+                        console.error('Failed to create users table:', err.message);
                         reject(err);
                     } else {
                         if (!tableExists) {
-                            console.log('用户表创建成功');
+                            console.log('Users table created successfully');
                         }
 
                         this.ensureSettingsColumn()
