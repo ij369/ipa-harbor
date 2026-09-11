@@ -45,6 +45,10 @@ if (NODE_ENV !== 'development') {
 
 // === Express 基础配置 ===
 const app = express();
+// nginx / Cloudflare 等反代会传 X-Forwarded-For，需显式开启（https 直连访问勿开，避免伪造 IP）
+if (process.env.TRUST_PROXY === 'true' || process.env.TRUST_PROXY === '1') {
+    app.set('trust proxy', 1);
+}
 const HOST = 'localhost';
 const PORT = process.env.PORT || 3080;
 const HTTPS_PORT = process.env.HTTPS_PORT || 3443;

@@ -58,6 +58,7 @@ The first login will prompt you to configure the admin password for accessing th
 
 ### Public Network Startup Command (nginx reverse proxy)
 + This simplifies to directly proxy the http port (environment variable PORT)
++ Set `-e TRUST_PROXY=1` when proxying (included below) so rate limiting uses the real client IP. Do not set it for direct access.
 
 Assuming you own a domain `example.com`
 Used `docker network create my_network` to create a `my_network` network
@@ -71,6 +72,7 @@ docker run -d \
   -e PORT=3080 \
   -e ALLOW_LAN_ACCESS=false \
   -e ALLOWED_DOMAINS=example.com \
+  -e TRUST_PROXY=1 \
   -v ipa_data:/app/data \
   -v ipa_certs:/app/certs \
   --hostname ipa_harbor \
@@ -135,6 +137,7 @@ The first login will prompt you to configure the admin password for accessing th
 
 `--name ipa-harbor`: Container name.
 
+**Rate limit:** all `/v1/` APIs, 100 requests/minute per IP. WebSocket is unaffected (not routed under `/v1/`).
 
 If you deploy on public network, you must have `ALLOWED_DOMAINS` and set `ALLOW_LAN_ACCESS=false` to implement frontend access whitelist. This will affect browser-level access restrictions:
 
@@ -341,6 +344,7 @@ ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，�
 
 ### 公网环境启动命令（nginx 反向代理）
 + 这样简化成直接代理http端口（环境变量PORT）
++ 反代时需加 `-e TRUST_PROXY=1`（下方命令已包含），限流才按真实客户端 IP 计数；直连访问不要设置
 
 假设你拥有一个域名 `example.com`
 使用了 `docker network create my_network` 来创建了一个`my_network`网络
@@ -354,6 +358,7 @@ docker run -d \
   -e PORT=3080 \
   -e ALLOW_LAN_ACCESS=false \
   -e ALLOWED_DOMAINS=example.com \
+  -e TRUST_PROXY=1 \
   -v ipa_data:/app/data \
   -v ipa_certs:/app/certs \
   --hostname ipa_harbor \
@@ -418,6 +423,7 @@ server {
 
 `--name ipa-harbor`：容器名称。
 
+**限流：** `/v1/` API 每 IP 每分钟 100 次。WebSocket 不受影响（不走 `/v1/`）。
 
 如果你部署在公网一定要有`ALLOWED_DOMAINS`, 并`ALLOW_LAN_ACCESS=false`实现前端访问白名单，在浏览器层面会受这个影响禁止访问:
 
