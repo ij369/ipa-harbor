@@ -47,14 +47,14 @@ export default function LanguageSwitcher({
                 value={currentLanguage}
                 onChange={handleChange}
                 size={size}
-                fullWidth={fullWidth}
                 slotProps={{
                     listbox: {
                         sx: { zIndex: 1400 },
                     },
                 }}
                 sx={{
-                    minWidth: 140,
+                    minWidth: fullWidth ? undefined : 140,
+                    width: fullWidth ? '100%' : undefined,
                     ...sx,
                 }}
             >

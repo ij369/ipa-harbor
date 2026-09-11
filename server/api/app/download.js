@@ -1,5 +1,6 @@
 const { getTaskManager } = require('../dl-manager/taskManager');
 const { getLatestVersionId } = require('./versions');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 /**
  * 下载App - 创建下载任务
@@ -11,10 +12,11 @@ async function downloadHandler(req, res) {
 
         // 参数验证
         if (!appId || !versionId || !bundleId) {
-            return res.status(400).json({
-                success: false,
+            return sendError(res, 400, {
                 message: 'App ID、Version ID和Bundle ID是必需的参数',
-                error: '请在URL路径中提供appId、versionId和bundleId'
+                errorMessageCode: 'APP_DOWNLOAD_PARAMS_REQUIRED',
+                error: '请在URL路径中提供appId、versionId和bundleId',
+                errorCode: 'APP_DOWNLOAD_PARAMS_MISSING',
             });
         }
 
@@ -41,20 +43,21 @@ async function downloadHandler(req, res) {
         const taskManager = getTaskManager();
         const taskId = taskManager.createTask(appId, versionId, bundleId, actualVersionId);
 
-        return res.json({
-            success: true,
+        return sendSuccess(res, {
             message: '下载任务已创建',
+            errorMessageCode: 'APP_DOWNLOAD_TASK_CREATED',
             taskId: taskId,
             appId: appId,
-            versionId: versionId
+            versionId: versionId,
         });
 
     } catch (error) {
         console.error('创建下载任务错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

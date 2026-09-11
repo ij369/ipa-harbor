@@ -1,24 +1,96 @@
-import React from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import {
-    Box, Stack, Typography, Divider, IconButton, Chip, Link,
+    Box, Stack, Typography, Divider, Link,
 } from '@mui/joy';
+import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import MouseTooltip from './MouseTooltip';
 import IpaAppIcon from './IpaAppIcon';
-import { downloadApp, isRateLimitError, getAppDownloadPackageUrlByFileName } from '../utils/api';
+import { downloadApp, deleteTask, isRateLimitError, getAppDownloadPackageUrlByFileName, resolveClientErrorMessage } from '../utils/api';
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
 import { useTranslation } from 'react-i18next';
-import { useApp } from '../contexts/AppContext';
+import { getIntlLocale } from '../i18n';
 
-export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDetail }) {
+function extractAppInfo(fileName) {
+    if (!fileName) return { appId: null, versionId: null };
+    const match = fileName.match(/^(\d+)_(.+)\.ipa$/);
+    return match ? { appId: match[1], versionId: match[2] } : { appId: null, versionId: null };
+}
+
+function formatTooltipDate(dateString, t) {
+    if (!dateString) return t('ui.unknown');
+    try {
+        const lng = localStorage.getItem('language') || 'en';
+        return new Date(dateString).toLocaleString(getIntlLocale(lng));
+    } catch {
+        return t('ui.dateFormatError');
+    }
+}
+
+function buildTooltipLines(fields) {
+    const details = fields
+        .filter((field) => field.value != null && field.value !== '')
+        .map((field) => `${field.label}: ${field.value}`);
+
+    return details.length ? details.join('\n') : null;
+}
+
+function areIpaIconPropsEqual(prev, next) {
+    if (
+        prev.size !== next.size
+        || prev.subLabelMode !== next.subLabelMode
+        || prev.isDragging !== next.isDragging
+        || prev.country !== next.country
+        || prev.onOpenDetail !== next.onOpenDetail
+    ) {
+        return false;
+    }
+
+    const a = prev.item;
+    const b = next.item;
+    if (a === b) return true;
+    if (!a || !b) return false;
+    if (a.name !== b.name || a.status !== b.status) return false;
+
+    if (a.status === 'pending' || a.status === 'running') {
+        return (
+            a.progress === b.progress
+            && a.sizeProgress === b.sizeProgress
+            && a.downloadSpeed === b.downloadSpeed
+        );
+    }
+
+    if (a.status === 'failed') {
+        return a.taskId === b.taskId && a.bundleId === b.bundleId;
+    }
+
+    if (a.status === 'completed' || a.status === 'downloaded') {
+        return (
+            a.bundleDisplayName === b.bundleDisplayName
+            && a.bundleShortVersionString === b.bundleShortVersionString
+            && a.size === b.size
+        );
+    }
+
+    return a.name === b.name;
+}
+
+function IpaIcon({
+    item,
+    size = 128,
+    isDragging = false,
+    onOpenDetail,
+    subLabelMode = 'version',
+    country,
+}) {
     const { t } = useTranslation();
-    const { user } = useApp();
     const {
         id: appId,
         name,
         status,
         progress = 0,
         sizeProgress,
+        downloadSpeed,
         taskId,
         bundleId,
         itemId,
@@ -35,71 +107,137 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
         createdAt,
     } = item;
 
-    const isCompactIcon = size < 96;
-    const labelFontSize = isCompactIcon ? '0.65rem' : '0.9rem';
-    const subLabelFontSize = isCompactIcon ? '0.55rem' : '0.75rem';
-    const progressBarHeight = isCompactIcon ? 8 : 15;
-    const progressBarBottom = isCompactIcon ? 4 : 9;
-
-    const extractAppInfo = (fileName) => {
-        if (!fileName) return { appId: null, versionId: null };
-        const match = fileName.match(/^(\d+)_(.+)\.ipa$/);
-        return match ? { appId: match[1], versionId: match[2] } : { appId: null, versionId: null };
+    const REF_ICON_SIZE = 96;
+    const scale = size / REF_ICON_SIZE;
+    const labelFontSize = `${0.9 * scale}rem`;
+    const subLabelFontSize = `${0.75 * scale}rem`;
+    const progressBarHeight = Math.max(6, Math.round(15 * scale));
+    const progressBarBottom = Math.max(3, Math.round(9 * scale));
+    const labelStackSpacing = `${0.4 * scale}rem`;
+    const hoverPadding = `${8 * scale}px`;
+    const sizeTransition = 'width 0.12s ease-out, height 0.12s ease-out, font-size 0.12s ease-out, padding 0.12s ease-out, bottom 0.12s ease-out, border-radius 0.12s ease-out, gap 0.12s ease-out';
+    const labelSx = {
+        fontSize: labelFontSize,
+        transition: sizeTransition,
+    };
+    const subLabelSx = {
+        fontSize: subLabelFontSize,
+        transition: sizeTransition,
     };
 
     const { appId: extractedAppId, versionId } = extractAppInfo(name);
     const finalAppId = appId || extractedAppId;
     const displayAppId = finalAppId || (itemId != null ? String(itemId) : null);
+    const displayVersionId = softwareVersionExternalIdentifier || versionId;
+    const isMetadataPending = ['completed', 'downloaded'].includes(status) && !bundleDisplayName;
 
-    const formatDate = (dateString) => {
-        //  if (!dateString) return '未知';
-        if (!dateString) return t('ui.unknown');
-        try {
-            // return new Date(dateString).toLocaleString('zh-CN');
-            const lng = localStorage.getItem('language') || 'en';
-            return new Date(dateString).toLocaleString(lng.startsWith('zh') ? 'zh-CN' : 'en-US');
-        } catch {
-            // return '日期格式错误';
-            return t('ui.dateFormatError');
+    const getCompletedSubLabel = () => {
+        if (subLabelMode === 'size') {
+            return formatFileSize(fileSize) || t('ui.unknown');
         }
+        if (bundleShortVersionString) {
+            return bundleShortVersionString;
+        }
+        return formatFileSize(fileSize) || t('ui.unknown');
     };
 
-    const getTooltipContent = () => {
-        const fields = [
-            { label: t('ui.appName_label'), value: bundleDisplayName }, // 应用名称
-            { label: t('ui.developer'), value: artistName }, // 开发者
+    const tooltipContent = useMemo(() => {
+        if (status === 'pending' || status === 'running') {
+            return buildTooltipLines([
+                { label: t('ui.transferredSize'), value: sizeProgress },
+                { label: t('ui.bundleId'), value: bundleId },
+                { label: t('ui.appId'), value: displayAppId },
+                { label: t('ui.versionId'), value: displayVersionId },
+                { label: t('ui.taskId'), value: taskId },
+                { label: t('ui.fileName'), value: name },
+            ]);
+        }
+
+        if (status === 'failed') {
+            return buildTooltipLines([
+                { label: t('ui.bundleId'), value: bundleId },
+                { label: t('ui.appId'), value: displayAppId },
+                { label: t('ui.versionId'), value: displayVersionId },
+                { label: t('ui.taskId'), value: taskId },
+                { label: t('ui.fileName'), value: name },
+            ]);
+        }
+
+        return buildTooltipLines([
+            { label: t('ui.appName_label'), value: bundleDisplayName },
+            { label: t('ui.developer'), value: artistName },
             { label: t('ui.appVersion'), value: bundleShortVersionString },
-            { label: t('ui.buildVersion'), value: bundleVersion }, // 构建版本
-            { label: t('ui.bundleId'), value: softwareVersionBundleId }, // bundle ID
-            { label: t('ui.appId'), value: displayAppId }, // 应用 ID
-            { label: t('ui.versionId'), value: softwareVersionExternalIdentifier }, // 版本 ID
-            { label: t('ui.productType'), value: productType }, // 产品类型
-            { label: t('ui.fileSize'), value: fileSize ? formatFileSize(fileSize) : null }, // 文件大小
-            { label: t('ui.releaseDate'), value: releaseDate ? formatDate(releaseDate) : null },
-            { label: t('ui.firstReleaseDate'), value: firstReleaseDate ? formatDate(firstReleaseDate) : null },
-            { label: t('ui.downloadTime'), value: createdAt ? formatDate(createdAt) : null }, // 下载时间
-            { label: t('ui.fileName'), value: name }, // 文件名称
-        ];
+            { label: t('ui.buildVersion'), value: bundleVersion },
+            { label: t('ui.bundleId'), value: softwareVersionBundleId },
+            { label: t('ui.appId'), value: displayAppId },
+            { label: t('ui.versionId'), value: displayVersionId },
+            { label: t('ui.productType'), value: productType },
+            { label: t('ui.fileSize'), value: fileSize ? formatFileSize(fileSize) : null },
+            { label: t('ui.releaseDate'), value: releaseDate ? formatTooltipDate(releaseDate, t) : null },
+            { label: t('ui.firstReleaseDate'), value: firstReleaseDate ? formatTooltipDate(firstReleaseDate, t) : null },
+            { label: t('ui.downloadTime'), value: createdAt ? formatTooltipDate(createdAt, t) : null },
+            { label: t('ui.fileName'), value: name },
+        ]);
+    }, [
+        t,
+        status,
+        sizeProgress,
+        bundleId,
+        displayAppId,
+        displayVersionId,
+        taskId,
+        name,
+        bundleDisplayName,
+        artistName,
+        bundleShortVersionString,
+        bundleVersion,
+        softwareVersionBundleId,
+        productType,
+        fileSize,
+        releaseDate,
+        firstReleaseDate,
+        createdAt,
+    ]);
 
-        const details = fields
-            .filter(field => field.value)
-            .map(field => `${field.label}: ${field.value}`);
+    const tooltipHeaderPrimary = useMemo(() => {
+        if (bundleDisplayName) {
+            return bundleDisplayName;
+        }
+        if (status === 'running') {
+            return t('ui.downloading');
+        }
+        if (status === 'pending') {
+            return t('ui.waiting');
+        }
+        if (status === 'failed') {
+            return t('ui.failed');
+        }
+        return null;
+    }, [bundleDisplayName, status, t]);
 
-        return details.length ? details.join('\n') : null;
-    };
+    const tooltipHeaderSecondary = useMemo(() => {
+        if (bundleShortVersionString) {
+            return bundleShortVersionString;
+        }
+        if (status === 'pending' || status === 'running') {
+            if (downloadSpeed) {
+                return downloadSpeed;
+            }
+            if (progress > 0) {
+                return `${progress}%`;
+            }
+        }
+        return null;
+    }, [bundleShortVersionString, status, downloadSpeed, progress]);
 
-
-    const tooltipContent = getTooltipContent();
-
-    const handleRetryDownload = async (e) => {
+    const handleRetryDownload = useCallback(async (e) => {
         e.stopPropagation();
-        console.log(item);
         if (!finalAppId || !bundleId) {
             Swal.fire({
                 icon: 'error',
-                title: t('ui.retryFailed'), // 重试失败
-                text: t('ui.cannotGetAppId'), // 无法获取应用ID
-                confirmButtonText: t('ui.confirm') // 确定
+                title: t('ui.retryFailed'),
+                text: t('ui.cannotGetAppId'),
+                confirmButtonText: t('ui.confirm'),
             });
             return;
         }
@@ -109,12 +247,12 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
             if (response.success) {
                 Swal.fire({
                     icon: 'success',
-                    title: t('ui.retryTaskCreated'), // 重试任务已创建
-                    text: `${t('ui.taskId')}: ${response.taskId}`, // 任务ID: ${response.taskId}
+                    title: t('ui.retryTaskCreated'),
+                    text: `${t('ui.taskId')}: ${response.taskId}`,
                     position: 'top',
                     toast: true,
                     timer: 1500,
-                    showConfirmButton: false
+                    showConfirmButton: false,
                 });
             }
         } catch (error) {
@@ -122,33 +260,88 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
             console.error('重试下载失败:', error.message);
             Swal.fire({
                 icon: 'error',
-                title: t('ui.retryFailed'), // 重试失败
-                text: error.message, // 错误信息
-                confirmButtonText: t('ui.confirm') // 确定
+                title: t('ui.retryFailed'),
+                text: resolveClientErrorMessage(error),
+                confirmButtonText: t('ui.confirm'),
             });
         }
-    };
+    }, [finalAppId, versionId, bundleId, t]);
+
+    const handleDeleteTask = useCallback(async (e) => {
+        e.stopPropagation();
+
+        const result = await Swal.fire({
+            title: t('ui.confirmDelete'),
+            text: `${t('ui.confirmDeleteTask')} ${name}`,
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: t('ui.delete'),
+            cancelButtonText: t('ui.cancel'),
+            confirmButtonColor: '#d33',
+        });
+
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        try {
+            const response = name
+                ? await deleteTask(null, name)
+                : await deleteTask(taskId);
+
+            if (response.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: t('ui.taskDeleted'),
+                    timer: 1500,
+                    showConfirmButton: false,
+                });
+            }
+        } catch (error) {
+            if (isRateLimitError(error)) return;
+            console.error('删除任务失败:', error);
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.deleteFailed'),
+                text: resolveClientErrorMessage(error),
+                confirmButtonText: t('ui.confirm'),
+            });
+        }
+    }, [name, taskId, t]);
 
     const tooltipTitle = tooltipContent && (
         <Box sx={{ whiteSpace: 'pre-line', maxWidth: 300 }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center">
-                <Typography level="body-xs">{bundleDisplayName}</Typography>
-                <Typography level="body-xs">{bundleShortVersionString}</Typography>
-            </Stack>
-            {bundleDisplayName && <Divider sx={{ my: 0.5 }} />}
+            {(tooltipHeaderPrimary || tooltipHeaderSecondary) && (
+                <>
+                    <Stack direction="row" justifyContent="space-between" alignItems="center" gap={1}>
+                        {tooltipHeaderPrimary && (
+                            <Typography level="body-xs">{tooltipHeaderPrimary}</Typography>
+                        )}
+                        {tooltipHeaderSecondary && (
+                            <Typography level="body-xs" sx={{ flexShrink: 0 }}>
+                                {tooltipHeaderSecondary}
+                            </Typography>
+                        )}
+                    </Stack>
+                    <Divider sx={{ my: 0.5 }} />
+                </>
+            )}
             <Typography level="body-xs">{tooltipContent}</Typography>
         </Box>
     );
 
     const itemHoverSx = {
         borderRadius: '12px',
-        p: isCompactIcon ? 0.5 : 1,
-        boxSizing: 'content-box',
-        transition: 'background-color 0.22s ease, box-shadow 0.22s ease',
+        p: hoverPadding,
+        boxSizing: 'border-box',
+        maxWidth: '100%',
+        transition: `background-color 0.22s ease, box-shadow 0.22s ease, ${sizeTransition}`,
         '@media (hover: hover)': {
             '&:hover': {
                 backgroundColor: 'primary.softBg',
                 boxShadow: 'inset 0 0 0 1px rgba(var(--joy-palette-primary-mainChannel) / 0.18)',
+                position: 'relative',
+                zIndex: 1,
             },
         },
     };
@@ -197,7 +390,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                     <>
                         {/* 图标 + 进度条 */}
                         <Box sx={{ position: 'relative' }}>
-                            {renderAppIcon({ appId: finalAppId, size, disabled: true, country: user?.region })}
+                            {renderAppIcon({ appId: finalAppId, size, disabled: true, country })}
                             <Box
                                 sx={{
                                     position: 'absolute',
@@ -205,12 +398,13 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                                     left: '9%',
                                     right: '9%',
                                     height: progressBarHeight,
-                                    padding: isCompactIcon ? '1px' : '2px',
-                                    border: isCompactIcon ? '0.8px solid rgba(0,0,0,0.2)' : '1.2px solid rgba(0,0,0,0.2)',
-                                    borderRadius: isCompactIcon ? '8px' : '16px',
+                                    padding: scale < 0.85 ? '1px' : '2px',
+                                    border: `${Math.max(0.8, 1.2 * scale)}px solid rgba(0,0,0,0.2)`,
+                                    borderRadius: `${Math.max(8, Math.round(16 * scale))}px`,
                                     backgroundColor: 'rgba(255,255,255,0.3)', // 轨道底色
                                     overflow: 'hidden',
                                     boxSizing: 'border-box',
+                                    transition: sizeTransition,
                                 }}
                             >
                                 {/* 进度条 */}
@@ -220,7 +414,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                                         width: `${progress}%`,
                                         backgroundColor: '#007aff',
                                         borderRadius: '6px',
-                                        transition: 'width 0.2s ease',
+                                        transition: 'width 0.12s ease-out',
                                     }}
                                 />
                             </Box>
@@ -228,10 +422,10 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
 
                         {/* 描述部分 */}
                         {wrapLabelTooltip(
-                            <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
+                            <Stack spacing={labelStackSpacing} alignItems="center" sx={{ width: size, transition: sizeTransition }}>
                                 <Typography
                                     sx={{
-                                        fontSize: labelFontSize,
+                                        ...labelSx,
                                         textAlign: 'center',
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
@@ -244,13 +438,13 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                                 </Typography>
                                 <Typography
                                     sx={{
-                                        fontSize: subLabelFontSize,
+                                        ...subLabelSx,
                                         textAlign: 'center',
                                         color: '#666',
                                         wordBreak: 'break-all',
                                     }}
                                 >
-                                    {sizeProgress || `${progress}%`}
+                                    {sizeProgress || downloadSpeed || `${progress}%`}
                                 </Typography>
                             </Stack>
                         )}
@@ -267,7 +461,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                             }}
                             onClick={handleDeleteTask}
                         >
-                            {renderAppIcon({ appId: finalAppId, size, disabled: true, country: user?.region })}
+                            {renderAppIcon({ appId: finalAppId, size, disabled: true, country })}
                             <Box
                                 sx={{
                                     position: 'absolute',
@@ -303,8 +497,8 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                                 }}
                                 onClick={handleRetryDownload}
                             >
-                                <Typography sx={{ fontSize: labelFontSize, textAlign: 'center' }}>{t('ui.failed')}</Typography>
-                                <Link sx={{ fontSize: subLabelFontSize, textAlign: 'center', color: '#666' }}>
+                                <Typography sx={{ ...labelSx, textAlign: 'center' }}>{t('ui.failed')}</Typography>
+                                <Link sx={{ ...subLabelSx, textAlign: 'center', color: '#666' }}>
                                     {/* 点击这里重试 */}
                                     {t('ui.clickToRetry')}
                                 </Link>
@@ -317,12 +511,12 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
             case 'downloaded':
                 return (
                     <>
-                        {renderAppIcon({ appId: finalAppId, size, country: user?.region })}
+                        {renderAppIcon({ appId: finalAppId, size, country })}
                         {wrapLabelTooltip(
-                            <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
+                            <Stack spacing={labelStackSpacing} alignItems="center" sx={{ width: size, transition: sizeTransition }}>
                                 <Typography
                                     sx={{
-                                        fontSize: labelFontSize,
+                                        ...labelSx,
                                         textAlign: 'center',
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
@@ -332,9 +526,24 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                                 >
                                     {bundleDisplayName || name}
                                 </Typography>
-                                <Typography sx={{ fontSize: subLabelFontSize, textAlign: 'center', color: '#666' }}>
-                                    {formatFileSize(fileSize) || t('ui.completed')}
-                                </Typography>
+                                {isMetadataPending ? (
+                                    <Stack
+                                        direction="row"
+                                        spacing={0.25}
+                                        alignItems="center"
+                                        justifyContent="center"
+                                        sx={{ width: '100%', color: '#666' }}
+                                    >
+                                        <HourglassTopIcon sx={{ fontSize: subLabelFontSize }} />
+                                        <Typography sx={{ ...subLabelSx, textAlign: 'center', color: 'inherit' }}>
+                                            {t('ui.parsingMetadata')}
+                                        </Typography>
+                                    </Stack>
+                                ) : (
+                                    <Typography sx={{ ...subLabelSx, textAlign: 'center', color: '#666' }}>
+                                        {getCompletedSubLabel()}
+                                    </Typography>
+                                )}
                             </Stack>
                         )}
                     </>
@@ -343,12 +552,12 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
             default:
                 return (
                     <>
-                        {renderAppIcon({ appId: finalAppId, size, country: user?.region })}
+                        {renderAppIcon({ appId: finalAppId, size, country })}
                         {wrapLabelTooltip(
-                            <Stack spacing="0.1rem" alignItems="center" sx={{ width: size }}>
+                            <Stack spacing={labelStackSpacing} alignItems="center" sx={{ width: size, transition: sizeTransition }}>
                                 <Typography
                                     sx={{
-                                        fontSize: labelFontSize,
+                                        ...labelSx,
                                         textAlign: 'center',
                                         whiteSpace: 'nowrap',
                                         overflow: 'hidden',
@@ -359,7 +568,7 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
                                     {/* {name || '未知应用'} */}
                                     {name || t('ui.unknown')}
                                 </Typography>
-                                <Typography sx={{ fontSize: subLabelFontSize, textAlign: 'center', color: '#666' }}>
+                                <Typography sx={{ ...subLabelSx, textAlign: 'center', color: '#666' }}>
                                     —
                                 </Typography>
                             </Stack>
@@ -369,21 +578,22 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
         }
     };
 
-    const handleClick = () => {
+    const handleClick = useCallback(() => {
         if (['completed', 'downloaded'].includes(status)) {
             onOpenDetail?.(item);
         }
-    };
+    }, [status, onOpenDetail, item]);
 
-    const content = (
+    return (
         <Stack
             alignItems="center"
-            spacing={isCompactIcon ? '0.15rem' : '0.4rem'}
+            spacing={labelStackSpacing}
             sx={{
-                width: size,
+                width: `calc(${size}px + ${hoverPadding} * 2)`,
                 userSelect: 'none',
                 position: 'relative',
                 display: 'inline-block',
+                transition: sizeTransition,
                 ...itemHoverSx,
             }}
             onClick={handleClick}
@@ -391,7 +601,6 @@ export default function IpaIcon({ item, size = 128, isDragging = false, onOpenDe
             {renderContent()}
         </Stack>
     );
-
-    return content;
-
 }
+
+export default memo(IpaIcon, areIpaIconPropsEqual);

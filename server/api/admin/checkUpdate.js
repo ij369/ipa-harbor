@@ -4,6 +4,7 @@ const {
     getLatestReleaseTag,
     compareSemver,
 } = require('../../utils/dockerHub');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 const HARBOR_GITHUB_URL = 'https://github.com/ij369/ipa-harbor';
 const IPATOOL_GITHUB_URL = 'https://github.com/majd/ipatool';
@@ -19,17 +20,19 @@ async function checkUpdateHandler(req, res) {
         const latestVersion = getLatestReleaseTag(tags);
 
         if (!latestVersion) {
-            return res.status(502).json({
-                success: false,
+            return sendError(res, 502, {
                 message: '未能从 Docker Hub 获取有效版本号',
+                errorMessageCode: 'ADMIN_CHECK_UPDATE_VERSION_UNAVAILABLE',
+                error: '无法从 Docker Hub 获取版本号',
+                errorCode: 'ADMIN_CHECK_UPDATE_DOCKER_HUB_FAILED',
             });
         }
 
         const compareResult = compareSemver(latestVersion, currentVersion);
         const isLatest = compareResult <= 0;
 
-        return res.json({
-            success: true,
+        return sendSuccess(res, {
+            errorMessageCode: 'ADMIN_CHECK_UPDATE_SUCCESS',
             data: {
                 currentVersion,
                 latestVersion,
@@ -41,10 +44,11 @@ async function checkUpdateHandler(req, res) {
         });
     } catch (error) {
         console.error('检查更新失败:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '检查更新失败',
+            errorMessageCode: 'ADMIN_CHECK_UPDATE_FAILED',
             error: error.message,
+            errorCode: 'ADMIN_CHECK_UPDATE_ERROR_DETAIL',
         });
     }
 }

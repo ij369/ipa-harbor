@@ -14,7 +14,7 @@ import {
     Stack
 } from '@mui/joy';
 import { CheckCircle } from '@mui/icons-material';
-import { adminSetup } from '../utils/api';
+import { adminSetup, resolveClientErrorMessage } from '../utils/api';
 import { useAdmin } from '../contexts/AdminContext';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -81,7 +81,7 @@ const AdminSetup = () => {
                 navigate('/login');
             }, 2000);
         } catch (error) {
-            setError(error.message || '创建管理员账户失败');
+            setError(resolveClientErrorMessage(error) || t('apiErrorMessages.ADMIN_SETUP_FAILED'));
         } finally {
             setLoading(false);
         }

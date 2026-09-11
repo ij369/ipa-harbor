@@ -8,6 +8,7 @@ const {
     enrichUserData,
     setManualRegion,
 } = require('../../utils/userRegion');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
@@ -18,13 +19,13 @@ function getUserInfo() {
 
         exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
             if (error) {
-                reject(new Error('Not authenticated'));
+                reject(new Error('用户未登录或认证信息已过期'));
             } else {
                 try {
                     const result = JSON.parse(stdout);
                     resolve(result);
                 } catch (parseError) {
-                    reject(new Error('Failed to parse user info'));
+                    reject(new Error('解析用户信息失败'));
                 }
             }
         });
@@ -33,9 +34,11 @@ function getUserInfo() {
 
 async function handler(req, res) {
     if (req.method !== 'POST') {
-        return res.status(405).json({
-            success: false,
-            message: 'Method not allowed'
+        return sendError(res, 405, {
+            message: '不允许的请求方法',
+            errorMessageCode: 'AUTH_REGION_METHOD_NOT_ALLOWED',
+            error: '仅支持 POST 请求',
+            errorCode: 'AUTH_REGION_POST_ONLY',
         });
     }
 
@@ -44,16 +47,20 @@ async function handler(req, res) {
         try {
             userInfo = await getUserInfo();
         } catch (error) {
-            return res.status(401).json({
-                success: false,
-                message: 'Not authenticated'
+            return sendError(res, 401, {
+                message: '用户未登录或认证信息已过期',
+                errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                error: '请先登录',
+                errorCode: 'AUTH_LOGIN_REQUIRED',
             });
         }
 
         if (!userInfo || !userInfo.email) {
-            return res.status(401).json({
-                success: false,
-                message: 'Not authenticated'
+            return sendError(res, 401, {
+                message: '用户未登录或认证信息已过期',
+                errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                error: '请先登录',
+                errorCode: 'AUTH_LOGIN_REQUIRED',
             });
         }
 
@@ -62,33 +69,37 @@ async function handler(req, res) {
         if (!region) {
             setManualRegion(userInfo.email, null);
             const data = await enrichUserData(userInfo);
-            return res.json({
-                success: true,
-                message: 'Region cleared',
+            return sendSuccess(res, {
+                message: '已清除地区设置',
+                errorMessageCode: 'AUTH_REGION_CLEARED',
                 data
             });
         }
 
         if (!/^[a-z]{2}$/.test(region)) {
-            return res.status(400).json({
-                success: false,
-                message: 'Invalid region code format'
+            return sendError(res, 400, {
+                message: '地区代码格式无效',
+                errorMessageCode: 'AUTH_REGION_INVALID_FORMAT',
+                error: '地区代码须为两位小写字母',
+                errorCode: 'AUTH_REGION_CODE_FORMAT',
             });
         }
 
         setManualRegion(userInfo.email, region);
         const data = await enrichUserData(userInfo);
 
-        return res.json({
-            success: true,
-            message: 'Region updated successfully',
+        return sendSuccess(res, {
+            message: '地区设置已更新',
+            errorMessageCode: 'AUTH_REGION_UPDATE_SUCCESS',
             data
         });
     } catch (error) {
         console.error('设置用户地区失败:', error);
-        return res.status(500).json({
-            success: false,
-            message: error.message || 'Failed to set user region'
+        return sendError(res, 500, {
+            message: '设置地区失败',
+            errorMessageCode: 'AUTH_REGION_SET_FAILED',
+            error: error.message || '更新地区设置出错',
+            errorCode: 'AUTH_REGION_ERROR_DETAIL',
         });
     }
 }

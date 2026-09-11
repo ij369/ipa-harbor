@@ -2,6 +2,7 @@
 import React from 'react';
 import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { CssVarsProvider } from '@mui/joy/styles';
+import { joyTheme } from './theme/joyTheme';
 import CssBaseline from '@mui/joy/CssBaseline';
 import { AppProvider } from './contexts/AppContext';
 import { AdminProvider } from './contexts/AdminContext';
@@ -18,7 +19,7 @@ import './App.css';
 
 function App() {
   return (
-    <CssVarsProvider>
+    <CssVarsProvider theme={joyTheme}>
       <CssBaseline />
       <AdminProvider>
         <AppProvider>

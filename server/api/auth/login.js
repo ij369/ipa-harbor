@@ -3,6 +3,7 @@ const path = require('path');
 const { enrichUserData } = require('../../utils/userRegion');
 const { parseIpatoolOutput } = require('../../utils/ipatoolOutput');
 const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
@@ -76,9 +77,11 @@ async function loginHandler(req, res) {
 
         // 参数验证
         if (!email || !password) {
-            return res.status(400).json({
+            return sendError(res, 400, {
+                message: '邮箱和密码是必需的参数',
+                errorMessageCode: 'AUTH_LOGIN_PARAMS_REQUIRED',
                 error: 'Bad Request',
-                message: '邮箱和密码是必需的参数'
+                errorCode: 'AUTH_LOGIN_EMAIL_PASSWORD_MISSING',
             });
         }
 
@@ -96,18 +99,21 @@ async function loginHandler(req, res) {
             const result = await executeIpatool(command, LOGIN_TIMEOUT_MS);
 
             if (result.needsTwoFactor) {
-                return res.status(200).json({
-                    success: false,
+                return sendError(res, 200, {
+                    message: '请求错误 / 请输入二次验证码',
+                    errorMessageCode: 'AUTH_LOGIN_TWO_FACTOR_REQUIRED',
+                    error: '需要输入二次验证码',
+                    errorCode: 'AUTH_LOGIN_TWO_FACTOR_DETAIL',
                     needsTwoFactor: true,
-                    message: '请求错误 / 请输入二次验证码'
                 });
             }
 
             if (!result.success || !result.data?.email) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '登录失败',
-                    error: result.error || '未能获取账号信息'
+                    errorMessageCode: 'AUTH_LOGIN_FAILED',
+                    error: result.error || '未能获取账号信息',
+                    errorCode: 'AUTH_LOGIN_NO_ACCOUNT_INFO',
                 });
             }
 
@@ -120,9 +126,9 @@ async function loginHandler(req, res) {
 
                 if (infoResult.success && infoResult.data?.email) {
                     const userData = await enrichUserData(infoResult.data);
-                    return res.json({
-                        success: true,
+                    return sendSuccess(res, {
                         message: '登录成功',
+                        errorMessageCode: 'AUTH_LOGIN_SUCCESS',
                         data: userData
                     });
                 }
@@ -133,16 +139,18 @@ async function loginHandler(req, res) {
             // ipatool 已登录但 info 暂时不可用，使用 login 输出中的账号信息
             const userData = await enrichUserData(result.data);
             if (userData.email) {
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: '登录成功',
+                    errorMessageCode: 'AUTH_LOGIN_SUCCESS',
                     data: userData
                 });
             }
 
-            return res.status(401).json({
-                success: false,
-                message: '登录失败，未能获取用户信息'
+            return sendError(res, 401, {
+                message: '登录失败，未能获取用户信息',
+                errorMessageCode: 'AUTH_LOGIN_FAILED',
+                error: '无法获取用户信息',
+                errorCode: 'AUTH_LOGIN_NO_USER_INFO',
             });
         } catch (execError) {
             console.error(
@@ -152,32 +160,46 @@ async function loginHandler(req, res) {
 
             const combinedOutput = `${execError.stdout || ''}\n${execError.stderr || ''}`;
             if (combinedOutput.includes('Could not allocate dynamic translator buffer')) {
-                return res.status(500).json({
-                    success: false,
+                return sendError(res, 500, {
                     message: '服务器内存不足，无法完成 Apple ID 首次认证。请为宿主机增加内存或配置至少 2GB swap 后重试',
+                    errorMessageCode: 'AUTH_LOGIN_INSUFFICIENT_MEMORY',
                     error: execError.error || 'ipatool 认证引擎初始化失败',
+                    errorCode: 'AUTH_LOGIN_TRANSLATOR_BUFFER_FAILED',
                 });
             }
-            if (combinedOutput.includes('2FA code is required')) {
-                return res.status(200).json({
-                    success: false,
+            if (!twoFactor && combinedOutput.includes('2FA code is required')) {
+                return sendError(res, 200, {
+                    message: '请求错误 / 请输入二次验证码',
+                    errorMessageCode: 'AUTH_LOGIN_TWO_FACTOR_REQUIRED',
+                    error: '需要输入二次验证码',
+                    errorCode: 'AUTH_LOGIN_TWO_FACTOR_DETAIL',
                     needsTwoFactor: true,
-                    message: '请求错误 / 请输入二次验证码'
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            if (twoFactor) {
+                return sendError(res, 401, {
+                    message: '登录失败，请检查 Apple ID、密码或二次验证码',
+                    errorMessageCode: 'AUTH_LOGIN_FAILED',
+                    error: execError.error || execError.stderr?.trim() || execError.stdout?.trim() || '认证失败',
+                    errorCode: 'AUTH_LOGIN_TWO_FACTOR_OR_CREDENTIALS_INVALID',
+                });
+            }
+
+            return sendError(res, 500, {
                 message: execError?.error || execError?.stdout || 'APPLE ID 登录过程中发生错误',
-                error: execError.error || '执行命令失败'
+                errorMessageCode: 'AUTH_LOGIN_ERROR',
+                error: execError.error || '执行命令失败',
+                errorCode: 'AUTH_LOGIN_EXEC_FAILED',
             });
         }
 
     } catch (error) {
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

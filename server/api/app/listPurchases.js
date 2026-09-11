@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const path = require('path');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
@@ -47,9 +48,9 @@ async function listPurchasesHandler(req, res) {
 
             if (result.success) {
                 const data = result.data || {};
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: '获取已购项目成功',
+                    errorMessageCode: 'APP_LIST_PURCHASES_SUCCESS',
                     data: {
                         apps: data.apps || [],
                         count: data.count ?? (data.apps?.length || 0),
@@ -59,39 +60,44 @@ async function listPurchasesHandler(req, res) {
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '获取已购项目失败',
-                error: result.error
+                errorMessageCode: 'APP_LIST_PURCHASES_FAILED',
+                error: result.error,
+                errorCode: 'APP_LIST_PURCHASES_EXEC_FAILED',
             });
         } catch (execError) {
             if (execError.stdout && execError.stdout.includes('failed to get account')) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '用户未登录或认证信息已过期',
-                    error: '请先登录'
+                    errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                    error: '请先登录',
+                    errorCode: 'AUTH_LOGIN_REQUIRED',
                 });
             }
 
             if (execError.stderr && execError.stderr.includes('unknown command')) {
-                return res.status(500).json({
-                    success: false,
+                return sendError(res, 500, {
                     message: '当前 ipatool 不支持 list-purchases。该命令在 v2.4.0 之后才加入，请在本机执行 ./build_ipatool.sh 从源码编译，或等待官方新版本发布',
-                    error: execError.stderr.trim() || execError.message
+                    errorMessageCode: 'APP_LIST_PURCHASES_UNSUPPORTED',
+                    error: execError.stderr.trim() || execError.message,
+                    errorCode: 'APP_LIST_PURCHASES_IPATOOL_UNSUPPORTED',
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '获取已购项目时发生错误',
-                error: execError.stderr?.trim() || execError.stdout?.trim() || execError.message || '执行命令失败'
+                errorMessageCode: 'APP_LIST_PURCHASES_ERROR',
+                error: execError.stderr?.trim() || execError.stdout?.trim() || execError.message || '执行命令失败',
+                errorCode: 'APP_LIST_PURCHASES_EXEC_FAILED',
             });
         }
     } catch (error) {
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

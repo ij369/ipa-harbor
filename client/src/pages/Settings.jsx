@@ -1,6 +1,29 @@
 import React, { useEffect, useState } from 'react';
-import { Avatar, Box, Button, Chip, Divider, IconButton, Sheet, Stack, Switch, Tooltip, Typography } from '@mui/joy';
-import { Check, ExitToApp, InfoOutlined, SystemUpdateAlt } from '@mui/icons-material';
+import {
+    Accordion,
+    AccordionDetails,
+    AccordionGroup,
+    AccordionSummary,
+    Avatar,
+    Box,
+    Button,
+    Chip,
+    IconButton,
+    Sheet,
+    Stack,
+    Switch,
+    Tooltip,
+    Typography,
+} from '@mui/joy';
+import {
+    AdminPanelSettings as AdminPanelSettingsIcon,
+    Check,
+    ExitToApp,
+    ExpandMore,
+    InfoOutlined,
+    Logout,
+    SystemUpdateAlt,
+} from '@mui/icons-material';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -9,7 +32,7 @@ import FilenameTemplateEditor from '../components/FilenameTemplateEditor';
 import { useJoyDown } from '../hooks/useJoyMedia';
 import { useApp } from '../contexts/AppContext';
 import { useAdmin } from '../contexts/AdminContext';
-import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus } from '../utils/api';
+import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus, revokeAuth, resolveClientErrorMessage } from '../utils/api';
 import {
     cloneTemplate,
     DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
@@ -49,8 +72,30 @@ const sectionSx = {
     boxShadow: '0 1px 2px rgba(15, 23, 42, 0.04)',
 };
 
+const settingsInfoTooltipSlotProps = {
+    root: {
+        sx: {
+            maxWidth: 260,
+            whiteSpace: 'pre-line',
+            wordBreak: 'break-word',
+        },
+    },
+};
+
+// 清除 Joy 默认 content padding，避免折叠占位；展开间距由内部 Stack 按状态控制
+const accountAccordionDetailsSx = {
+    px: 0,
+    marginInline: 0,
+    '& .MuiAccordionDetails-content': {
+        p: 0,
+        minHeight: 0,
+    },
+};
+
 const HARBOR_GITHUB_URL = 'https://github.com/ij369/ipa-harbor';
+const HARBOR_LOCALE_EN_JSON_URL = `${HARBOR_GITHUB_URL}/blob/main/client/locales/en.json`;
 const HARBOR_DOCKER_HUB_URL = 'https://hub.docker.com/r/uuphy/ipa-harbor/tags';
+const SWAL_GITHUB_ICON_HTML = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline-block;vertical-align:-3px;margin-right:6px" aria-hidden="true"><path stroke="none" d="M0 0h24v24H0z" fill="none"/><path d="M9 19c-4.3 1.4 -4.3 -2.5 -6 -3m12 5v-3.5c0 -1 .1 -1.4 -.5 -2c2.8 -.3 5.5 -1.4 5.5 -6a4.6 4.6 0 0 0 -1.3 -3.2a4.2 4.2 0 0 0 -.1 -3.2s-1.1 -.3 -3.5 1.3a12.3 12.3 0 0 0 -6.2 0c-2.4 -1.6 -3.5 -1.3 -3.5 -1.3a4.2 4.2 0 0 0 -.1 3.2a4.6 4.6 0 0 0 -1.3 3.2c0 4.6 2.7 5.7 5.5 6c-.6 .6 -.6 1.2 -.5 2v3.5"/></svg>';
 
 const tablerIconSx = {
     width: 20,
@@ -103,7 +148,7 @@ function TablerDockerIcon({ sx }) {
 export default function Settings() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
-    const { user, isAuthenticated, loading, settings, setSettings, settingsLoaded } = useApp();
+    const { user, isAuthenticated, loading, logout, settings, setSettings, settingsLoaded } = useApp();
     const {
         updateAppSettings,
         user: adminUser,
@@ -113,11 +158,55 @@ export default function Settings() {
     } = useAdmin();
     const [language, setLanguage] = useState(normalizeLanguageCode(i18n.language));
     const [logoutLoading, setLogoutLoading] = useState(false);
+    const [appleIdLogoutLoading, setAppleIdLogoutLoading] = useState(false);
+    const [adminAccountExpanded, setAdminAccountExpanded] = useState(false);
+    const [appleIdExpanded, setAppleIdExpanded] = useState(false);
     const [appVersion, setAppVersion] = useState('');
     const [checkingUpdate, setCheckingUpdate] = useState(false);
     const [otaInstallEnabled, setOtaInstallEnabled] = useOtaInstallPreference();
     const [loadAppScreenshotsEnabled, setLoadAppScreenshotsEnabled] = useLoadAppScreenshotsPreference();
     const otaSecureContext = isOtaSecureContext();
+    const otaInstallInfoTooltip = !otaSecureContext
+        ? `${t('ui.enableOtaInstallHint')}\n${t('ui.enableOtaInstallInsecureContext')}`
+        : t('ui.enableOtaInstallHint');
+
+    const handleOtaInstallInfoClick = () => {
+        const hintHtml = `<p style="margin:0 0 12px;white-space:pre-line">${t('ui.enableOtaInstallHint')}</p>`;
+        const insecureHtml = !otaSecureContext
+            ? `<p style="margin:0;color:var(--joy-palette-warning-500,#ed6c02)">${t('ui.enableOtaInstallInsecureContext')}</p>`
+            : '';
+
+        Swal.fire({
+            icon: !otaSecureContext ? 'warning' : 'info',
+            title: t('ui.enableOtaInstall'),
+            html: `${hintHtml}${insecureHtml}`,
+            confirmButtonText: t('ui.confirm'),
+        });
+    };
+
+    const handleLanguageLocalizationInfoClick = () => {
+        const githubButtonText = t('ui.languageLocalizationGithub');
+
+        Swal.fire({
+            icon: 'info',
+            title: t('ui.languageLocalizationTitle'),
+            html: `<p style="margin:0">${t('ui.languageLocalizationDescription')}</p>`,
+            showCancelButton: true,
+            confirmButtonText: githubButtonText,
+            cancelButtonText: t('ui.close'),
+            didOpen: () => {
+                const confirmButton = Swal.getConfirmButton();
+                if (confirmButton) {
+                    confirmButton.innerHTML = `${SWAL_GITHUB_ICON_HTML}${githubButtonText}`;
+                }
+            },
+        }).then((result) => {
+            if (result.isConfirmed) {
+                window.open(HARBOR_LOCALE_EN_JSON_URL, '_blank', 'noopener,noreferrer');
+            }
+        });
+    };
+
     const [downloadFileNameTemplate, setDownloadFileNameTemplate] = useState(
         cloneTemplate(DEFAULT_DOWNLOAD_FILENAME_TEMPLATE)
     );
@@ -184,7 +273,7 @@ export default function Settings() {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.settingsSaveFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm'),
             });
         } finally {
@@ -248,7 +337,7 @@ export default function Settings() {
             await Swal.fire({
                 icon: 'error',
                 title: t('ui.updateCheckFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm'),
             });
         } finally {
@@ -266,6 +355,50 @@ export default function Settings() {
             console.error('退出系统失败:', error);
         } finally {
             setLogoutLoading(false);
+        }
+    };
+
+    const handleAppleIdLogout = async () => {
+        const result = await Swal.fire({
+            title: t('ui.confirmRevokeLogin'),
+            text: t('ui.confirmRevokeAppleId'),
+            icon: 'question',
+            showCancelButton: true,
+            confirmButtonText: t('ui.confirm'),
+            cancelButtonText: t('ui.cancel'),
+        });
+
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        setAppleIdLogoutLoading(true);
+
+        try {
+            await revokeAuth();
+            logout();
+            Swal.fire({
+                icon: 'success',
+                title: t('ui.logoutSuccess'),
+                timer: 1500,
+                toast: true,
+                position: 'top',
+                showConfirmButton: false,
+            });
+        } catch (error) {
+            if (isRateLimitError(error)) {
+                return;
+            }
+
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.logoutFailed'),
+                text: resolveClientErrorMessage(error),
+                confirmButtonText: t('ui.confirm'),
+            });
+            logout();
+        } finally {
+            setAppleIdLogoutLoading(false);
         }
     };
 
@@ -311,7 +444,7 @@ export default function Settings() {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.settingsSaveFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm'),
             });
         } finally {
@@ -367,155 +500,292 @@ export default function Settings() {
                             {t('ui.systemInfo')}
                         </Typography>
 
-                        <Stack gap={2}>
-                            <Stack
-                                direction={{ xs: 'column', sm: 'row' }}
-                                justifyContent="space-between"
-                                alignItems={{ xs: 'stretch', sm: 'center' }}
-                                gap={1.5}
+                        <Stack gap={0}>
+                            <AccordionGroup
+                                size="sm"
+                                // disableDivider
+                                transition="0.25s ease"
+                                sx={{
+                                    '--AccordionGroup-gap': '0px',
+                                    '--ListItem-paddingY': '2px',
+                                    '--ListItem-minHeight': '2rem',
+                                    '& .MuiAccordion-root': {
+                                        bgcolor: 'transparent',
+                                        '&::before': { display: 'none' },
+                                    },
+                                    '& .MuiAccordion-root:not([data-last-child])': {
+                                        pb: 1.25,
+                                        borderBottom: '1px solid rgba(var(--joy-palette-neutral-500Channel, 99 107 116) / 0.2)',
+                                    },
+                                    '& .MuiAccordion-root:not([data-first-child])': {
+                                        pt: 1.25,
+                                    },
+                                    '& .MuiAccordionDetails-root': {
+                                        marginInline: 0,
+                                    },
+                                }}
                             >
-                                <Box sx={{ minWidth: 0 }}>
-                                    <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
-                                        {t('ui.adminAccount')}
-                                    </Typography>
-                                    {adminUser && (
-                                        <>
-                                            <Typography level="body-sm" sx={{ mt: 0.5, fontWeight: 'md' }}>
-                                                {adminUser.username}
+                                <Accordion
+                                    expanded={adminAccountExpanded}
+                                    onChange={(_, expanded) => setAdminAccountExpanded(expanded)}
+                                >
+                                    <AccordionSummary
+                                        indicator={<ExpandMore />}
+                                        sx={{ px: 0, minHeight: 'unset', '& .MuiAccordionSummary-button': { py: 0.375, minHeight: 32 } }}
+                                    >
+                                        <Stack
+                                            direction="row"
+                                            alignItems="center"
+                                            justifyContent="space-between"
+                                            gap={1}
+                                            sx={{ width: '100%', minWidth: 0, pr: 0.5 }}
+                                        >
+                                            <Typography level="body-sm" fontWeight="md">
+                                                {t('ui.adminAccount')}
                                             </Typography>
-                                            <Stack direction="row" alignItems="center" gap={0.75} sx={{ mt: 0.25 }}>
-                                                <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-                                                    {t('ui.expiryTime')}: {getFormattedExpiresAt()}
+                                            {!adminAccountExpanded && adminUser?.username && (
+                                                <Typography level="body-xs" sx={{ color: 'text.tertiary' }} noWrap>
+                                                    {adminUser.username}
                                                 </Typography>
-                                                {isExpiringSoon() && (
-                                                    <Chip color="warning" size="sm">
-                                                        {t('ui.expiringSoon')}
-                                                    </Chip>
+                                            )}
+                                        </Stack>
+                                    </AccordionSummary>
+                                    <AccordionDetails sx={accountAccordionDetailsSx}>
+                                        <Stack
+                                            direction={{ xs: 'column', sm: 'row' }}
+                                            justifyContent="space-between"
+                                            alignItems={{ xs: 'stretch', sm: 'center' }}
+                                            gap={1.25}
+                                            sx={{
+                                                minHeight: 0,
+                                                pt: adminAccountExpanded ? 0.75 : 0,
+                                                pb: adminAccountExpanded ? 1.25 : 0,
+                                                transition: 'padding 0.25s ease',
+                                            }}
+                                        >
+                                            <Box sx={{ minWidth: 0 }}>
+                                                {adminUser && (
+                                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                                                        <Avatar
+                                                            variant="soft"
+                                                            color="neutral"
+                                                            size="sm"
+                                                            sx={{
+                                                                flexShrink: 0,
+                                                                '--Avatar-size': '28px',
+                                                            }}
+                                                        >
+                                                            <AdminPanelSettingsIcon sx={{ fontSize: 18 }} />
+                                                        </Avatar>
+                                                        <Stack spacing={0} sx={{ minWidth: 0 }}>
+                                                            <Typography level="body-sm" fontWeight="md" noWrap sx={{ lineHeight: 1.4 }}>
+                                                                {adminUser.username}
+                                                            </Typography>
+                                                            <Stack direction="row" alignItems="center" gap={0.5} sx={{ mt: 0.125 }}>
+                                                                <Typography level="body-xs" sx={{ color: 'text.tertiary', lineHeight: 1.3 }}>
+                                                                    {t('ui.expiryTime')}: {getFormattedExpiresAt()}
+                                                                </Typography>
+                                                                {isExpiringSoon() && (
+                                                                    <Chip color="warning" size="sm">
+                                                                        {t('ui.expiringSoon')}
+                                                                    </Chip>
+                                                                )}
+                                                            </Stack>
+                                                        </Stack>
+                                                    </Stack>
                                                 )}
-                                            </Stack>
-                                        </>
-                                    )}
-                                </Box>
-                                <Button
-                                    color="danger"
-                                    variant="outlined"
-                                    size="sm"
-                                    loading={logoutLoading}
-                                    disabled={logoutLoading}
-                                    onClick={handleAdminLogout}
-                                    startDecorator={<ExitToApp />}
-                                    sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+                                            </Box>
+                                            <Button
+                                                color="danger"
+                                                variant="outlined"
+                                                size="sm"
+                                                loading={logoutLoading}
+                                                disabled={logoutLoading}
+                                                onClick={handleAdminLogout}
+                                                startDecorator={<ExitToApp />}
+                                                sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+                                            >
+                                                {logoutLoading ? t('ui.loggingOut') : t('ui.logoutSystem')}
+                                            </Button>
+                                        </Stack>
+                                    </AccordionDetails>
+                                </Accordion>
+
+                                <Accordion
+                                    expanded={appleIdExpanded}
+                                    onChange={(_, expanded) => setAppleIdExpanded(expanded)}
                                 >
-                                    {logoutLoading ? t('ui.loggingOut') : t('ui.logoutSystem')}
-                                </Button>
-                            </Stack>
+                                    <AccordionSummary
+                                        indicator={<ExpandMore />}
+                                        sx={{ px: 0, minHeight: 'unset', '& .MuiAccordionSummary-button': { py: 0.375, minHeight: 32 } }}
+                                    >
+                                        <Stack
+                                            direction="row"
+                                            alignItems="center"
+                                            justifyContent="space-between"
+                                            gap={1}
+                                            sx={{ width: '100%', minWidth: 0, pr: 0.5 }}
+                                        >
+                                            <Typography level="body-sm" fontWeight="md">
+                                                {t('ui.appleId')}
+                                            </Typography>
+                                            {!appleIdExpanded && (
+                                                <Typography level="body-xs" sx={{ color: 'text.tertiary' }} noWrap>
+                                                    {loading
+                                                        ? t('ui.loading')
+                                                        : !isAuthenticated || !user
+                                                            ? t('ui.needAppleIdLogin')
+                                                            : (user.name || user.email || t('ui.unknownUser'))}
+                                                </Typography>
+                                            )}
+                                        </Stack>
+                                    </AccordionSummary>
+                                    <AccordionDetails sx={accountAccordionDetailsSx}>
+                                        <Stack
+                                            direction={{ xs: 'column', sm: 'row' }}
+                                            justifyContent="space-between"
+                                            alignItems={{ xs: 'stretch', sm: 'center' }}
+                                            gap={1.25}
+                                            sx={{
+                                                minHeight: 0,
+                                                pt: appleIdExpanded ? 0.75 : 0,
+                                                pb: appleIdExpanded ? 1.25 : 0,
+                                                transition: 'padding 0.25s ease',
+                                            }}
+                                        >
+                                            <Box sx={{ minWidth: 0 }}>
+                                                {loading ? (
+                                                    <Typography level="body-xs" sx={{ lineHeight: 1.4 }}>
+                                                        {t('ui.loading')}
+                                                    </Typography>
+                                                ) : !isAuthenticated || !user ? (
+                                                    <Typography level="body-xs" sx={{ color: 'text.tertiary', lineHeight: 1.4 }}>
+                                                        {t('ui.needAppleIdLogin')}
+                                                    </Typography>
+                                                ) : (
+                                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
+                                                        <Avatar
+                                                            variant="soft"
+                                                            color="neutral"
+                                                            size="sm"
+                                                            sx={{
+                                                                flexShrink: 0,
+                                                                '--Avatar-size': '28px',
+                                                            }}
+                                                        >
+                                                            {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
+                                                        </Avatar>
+                                                        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                                                            <Typography level="body-sm" fontWeight="md" noWrap sx={{ lineHeight: 1.4 }}>
+                                                                {user.name || t('ui.unknownUser')}
+                                                            </Typography>
+                                                            <Typography level="body-xs" sx={{ color: 'text.tertiary', lineHeight: 1.4 }} noWrap>
+                                                                {user.email || t('ui.unknownEmail')}
+                                                            </Typography>
+                                                        </Stack>
+                                                    </Stack>
+                                                )}
+                                            </Box>
+                                            {!loading && (
+                                                isAuthenticated && user ? (
+                                                    <Button
+                                                        color="danger"
+                                                        variant="outlined"
+                                                        size="sm"
+                                                        loading={appleIdLogoutLoading}
+                                                        disabled={appleIdLogoutLoading}
+                                                        onClick={handleAppleIdLogout}
+                                                        startDecorator={<Logout />}
+                                                        sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+                                                    >
+                                                        {appleIdLogoutLoading ? t('ui.loggingOut') : t('ui.revokeLogin')}
+                                                    </Button>
+                                                ) : (
+                                                    <Button
+                                                        variant="outlined"
+                                                        size="sm"
+                                                        onClick={() => navigate('/apple-id')}
+                                                        sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+                                                    >
+                                                        {t('ui.appleIdLogin')}
+                                                    </Button>
+                                                )
+                                            )}
+                                        </Stack>
+                                    </AccordionDetails>
+                                </Accordion>
+                            </AccordionGroup>
 
-                            <Divider />
-
-                            <Stack
-                                direction={{ xs: 'column', sm: 'row' }}
-                                justifyContent="space-between"
-                                alignItems={{ xs: 'stretch', sm: 'center' }}
-                                gap={1.5}
+                            <Box
+                                sx={{
+                                    mt: 1.25,
+                                    pt: 1.25,
+                                    borderTop: '1px solid',
+                                    borderColor: 'rgba(var(--joy-palette-neutral-500Channel, 99 107 116) / 0.2)',
+                                }}
                             >
                                 <Stack
-                                    direction="row"
+                                    direction={{ xs: 'column', sm: 'row' }}
                                     justifyContent="space-between"
-                                    alignItems="center"
-                                    sx={{ flex: 1, minWidth: 0, width: '100%' }}
+                                    alignItems={{ xs: 'stretch', sm: 'center' }}
+                                    gap={1.5}
                                 >
-                                    <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-                                        <Typography level="body-sm" sx={{ fontWeight: 'md' }}>
-                                            IPA Harbor
-                                        </Typography>
-                                        <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-                                            {t('ui.currentVersion')}：{appVersion ? `v${appVersion}` : '—'}
-                                        </Typography>
-                                    </Stack>
+                                    <Stack
+                                        direction="row"
+                                        justifyContent="space-between"
+                                        alignItems="center"
+                                        sx={{ flex: 1, minWidth: 0, width: '100%' }}
+                                    >
+                                        <Stack spacing={0.25} sx={{ minWidth: 0 }}>
+                                            <Typography level="body-sm" sx={{ fontWeight: 'md' }}>
+                                                IPA Harbor
+                                            </Typography>
+                                            <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
+                                                {t('ui.currentVersion')}：{appVersion ? `v${appVersion}` : '—'}
+                                            </Typography>
+                                        </Stack>
 
-                                    <Stack direction="row" alignItems="center" gap={0.25} sx={{ flexShrink: 0 }}>
-                                        <IconButton
-                                            component="a"
-                                            href={HARBOR_GITHUB_URL}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            variant="plain"
-                                            color="neutral"
-                                            size="sm"
-                                            aria-label={t('ui.harborGithub')}
-                                        >
-                                            <TablerGitHubIcon />
-                                        </IconButton>
-                                        <IconButton
-                                            component="a"
-                                            href={HARBOR_DOCKER_HUB_URL}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            variant="plain"
-                                            color="neutral"
-                                            size="sm"
-                                            aria-label={t('ui.viewDockerTags')}
-                                        >
-                                            <TablerDockerIcon />
-                                        </IconButton>
+                                        <Stack direction="row" alignItems="center" gap={0.25} sx={{ flexShrink: 0 }}>
+                                            <IconButton
+                                                component="a"
+                                                href={HARBOR_GITHUB_URL}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                variant="plain"
+                                                color="neutral"
+                                                size="sm"
+                                                aria-label={t('ui.harborGithub')}
+                                            >
+                                                <TablerGitHubIcon />
+                                            </IconButton>
+                                            <IconButton
+                                                component="a"
+                                                href={HARBOR_DOCKER_HUB_URL}
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                variant="plain"
+                                                color="neutral"
+                                                size="sm"
+                                                aria-label={t('ui.viewDockerTags')}
+                                            >
+                                                <TablerDockerIcon />
+                                            </IconButton>
+                                        </Stack>
                                     </Stack>
+                                    <Button
+                                        variant="outlined"
+                                        color="neutral"
+                                        size="sm"
+                                        loading={checkingUpdate}
+                                        disabled={checkingUpdate}
+                                        onClick={handleCheckUpdate}
+                                        startDecorator={<SystemUpdateAlt />}
+                                        sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
+                                    >
+                                        {checkingUpdate ? t('ui.checkingUpdates') : t('ui.checkForUpdates')}
+                                    </Button>
                                 </Stack>
-                                <Button
-                                    variant="outlined"
-                                    color="neutral"
-                                    size="sm"
-                                    loading={checkingUpdate}
-                                    disabled={checkingUpdate}
-                                    onClick={handleCheckUpdate}
-                                    startDecorator={<SystemUpdateAlt />}
-                                    sx={{ flexShrink: 0, alignSelf: { xs: 'stretch', sm: 'center' } }}
-                                >
-                                    {checkingUpdate ? t('ui.checkingUpdates') : t('ui.checkForUpdates')}
-                                </Button>
-                            </Stack>
-                        </Stack>
-                    </Sheet>
-
-                    <Sheet variant="outlined" sx={{ ...sectionSx, display: 'none' }}>
-                        <Stack
-                            direction="row"
-                            justifyContent="space-between"
-                            alignItems="center"
-                            gap={1.5}
-                        >
-                            <Typography level="title-md">
-                                {t('ui.appleId')}
-                            </Typography>
-                            {loading ? (
-                                <Typography level="body-sm">{t('ui.loading')}</Typography>
-                            ) : !isAuthenticated || !user ? (
-                                <Button
-                                    variant="outlined"
-                                    size="sm"
-                                    onClick={() => navigate('/apple-id')}
-                                >
-                                    {t('ui.appleIdLogin')}
-                                </Button>
-                            ) : (
-                                <Stack
-                                    direction="row"
-                                    spacing={1.5}
-                                    alignItems="center"
-                                    sx={{ minWidth: 0, flexShrink: 1 }}
-                                >
-                                    <Avatar size="sm" sx={{ bgcolor: 'primary.500', color: 'white' }}>
-                                        {user.name ? user.name.charAt(0).toUpperCase() : 'U'}
-                                    </Avatar>
-                                    <Stack spacing={0.25} sx={{ minWidth: 0 }}>
-                                        <Typography level="body-sm" fontWeight="md" noWrap>
-                                            {user.name || t('ui.unknownUser')}
-                                        </Typography>
-                                        <Typography level="body-xs" sx={{ color: 'text.tertiary' }} noWrap>
-                                            {user.email || t('ui.unknownEmail')}
-                                        </Typography>
-                                    </Stack>
-                                </Stack>
-                            )}
+                            </Box>
                         </Stack>
                     </Sheet>
 
@@ -526,9 +796,29 @@ export default function Settings() {
                             alignItems="center"
                             gap={1.5}
                         >
-                            <Typography level="title-md">
-                                {t('ui.languageSettings')}
-                            </Typography>
+                            <Stack direction="row" alignItems="center" gap={0.5}>
+                                <Typography level="title-md">
+                                    {t('ui.languageSettings')}
+                                </Typography>
+                                <Tooltip
+                                    title={t('ui.languageLocalizationHint')}
+                                    variant="outlined"
+                                    placement="top"
+                                    arrow
+                                    slotProps={settingsInfoTooltipSlotProps}
+                                >
+                                    <IconButton
+                                        variant="plain"
+                                        color="neutral"
+                                        size="sm"
+                                        aria-label={t('ui.languageLocalizationHint')}
+                                        onClick={handleLanguageLocalizationInfoClick}
+                                        sx={{ '--IconButton-size': '24px', minWidth: 24, minHeight: 24 }}
+                                    >
+                                        <InfoOutlined sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Stack>
                             <LanguageSwitcher
                                 variant="select"
                                 value={language}
@@ -544,35 +834,30 @@ export default function Settings() {
                             alignItems="center"
                             gap={1.5}
                         >
-                            <Box sx={{ minWidth: 0 }}>
-                                <Stack direction="row" alignItems="center" gap={0.5}>
-                                    <Typography level="title-md">
-                                        {t('ui.enableOtaInstall')}
-                                    </Typography>
-                                    {!otaSecureContext && (
-                                        <Tooltip
-                                            title={t('ui.enableOtaInstallInsecureContext')}
-                                            variant="outlined"
-                                            color="warning"
-                                            placement="top"
-                                            arrow
-                                        >
-                                            <IconButton
-                                                variant="plain"
-                                                color="warning"
-                                                size="sm"
-                                                aria-label={t('ui.enableOtaInstallInsecureContext')}
-                                                sx={{ '--IconButton-size': '24px', minWidth: 24, minHeight: 24 }}
-                                            >
-                                                <InfoOutlined sx={{ fontSize: 18 }} />
-                                            </IconButton>
-                                        </Tooltip>
-                                    )}
-                                </Stack>
-                                <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.5 }}>
-                                    {t('ui.enableOtaInstallHint')}
+                            <Stack direction="row" alignItems="center" gap={0.5}>
+                                <Typography level="title-md">
+                                    {t('ui.enableOtaInstall')}
                                 </Typography>
-                            </Box>
+                                <Tooltip
+                                    title={otaInstallInfoTooltip}
+                                    variant="outlined"
+                                    color={otaSecureContext ? 'primary' : 'warning'}
+                                    placement="top"
+                                    arrow
+                                    slotProps={settingsInfoTooltipSlotProps}
+                                >
+                                    <IconButton
+                                        variant="plain"
+                                        color={otaSecureContext ? 'neutral' : 'warning'}
+                                        size="sm"
+                                        aria-label={otaInstallInfoTooltip}
+                                        onClick={handleOtaInstallInfoClick}
+                                        sx={{ '--IconButton-size': '24px', minWidth: 24, minHeight: 24 }}
+                                    >
+                                        <InfoOutlined sx={{ fontSize: 18 }} />
+                                    </IconButton>
+                                </Tooltip>
+                            </Stack>
                             <Switch
                                 checked={otaInstallEnabled}
                                 onChange={(event) => setOtaInstallEnabled(event.target.checked)}

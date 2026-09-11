@@ -1,17 +1,29 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Box, Stack, Typography, Link, Button, DialogTitle, DialogContent, ModalClose, Sheet,
+    Box, Stack, Typography, Link, Button, IconButton, DialogTitle, DialogContent, ModalClose, Sheet,
 } from '@mui/joy';
-import { Download as DownloadIcon } from '@mui/icons-material';
+import { Download as DownloadIcon, Search, InstallMobile } from '@mui/icons-material';
+import DeleteIcon from '@mui/icons-material/Delete';
+import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import IpaAppIcon from './IpaAppIcon';
-import { getAppIconUrl, deleteTask, isRateLimitError, getAppDownloadPackageUrlByFileName } from '../utils/api';
+import {
+    getAppIconUrl,
+    deleteTask,
+    isRateLimitError,
+    getAppDownloadPackageUrlByFileName,
+    getAppInstallPackageUrlByFileName,
+    resolveClientErrorMessage,
+} from '../utils/api';
 import formatFileSize from '../utils/formatFileSize.js';
 import { useApp } from '../contexts/AppContext';
 import { useFullscreenDialog } from '../hooks/useJoyMedia';
+import { isOtaSecureContext, useOtaInstallPreference } from '../utils/otaInstallPreference';
+import { getIntlLocale } from '../i18n';
 
 const EASE_OUT = [0.22, 1, 0.36, 1];
 const EASE_IN = [0.4, 0, 1, 1];
@@ -62,7 +74,9 @@ function extractAppInfo(fileName) {
 
 export default function IpaDetailDrawer({ item, open, onClose, onExitComplete }) {
     const { t } = useTranslation();
+    const navigate = useNavigate();
     const { user } = useApp();
+    const [otaInstallEnabled] = useOtaInstallPreference();
     const prefersReducedMotion = useReducedMotion();
     const fullscreen = useFullscreenDialog();
     const drawerScrollRef = useRef(null);
@@ -90,6 +104,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
     const {
         id: appId,
         name = '',
+        status,
         taskId,
         itemId,
         bundleDisplayName,
@@ -108,14 +123,28 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
     const { appId: extractedAppId } = extractAppInfo(name);
     const finalAppId = appId || extractedAppId;
     const displayAppId = finalAppId || (itemId != null ? String(itemId) : null);
+    const isMetadataPending = ['completed', 'downloaded'].includes(status) && !bundleDisplayName;
     const shelfIconSrc = finalAppId ? getAppIconUrl(finalAppId, 200, user?.region) : null;
     const drawerOpen = open && Boolean(item);
+    const installBaseName = name.replace(/\.ipa$/i, '');
+    const installUrl = installBaseName.includes('_')
+        ? getAppInstallPackageUrlByFileName(installBaseName)
+        : null;
+    const showInstall = otaInstallEnabled && isOtaSecureContext() && installUrl;
+
+    const handleViewAppDetail = () => {
+        if (!finalAppId) {
+            return;
+        }
+        onClose?.();
+        navigate(`/?openAppId=${encodeURIComponent(finalAppId)}`);
+    };
 
     const formatDate = (dateString) => {
         if (!dateString) return t('ui.unknown');
         try {
             const lng = localStorage.getItem('language') || 'en';
-            return new Date(dateString).toLocaleString(lng.startsWith('zh') ? 'zh-CN' : 'en-US');
+            return new Date(dateString).toLocaleString(getIntlLocale(lng));
         } catch {
             return t('ui.dateFormatError');
         }
@@ -268,7 +297,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
                 Swal.fire({
                     icon: 'error',
                     title: t('ui.deleteFailed'),
-                    text: error.message,
+                    text: resolveClientErrorMessage(error),
                     confirmButtonText: t('ui.confirm'),
                 });
             }
@@ -366,12 +395,25 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
                         </Box>
 
                         <Stack spacing={1}>
-                            {bundleDisplayName && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appName_label')}</Typography>
-                                    <Typography level="body-md">{bundleDisplayName}</Typography>
-                                </Box>
-                            )}
+                            <Stack direction="row" spacing={1} alignItems="flex-end">
+                                <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
+                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
+                                        {t('ui.appName_label')}
+                                    </Typography>
+                                    <Typography level="body-md">{bundleDisplayName || name}</Typography>
+                                </Stack>
+                                <IconButton
+                                    variant="plain"
+                                    color="primary"
+                                    aria-label={t('ui.viewAppDetail')}
+                                    title={t('ui.viewAppDetail')}
+                                    onClick={handleViewAppDetail}
+                                    disabled={!finalAppId}
+                                    sx={{ flexShrink: 0 }}
+                                >
+                                    <Search />
+                                </IconButton>
+                            </Stack>
                             {artistName && (
                                 <Box>
                                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.developer')}</Typography>
@@ -394,6 +436,16 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
                                 <Box>
                                     <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.bundleId')}</Typography>
                                     <Typography level="body-md">{softwareVersionBundleId}</Typography>
+                                </Box>
+                            )}
+                            {isMetadataPending && (
+                                <Box>
+                                    <Stack direction="row" spacing={0.5} alignItems="center">
+                                        <HourglassTopIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
+                                        <Typography level="body-md" sx={{ color: 'text.secondary' }}>
+                                            {t('ui.parsingMetadata')}
+                                        </Typography>
+                                    </Stack>
                                 </Box>
                             )}
                             {displayAppId && (
@@ -459,15 +511,45 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
                     pb: 'max(16px, env(safe-area-inset-bottom, 0px))',
                 }}
             >
-                <Stack direction="row" useFlexGap spacing={1} sx={{ justifyContent: 'space-between' }}>
-                    <Button variant="outlined" color="danger" onClick={handleDeleteTask}>
-                        {t('ui.delete')}
-                    </Button>
-                    <Link href={getAppDownloadPackageUrlByFileName(name)}>
-                        <Button startDecorator={<DownloadIcon />}>
-                            {t('ui.download')}
-                        </Button>
-                    </Link>
+                <Stack direction="row" useFlexGap spacing={1} sx={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                    <IconButton
+                        variant="soft"
+                        color="danger"
+                        aria-label={t('ui.delete')}
+                        title={t('ui.delete')}
+                        onClick={handleDeleteTask}
+                    >
+                        <DeleteIcon />
+                    </IconButton>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        {showInstall ? (
+                            <>
+                                <IconButton
+                                    component={Link}
+                                    href={getAppDownloadPackageUrlByFileName(name)}
+                                    variant="soft"
+                                    aria-label={t('ui.download')}
+                                    title={t('ui.download')}
+                                >
+                                    <DownloadIcon />
+                                </IconButton>
+                                <Button
+                                    component={Link}
+                                    href={installUrl}
+                                    color="success"
+                                    startDecorator={<InstallMobile />}
+                                >
+                                    {t('ui.install')}
+                                </Button>
+                            </>
+                        ) : (
+                            <Link href={getAppDownloadPackageUrlByFileName(name)}>
+                                <Button startDecorator={<DownloadIcon />}>
+                                    {t('ui.download')}
+                                </Button>
+                            </Link>
+                        )}
+                    </Stack>
                 </Stack>
             </Box>
         </Sheet>

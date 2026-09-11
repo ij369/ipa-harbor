@@ -1,6 +1,7 @@
 const { exec } = require('child_process');
 const path = require('path');
 const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
@@ -55,16 +56,17 @@ async function revokeHandler(req, res) {
 
             if (result.success) {
                 clearIpatoolAccountCache();
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: '撤销认证成功',
+                    errorMessageCode: 'AUTH_REVOKE_SUCCESS',
                     data: result.data || result.rawOutput
                 });
             } else {
-                return res.status(500).json({
-                    success: false,
+                return sendError(res, 500, {
                     message: '撤销认证失败',
-                    error: result.error
+                    errorMessageCode: 'AUTH_REVOKE_FAILED',
+                    error: result.error,
+                    errorCode: 'AUTH_REVOKE_EXEC_FAILED',
                 });
             }
         } catch (execError) {
@@ -77,26 +79,29 @@ async function revokeHandler(req, res) {
                 execError.stderr.includes('authentication') ||
                 execError.stderr.includes('keychain')
             )) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '用户未登录或认证信息已过期',
-                    error: '没有可撤销的认证信息'
+                    errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                    error: '没有可撤销的认证信息',
+                    errorCode: 'AUTH_REVOKE_NO_AUTH_INFO',
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '撤销认证时发生错误',
-                error: execError.message || '执行命令失败'
+                errorMessageCode: 'AUTH_REVOKE_ERROR',
+                error: execError.message || '执行命令失败',
+                errorCode: 'AUTH_REVOKE_EXEC_FAILED',
             });
         }
 
     } catch (error) {
         // console.error('撤销认证错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

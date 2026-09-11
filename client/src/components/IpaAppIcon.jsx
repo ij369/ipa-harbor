@@ -2,9 +2,11 @@ import React, { useState } from 'react';
 import { Box, Skeleton } from '@mui/joy';
 import { getAppIconUrl } from '../utils/api';
 
+const ICON_FETCH_SIZE = 128;
+
 export default function IpaAppIcon({ appId, size = 128, disabled = false, country }) {
     const [loaded, setLoaded] = useState(false);
-    const iconUrl = appId ? getAppIconUrl(appId, size, country) : null;
+    const iconUrl = appId ? getAppIconUrl(appId, ICON_FETCH_SIZE, country) : null;
 
     return (
         <Box
@@ -12,6 +14,7 @@ export default function IpaAppIcon({ appId, size = 128, disabled = false, countr
                 position: 'relative',
                 width: size,
                 height: size,
+                transition: 'width 0.12s ease-out, height 0.12s ease-out',
                 borderRadius: '22%',
                 overflow: 'hidden',
                 backgroundColor: 'background.level1',
@@ -58,6 +61,7 @@ export default function IpaAppIcon({ appId, size = 128, disabled = false, countr
                         justifyContent: 'center',
                         fontSize: size / 3,
                         color: 'text.tertiary',
+                        transition: 'font-size 0.12s ease-out',
                     }}
                 >
                     .

@@ -2,6 +2,12 @@ const { exec } = require('child_process');
 const path = require('path');
 const https = require('https');
 const { ensureVersionMetadataCached, upsertVersionMetadataRecord } = require('../../utils/versionMetadata');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
+const {
+    parseIpatoolJsonLines,
+    extractErrorFromLines,
+    extractListVersionsFromLines,
+} = require('../../utils/ipatoolOutput');
 
 // ipatool二进制文件路径
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
@@ -14,88 +20,145 @@ const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
  * @param {number} currentAttempt - 当前尝试次数，默认为1
  * @returns {Promise} 返回Promise对象
  */
+function classifyIpatoolOutput(allOutput) {
+    if (allOutput.includes('password token is expired') || allOutput.includes('"error":"password token is expired"')) {
+        return {
+            error: '密码令牌已过期，请重新登录',
+            errorType: 'TOKEN_EXPIRED',
+        };
+    }
+
+    if (allOutput.includes('license is required') || allOutput.includes('"error":"license is required"')) {
+        return {
+            error: '需要先领取该应用的许可证',
+            errorType: 'LICENSE_REQUIRED',
+        };
+    }
+
+    return null;
+}
+
 function executeIpatool(command, maxRetries = 2, currentAttempt = 1) {
     return new Promise((resolve, reject) => {
-        // console.log(`[DEBUG] 执行ipatool命令 (尝试 ${currentAttempt}/${maxRetries + 1}): ${command}`);
-
         exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
-            if (error) {
-                const errorInfo = {
+            const combined = [stdout, stderr].filter(Boolean).join('\n');
+            const lines = parseIpatoolJsonLines(combined);
+            const classified = classifyIpatoolOutput(combined);
+
+            if (classified) {
+                reject({
                     success: false,
-                    error: error.message,
-                    stderr: stderr,
-                    stdout: stdout
-                };
-
-                // 检查是否包含特定错误类型
-                const allOutput = stdout + stderr;
-
-                // 检查是否是密码令牌过期错误
-                if (allOutput.includes('password token is expired') || allOutput.includes('"error":"password token is expired"')) {
-                    // console.log(`[DEBUG] 检测到password token is expired错误`);
-                    reject({
-                        success: false,
-                        error: '密码令牌已过期，请重新登录',
-                        errorType: 'TOKEN_EXPIRED',
-                        stderr: stderr,
-                        stdout: stdout
-                    });
-                    return;
-                }
-
-                // 检查是否是需要许可证的错误
-                if (allOutput.includes('license is required') || allOutput.includes('"error":"license is required"')) {
-                    // console.log(`[DEBUG] 检测到license is required错误`);
-                    reject({
-                        success: false,
-                        error: '需要先领取该应用的许可证',
-                        errorType: 'LICENSE_REQUIRED',
-                        stderr: stderr,
-                        stdout: stdout
-                    });
-                    return;
-                }
-
-                // 检查是否包含"An unknown error has occurred"错误
-                const shouldRetry = (stderr.includes('An unknown error has occurred') ||
-                    stdout.includes('An unknown error has occurred')) &&
-                    currentAttempt <= maxRetries;
-
-                if (shouldRetry) {
-                    // console.log(`[DEBUG] 检测到"An unknown error has occurred"错误，准备重试 (${currentAttempt}/${maxRetries})`);
-                    // console.log(`[DEBUG] 错误详情 - stdout: ${stdout}`);
-                    // console.log(`[DEBUG] 错误详情 - stderr: ${stderr}`);
-
-                    // 延迟1秒后重试
-                    setTimeout(() => {
-                        executeIpatool(command, maxRetries, currentAttempt + 1)
-                            .then(resolve)
-                            .catch(reject);
-                    }, 1000);
-                } else {
-                    // console.log(`[DEBUG] 命令执行失败，不符合重试条件或已达到最大重试次数`);
-                    reject(errorInfo);
-                }
-            } else {
-                try {
-                    // 尝试解析JSON输出
-                    const result = JSON.parse(stdout);
-                    // console.log(`[DEBUG] 命令执行成功 (尝试 ${currentAttempt})`);
-                    resolve({
-                        success: true,
-                        data: result
-                    });
-                } catch (parseError) {
-                    // 如果不是JSON格式，返回原始输出
-                    // console.log(`[DEBUG] 命令执行成功，返回原始输出 (尝试 ${currentAttempt})`);
-                    resolve({
-                        success: true,
-                        rawOutput: stdout
-                    });
-                }
+                    ...classified,
+                    stderr,
+                    stdout,
+                });
+                return;
             }
+
+            const versionData = extractListVersionsFromLines(lines);
+            if (versionData) {
+                resolve({
+                    success: true,
+                    data: versionData,
+                });
+                return;
+            }
+
+            const ipatoolError = extractErrorFromLines(lines);
+            if (ipatoolError) {
+                reject({
+                    success: false,
+                    error: ipatoolError,
+                    stderr,
+                    stdout,
+                });
+                return;
+            }
+
+            const shouldRetry = combined.includes('An unknown error has occurred') && currentAttempt <= maxRetries;
+            if (shouldRetry) {
+                setTimeout(() => {
+                    executeIpatool(command, maxRetries, currentAttempt + 1)
+                        .then(resolve)
+                        .catch(reject);
+                }, 1000);
+                return;
+            }
+
+            if (error) {
+                reject({
+                    success: false,
+                    error: error.message || '执行命令失败',
+                    stderr,
+                    stdout,
+                });
+                return;
+            }
+
+            reject({
+                success: false,
+                error: '未能解析 ipatool 响应',
+                stderr,
+                stdout,
+            });
         });
     });
+}
+
+async function buildThirdPartyVersionResponse(appId) {
+    const versionHistory = await fetchVersionHistory(appId);
+    if (!versionHistory || versionHistory.length === 0) {
+        return null;
+    }
+
+    const versionObjects = versionHistory.map((item) => ({
+        versionId: item.external_identifier.toString(),
+        bundleVersion: item.bundle_version && item.bundle_version !== '未知' ? item.bundle_version : null,
+        releaseDate: item.created_at || null,
+    }));
+
+    await Promise.all(versionObjects.map(async (versionObj) => {
+        if (!versionObj.releaseDate) {
+            return;
+        }
+
+        await upsertVersionMetadataRecord({
+            appId,
+            versionId: versionObj.versionId,
+            displayVersion: versionObj.bundleVersion,
+            releaseDate: versionObj.releaseDate,
+            appleMetadata: {
+                externalVersionID: versionObj.versionId,
+                displayVersion: versionObj.bundleVersion,
+                releaseDate: versionObj.releaseDate,
+                source: 'third-party',
+            },
+        });
+    }));
+
+    return {
+        externalVersionIdentifiers: versionObjects,
+    };
+}
+
+async function respondWithThirdPartyVersions(res, appId, source) {
+    const responseData = await buildThirdPartyVersionResponse(appId);
+    if (!responseData) {
+        return false;
+    }
+
+    sendSuccess(res, {
+        message: source === 'third-party'
+            ? '获取版本列表成功（第三方API）'
+            : '获取版本列表成功（第三方API 回退）',
+        errorMessageCode: source === 'third-party'
+            ? 'APP_VERSIONS_FETCH_SUCCESS_THIRD_PARTY'
+            : 'APP_VERSIONS_FETCH_SUCCESS_THIRD_PARTY_FALLBACK',
+        appId,
+        data: responseData,
+        source,
+    });
+    return true;
 }
 
 /**
@@ -154,13 +217,14 @@ function fetchVersionHistory(appId) {
 async function versionsHandler(req, res) {
     try {
         const { appId } = req.params;
-        const { useThirdPartyApi } = req.query;
+        const { useThirdPartyApi, lang = 'en-US' } = req.query;
         // 参数验证
         if (!appId) {
-            return res.status(400).json({
-                success: false,
+            return sendError(res, 400, {
                 message: 'App ID是必需的参数',
-                error: '请在URL路径中提供appId'
+                errorMessageCode: 'APP_VERSIONS_APP_ID_REQUIRED',
+                error: '请在URL路径中提供appId',
+                errorCode: 'APP_VERSIONS_APP_ID_MISSING',
             });
         }
 
@@ -172,55 +236,16 @@ async function versionsHandler(req, res) {
         try {
             // 根据参数决定使用哪种数据源
             if (useThirdPartyApi === 'true') {
-                // console.log(`[DEBUG] 使用第三方API获取应用 ${appId} 的版本列表`);
-
-                // 只请求第三方API
-                const versionHistory = await fetchVersionHistory(appId);
-
-                if (versionHistory && versionHistory.length > 0) {
-                    const versionObjects = versionHistory.map(item => ({
-                        versionId: item.external_identifier.toString(),
-                        bundleVersion: item.bundle_version || '未知',
-                        releaseDate: item.created_at || null
-                    }));
-
-                    await Promise.all(versionObjects.map(async (versionObj) => {
-                        if (!versionObj.releaseDate) {
-                            return;
-                        }
-
-                        await upsertVersionMetadataRecord({
-                            appId,
-                            versionId: versionObj.versionId,
-                            displayVersion: versionObj.bundleVersion !== '未知' ? versionObj.bundleVersion : null,
-                            releaseDate: versionObj.releaseDate,
-                            appleMetadata: {
-                                externalVersionID: versionObj.versionId,
-                                displayVersion: versionObj.bundleVersion,
-                                releaseDate: versionObj.releaseDate,
-                                source: 'third-party',
-                            },
-                        });
-                    }));
-
-                    const responseData = {
-                        externalVersionIdentifiers: versionObjects
-                    };
-
-                    return res.json({
-                        success: true,
-                        message: '获取版本列表成功（第三方API）',
-                        appId: appId,
-                        data: responseData,
-                        source: 'third-party'
-                    });
-                } else {
-                    return res.status(404).json({
-                        success: false,
-                        message: '第三方API未找到该应用的版本信息',
-                        error: '未找到版本数据'
-                    });
+                if (await respondWithThirdPartyVersions(res, appId, 'third-party')) {
+                    return undefined;
                 }
+
+                return sendError(res, 404, {
+                    message: '第三方API未找到该应用的版本信息',
+                    errorMessageCode: 'APP_VERSIONS_THIRD_PARTY_NOT_FOUND',
+                    error: '未找到版本数据',
+                    errorCode: 'APP_VERSIONS_NO_VERSION_DATA',
+                });
             } else {
                 // console.log(`[DEBUG] 使用ipatool获取应用 ${appId} 的版本列表`);
 
@@ -240,41 +265,46 @@ async function versionsHandler(req, res) {
                         externalVersionIdentifiers: versionObjects
                     };
 
-                    return res.json({
-                        success: true,
+                    return sendSuccess(res, {
                         message: '获取版本列表成功',
+                        errorMessageCode: 'APP_VERSIONS_FETCH_SUCCESS',
                         appId: appId,
                         data: responseData,
                         source: 'ipatool'
                     });
                 } else {
-                    return res.status(500).json({
-                        success: false,
+                    return sendError(res, 500, {
                         message: '获取版本列表失败',
-                        error: ipatoolResult.error
+                        errorMessageCode: 'APP_VERSIONS_FETCH_FAILED',
+                        error: ipatoolResult.error,
+                        errorCode: 'APP_VERSIONS_EXEC_FAILED',
                     });
                 }
             }
         } catch (execError) {
-            // console.error('执行ipatool list-versions命令时出错:', execError);
+            if (useThirdPartyApi !== 'true' && await respondWithThirdPartyVersions(res, appId, 'third-party-fallback')) {
+                return undefined;
+            }
 
             // 检查是否是密码令牌过期错误
             if (execError.errorType === 'TOKEN_EXPIRED') {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '密码令牌已过期，请重新登录',
+                    errorMessageCode: 'AUTH_TOKEN_EXPIRED',
                     error: execError.error,
-                    errorType: 'TOKEN_EXPIRED'
+                    errorType: 'TOKEN_EXPIRED',
+                    errorCode: 'AUTH_PASSWORD_TOKEN_EXPIRED',
                 });
             }
 
             // 检查是否是许可证相关错误
             if (execError.errorType === 'LICENSE_REQUIRED') {
-                return res.status(403).json({
-                    success: false,
+                return sendError(res, 403, {
                     message: '需要先领取该应用的许可证',
+                    errorMessageCode: 'APP_VERSIONS_LICENSE_REQUIRED',
                     error: execError.error,
-                    errorType: 'LICENSE_REQUIRED'
+                    errorType: 'LICENSE_REQUIRED',
+                    errorCode: 'APP_VERSIONS_LICENSE_REQUIRED_DETAIL',
                 });
             }
 
@@ -282,10 +312,11 @@ async function versionsHandler(req, res) {
             if (execError.stdout && (
                 execError.stdout.includes('failed to get account')
             )) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '用户未登录或认证信息已过期',
-                    error: '请先登录'
+                    errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                    error: '请先登录',
+                    errorCode: 'AUTH_LOGIN_REQUIRED',
                 });
             }
 
@@ -295,26 +326,29 @@ async function versionsHandler(req, res) {
                 execError.stderr.includes('找不到') ||
                 execError.stderr.includes('invalid')
             )) {
-                return res.status(404).json({
-                    success: false,
+                return sendError(res, 404, {
                     message: '找不到指定的App',
-                    error: 'App ID不存在或无效'
+                    errorMessageCode: 'APP_VERSIONS_APP_NOT_FOUND',
+                    error: 'App ID不存在或无效',
+                    errorCode: 'APP_VERSIONS_APP_ID_INVALID',
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '获取版本列表时发生错误',
-                error: execError.message || '执行命令失败'
+                errorMessageCode: 'APP_VERSIONS_ERROR',
+                error: execError.error || execError.message || '执行命令失败',
+                errorCode: 'APP_VERSIONS_EXEC_FAILED',
             });
         }
 
     } catch (error) {
         // console.error('版本列表错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }
@@ -326,33 +360,26 @@ async function versionsHandler(req, res) {
  */
 async function getLatestVersionId(appId) {
     try {
-        // 构建ipatool list-versions命令
         const command = `"${IPATOOL_PATH}" list-versions -i "${appId}" --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
-        // console.log(`[DEBUG] 获取最新版本ID命令: ${command}`);
-
         const ipatoolResult = await executeIpatool(command);
 
         if (ipatoolResult.success && ipatoolResult.data) {
-            // 获取版本ID数组并反转（最新的在最后）
-            const externalVersionIdentifiers = ipatoolResult.data.externalVersionIdentifiers?.reverse() || [];
+            const externalVersionIdentifiers = ipatoolResult.data.externalVersionIdentifiers?.slice().reverse() || [];
 
             if (externalVersionIdentifiers.length > 0) {
-                const latestVersionId = externalVersionIdentifiers[0];
-                // console.log(`[DEBUG] 应用 ${appId} 的最新版本ID: ${latestVersionId}`);
-                return latestVersionId;
-            } else {
-                // console.log(`[DEBUG] 应用 ${appId} 没有找到版本信息`);
-                return null;
+                return String(externalVersionIdentifiers[0]);
             }
-        } else {
-            // console.log(`[DEBUG] 获取应用 ${appId} 版本信息失败:`, ipatoolResult.error);
-            return null;
         }
     } catch (error) {
-        // console.error(`获取应用 ${appId} 最新版本ID失败:`, error);
-        return null;
+        // ipatool 失败时尝试第三方 API
     }
+
+    const thirdParty = await buildThirdPartyVersionResponse(appId);
+    if (thirdParty?.externalVersionIdentifiers?.length) {
+        return String(thirdParty.externalVersionIdentifiers[0].versionId);
+    }
+
+    return null;
 }
 
 module.exports = { versionsHandler, getLatestVersionId };

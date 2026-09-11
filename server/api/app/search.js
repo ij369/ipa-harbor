@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const path = require('path');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 // ipatool二进制文件路径
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
@@ -49,10 +50,11 @@ async function searchHandler(req, res) {
 
         // 参数验证
         if (!keyword) {
-            return res.status(400).json({
-                success: false,
+            return sendError(res, 400, {
                 message: '搜索关键词是必需的参数',
-                error: '请在查询参数中提供keyword'
+                errorMessageCode: 'APP_SEARCH_KEYWORD_REQUIRED',
+                error: '请在查询参数中提供keyword',
+                errorCode: 'APP_SEARCH_KEYWORD_MISSING',
             });
         }
 
@@ -71,17 +73,18 @@ async function searchHandler(req, res) {
             const result = await executeIpatool(command);
 
             if (result.success) {
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: '搜索成功',
+                    errorMessageCode: 'APP_SEARCH_SUCCESS',
                     keyword: keyword,
                     data: result.data || result.rawOutput
                 });
             } else {
-                return res.status(500).json({
-                    success: false,
+                return sendError(res, 500, {
                     message: '搜索失败',
-                    error: result.error
+                    errorMessageCode: 'APP_SEARCH_FAILED',
+                    error: result.error,
+                    errorCode: 'APP_SEARCH_EXEC_FAILED',
                 });
             }
         } catch (execError) {
@@ -91,26 +94,29 @@ async function searchHandler(req, res) {
             if (execError.stdout && (
                 execError.stdout.includes('failed to get account')
             )) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '用户未登录或认证信息已过期',
-                    error: '请先登录'
+                    errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                    error: '请先登录',
+                    errorCode: 'AUTH_LOGIN_REQUIRED',
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '搜索时发生错误',
-                error: execError.message || '执行命令失败'
+                errorMessageCode: 'APP_SEARCH_ERROR',
+                error: execError.message || '执行命令失败',
+                errorCode: 'APP_SEARCH_EXEC_FAILED',
             });
         }
 
     } catch (error) {
         // console.error('搜索错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

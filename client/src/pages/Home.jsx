@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import {
     Box,
     Stack,
@@ -13,12 +13,12 @@ import {
 } from '@mui/joy';
 import { TableVirtuoso } from 'react-virtuoso';
 import { Search, Download, Public } from '@mui/icons-material';
-import { searchApps, getAppDetails, getAppIconUrl, isRateLimitError } from '../utils/api';
+import { searchApps, getAppDetails, getAppIconUrl, isRateLimitError, resolveApiMessage, resolveClientErrorMessage } from '../utils/api';
 import Dialog from '../components/Dialog';
 import AppDetail, { toAppDetailPreview, toAppDetailPreviewFromId } from '../components/AppDetail';
 import RegionSelector from '../components/RegionSelector';
 import Swal from 'sweetalert2';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../contexts/AppContext';
 import {
@@ -35,7 +35,9 @@ import {
 export default function Home() {
     const { t } = useTranslation();
     const navigate = useNavigate();
+    const [searchParams, setSearchParams] = useSearchParams();
     const { user, setUser } = useApp();
+    const openAppIdHandledRef = useRef(null);
     const [keyword, setKeyword] = useState('');
     const [loading, setLoading] = useState(false);
     const [searchResults, setSearchResults] = useState(null);
@@ -93,7 +95,7 @@ export default function Home() {
                         Swal.fire({
                             icon: 'error',
                             title: t('ui.getDetailsFailed'),
-                            text: response.message || 'Failed to get app details',
+                            text: resolveApiMessage(response) || t('ui.getDetailsFailed'),
                             confirmButtonText: t('ui.confirm')
                         });
                         setShowDetailDialog(false);
@@ -114,10 +116,10 @@ export default function Home() {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.searchFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm')
             }).then(() => {
-                if (error.message.includes('认证') || error.message.includes('登录') || error.message.includes('token')) {
+                if (error.errorMessageCode === 'AUTH_NOT_LOGGED_IN' || error.errorType === 'TOKEN_EXPIRED') {
                     navigate('/apple-id');
                 }
             });
@@ -161,7 +163,7 @@ export default function Home() {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.getDetailsFailed'),// 获取详情失败
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm')
             });
             setShowDetailDialog(false);
@@ -188,6 +190,65 @@ export default function Home() {
         setCurrentDetailIndex(0);
         setDetailPreview(null);
     };
+
+    const openAppDetailById = useCallback(async (appId) => {
+        if (!appId) {
+            return;
+        }
+
+        setDetailPreview(toAppDetailPreviewFromId(appId));
+        setDetailLoading(true);
+        setShowDetailDialog(true);
+
+        try {
+            const response = await getAppDetails([appId]);
+
+            if (response.success && response.data?.length > 0) {
+                setAppDetails(response.data);
+                setCurrentDetailIndex(0);
+                setSearchResults(null);
+            } else {
+                Swal.fire({
+                    icon: 'error',
+                    title: t('ui.getDetailsFailed'),
+                    text: resolveApiMessage(response) || t('ui.getDetailsFailed'),
+                    confirmButtonText: t('ui.confirm'),
+                });
+                setShowDetailDialog(false);
+            }
+        } catch (error) {
+            if (isRateLimitError(error)) return;
+            console.error('获取应用详情失败:', error.message);
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.getDetailsFailed'),
+                text: resolveClientErrorMessage(error),
+                confirmButtonText: t('ui.confirm'),
+            });
+            setShowDetailDialog(false);
+        } finally {
+            setDetailLoading(false);
+        }
+    }, [t]);
+
+    useEffect(() => {
+        const openAppId = searchParams.get('openAppId');
+        if (!openAppId) {
+            openAppIdHandledRef.current = null;
+            return;
+        }
+        if (openAppIdHandledRef.current === openAppId) {
+            return;
+        }
+        openAppIdHandledRef.current = openAppId;
+
+        openAppDetailById(openAppId);
+        setSearchParams((prev) => {
+            const next = new URLSearchParams(prev);
+            next.delete('openAppId');
+            return next;
+        }, { replace: true });
+    }, [searchParams, openAppDetailById, setSearchParams]);
 
     const detailApp = appDetails[currentDetailIndex] ?? detailPreview;
 

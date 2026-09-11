@@ -2,6 +2,7 @@ const { exec } = require('child_process');
 const path = require('path');
 const { enrichUserData } = require('../../utils/userRegion');
 const { parseIpatoolOutput } = require('../../utils/ipatoolOutput');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
@@ -50,38 +51,42 @@ async function infoHandler(req, res) {
             if (result.success && result.data?.email) {
                 const userData = await enrichUserData(result.data);
 
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: '获取认证信息成功',
+                    errorMessageCode: 'AUTH_INFO_FETCH_SUCCESS',
                     data: userData
                 });
             }
 
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '用户未登录或认证信息已过期',
-                error: '请先登录'
+                errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                error: '请先登录',
+                errorCode: 'AUTH_LOGIN_REQUIRED',
             });
         } catch (execError) {
             if (isNotLoggedInError(execError)) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '用户未登录或认证信息已过期',
-                    error: '请先登录'
+                    errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                    error: '请先登录',
+                    errorCode: 'AUTH_LOGIN_REQUIRED',
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '获取认证信息时发生错误',
-                error: execError.error || execError.message || '执行命令失败'
+                errorMessageCode: 'AUTH_INFO_FETCH_FAILED',
+                error: execError.error || execError.message || '执行命令失败',
+                errorCode: 'AUTH_INFO_EXEC_FAILED',
             });
         }
     } catch (error) {
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

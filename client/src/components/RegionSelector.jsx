@@ -7,7 +7,7 @@ import {
     Typography,
 } from '@mui/joy';
 import Dialog from './Dialog';
-import { setUserRegion, isRateLimitError } from '../utils/api';
+import { setUserRegion, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import {
     getRegionDisplayName,
     resolveRegionScrollTarget,
@@ -886,7 +886,7 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
             Swal.fire({
                 icon: 'error',
                 title: t('ui.failedToUpdateRegion'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.ok')
             });
         } finally {
@@ -921,7 +921,7 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
                 Swal.fire({
                     icon: 'error',
                     title: t('ui.failedToRestoreRegion'),
-                    text: error.message,
+                    text: resolveClientErrorMessage(error),
                     confirmButtonText: t('ui.ok')
                 });
             } finally {

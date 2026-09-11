@@ -1,4 +1,5 @@
 const { getTaskManager } = require('./taskManager');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 /**
  * 删除任务
@@ -15,19 +16,20 @@ async function deleteHandler(req, res) {
             result = taskManager.clearAllTasks();
 
             if (result.success) {
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: result.message,
+                    errorMessageCode: 'DL_DELETE_CLEAR_ALL_SUCCESS',
                     data: {
                         cleared: true,
                         deletedCount: result.deletedCount
                     }
                 });
             } else {
-                return res.status(400).json({
-                    success: false,
+                return sendError(res, 400, {
                     message: result.message,
-                    error: `清空所有任务失败: ${result.message}`
+                    errorMessageCode: 'DL_DELETE_CLEAR_ALL_FAILED',
+                    error: `清空所有任务失败: ${result.message}`,
+                    errorCode: 'DL_DELETE_CLEAR_ALL_ERROR',
                 });
             }
         }
@@ -37,19 +39,20 @@ async function deleteHandler(req, res) {
             result = taskManager.deleteByFileName(fileName);
 
             if (result.success) {
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: result.message,
+                    errorMessageCode: 'DL_DELETE_BY_FILENAME_SUCCESS',
                     data: {
                         fileName: fileName,
                         deleted: true
                     }
                 });
             } else {
-                return res.status(400).json({
-                    success: false,
+                return sendError(res, 400, {
                     message: result.message,
-                    error: `按文件名删除失败: ${result.message}`
+                    errorMessageCode: 'DL_DELETE_BY_FILENAME_FAILED',
+                    error: `按文件名删除失败: ${result.message}`,
+                    errorCode: 'DL_DELETE_BY_FILENAME_ERROR',
                 });
             }
         }
@@ -59,36 +62,39 @@ async function deleteHandler(req, res) {
             result = taskManager.deleteTask(taskId);
 
             if (result.success) {
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: result.message,
+                    errorMessageCode: 'DL_DELETE_BY_TASK_ID_SUCCESS',
                     data: {
                         taskId: taskId,
                         deleted: true
                     }
                 });
             } else {
-                return res.status(400).json({
-                    success: false,
+                return sendError(res, 400, {
                     message: result.message,
-                    error: `删除任务失败: ${result.message}`
+                    errorMessageCode: 'DL_DELETE_BY_TASK_ID_FAILED',
+                    error: `删除任务失败: ${result.message}`,
+                    errorCode: 'DL_DELETE_BY_TASK_ID_ERROR',
                 });
             }
         }
 
         // 如果没有提供任何参数
-        return res.status(400).json({
-            success: false,
+        return sendError(res, 400, {
             message: '请提供taskId、fileName或clearAll参数',
-            error: '缺少必要参数'
+            errorMessageCode: 'DL_DELETE_PARAMS_REQUIRED',
+            error: '缺少必要参数',
+            errorCode: 'DL_DELETE_PARAMS_MISSING',
         });
 
     } catch (error) {
         console.error('删除任务错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

@@ -21,7 +21,7 @@ import {
 } from '@mui/joy';
 import { ArrowBack, ExpandMore } from '@mui/icons-material';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { login, revokeAuth, isRateLimitError, getAdminStatus, checkAppUpdate } from '../utils/api';
+import { login, revokeAuth, isRateLimitError, getAdminStatus, checkAppUpdate, resolveClientErrorMessage } from '../utils/api';
 import { useApp } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +52,7 @@ const AppleIdLogin = () => {
     });
     const [loading, setLoading] = useState(false);
     const [needsTwoFactor, setNeedsTwoFactor] = useState(false);
+    const [twoFactorAutoPrompted, setTwoFactorAutoPrompted] = useState(false);
     const [showTwoFactorInput, setShowTwoFactorInput] = useState(false);
     const [error, setError] = useState('');
     const [faqExpanded, setFaqExpanded] = useState(false);
@@ -59,6 +60,26 @@ const AppleIdLogin = () => {
     const [checkingUpdate, setCheckingUpdate] = useState(false);
     const twoFactorInputRef = useRef(null);
     const shouldFocusTwoFactorRef = useRef(false);
+    const twoFactorCredentialsRef = useRef({ email: '', password: '' });
+
+    const resetAutoTwoFactorState = ({ clearTwoFactor = true } = {}) => {
+        setTwoFactorAutoPrompted(false);
+        setNeedsTwoFactor(false);
+        setShowTwoFactorInput(false);
+        if (clearTwoFactor) {
+            setFormData((prev) => ({ ...prev, twoFactor: '' }));
+        }
+        twoFactorCredentialsRef.current = { email: '', password: '' };
+    };
+
+    const markTwoFactorRequired = (email, password) => {
+        twoFactorCredentialsRef.current = { email, password };
+        setTwoFactorAutoPrompted(true);
+        setNeedsTwoFactor(true);
+        shouldFocusTwoFactorRef.current = true;
+        setShowTwoFactorInput(true);
+        setError('');
+    };
 
     const motionDuration = prefersReducedMotion ? 0 : 0.28;
     const expandDuration = prefersReducedMotion ? 0 : 0.34;
@@ -140,7 +161,7 @@ const AppleIdLogin = () => {
             await Swal.fire({
                 icon: 'error',
                 title: t('ui.updateCheckFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm'),
             });
         } finally {
@@ -210,6 +231,7 @@ const AppleIdLogin = () => {
     const expandTwoFactorInput = () => {
         shouldFocusTwoFactorRef.current = true;
         setShowTwoFactorInput(true);
+        setError('');
     };
 
     const handleTwoFactorAnimationComplete = () => {
@@ -226,12 +248,31 @@ const AppleIdLogin = () => {
     };
 
     const handleInputChange = (field, value) => {
-        setFormData(prev => ({
+        let credentialsChanged = false;
+
+        if ((field === 'email' || field === 'password') && twoFactorAutoPrompted) {
+            const pending = twoFactorCredentialsRef.current;
+            credentialsChanged = field === 'email'
+                ? value !== pending.email
+                : value !== pending.password;
+
+            if (credentialsChanged) {
+                setTwoFactorAutoPrompted(false);
+                setNeedsTwoFactor(false);
+                setShowTwoFactorInput(false);
+                twoFactorCredentialsRef.current = { email: '', password: '' };
+            }
+        }
+
+        setFormData((prev) => ({
             ...prev,
-            [field]: value
+            [field]: value,
+            ...(credentialsChanged ? { twoFactor: '' } : {}),
         }));
 
         if (field === 'twoFactor' && value) {
+            setError('');
+        } else if (field === 'email' || field === 'password') {
             setError('');
         }
     };
@@ -244,7 +285,7 @@ const AppleIdLogin = () => {
             return;
         }
 
-        if (needsTwoFactor && !formData.twoFactor) {
+        if (needsTwoFactor && twoFactorAutoPrompted && !formData.twoFactor) {
             setError(t('ui.twoFactorPlaceholder'));
             return;
         }
@@ -260,14 +301,12 @@ const AppleIdLogin = () => {
             );
 
             if (response.needsTwoFactor) {
-                setNeedsTwoFactor(true);
-                shouldFocusTwoFactorRef.current = true;
-                setShowTwoFactorInput(true);
-                setError('');
+                markTwoFactorRequired(formData.email, formData.password);
                 return;
             }
 
             if (response.success && response.data?.email) {
+                resetAutoTwoFactorState();
                 setUser(response.data);
                 navigate('/');
             }
@@ -275,12 +314,9 @@ const AppleIdLogin = () => {
             console.error('登录失败:', error.message);
 
             if (error.needsTwoFactor) {
-                setNeedsTwoFactor(true);
-                shouldFocusTwoFactorRef.current = true;
-                setShowTwoFactorInput(true);
-                setError('');
+                markTwoFactorRequired(formData.email, formData.password);
             } else {
-                setError(error.message);
+                setError(resolveClientErrorMessage(error));
             }
         } finally {
             setLoading(false);
@@ -319,7 +355,7 @@ const AppleIdLogin = () => {
                     Swal.fire({
                         icon: 'error',
                         title: t('ui.logoutFailed'),
-                        text: error.message,
+                        text: resolveClientErrorMessage(error),
                         confirmButtonText: t('ui.confirm')
                     });
                     logout();
@@ -399,7 +435,14 @@ const AppleIdLogin = () => {
                                         sx={{ overflow: 'hidden', mb: 2 }}
                                     >
                                         <Alert color="primary" variant="soft">
-                                            {t('ui.twoFactorHint')}
+                                            <Typography level="body-sm" sx={{ mb: twoFactorAutoPrompted ? 0.5 : 0 }}>
+                                                {t('ui.twoFactorHint')}
+                                            </Typography>
+                                            {twoFactorAutoPrompted && (
+                                                <Typography level="body-xs" sx={{ color: 'text.secondary' }}>
+                                                    {t('ui.twoFactorCredentialsHint')}
+                                                </Typography>
+                                            )}
                                         </Alert>
                                     </Box>
                                 )}

@@ -16,6 +16,7 @@ const ProgressParser = require('./utils/progressParser');
 const database = require('./utils/database');
 const { migrateExistingJsonSidecars } = require('./utils/versionMetadata');
 const { authenticateToken } = require('./middleware/auth');
+const { sendError } = require('./utils/apiResponse');
 const { NODE_ENV, KEYCHAIN_PASSPHRASE } = require('./config/keychain');
 
 process.stdout.write('\x1Bc');
@@ -136,7 +137,12 @@ app.use('/v1/dl-manager', authenticateToken, require('./api/dl-manager'));
 app.use('/v1/ipa', require('./api/ipa')); // 下载和解析IPA文件不需要管理员认证
 app.use('/v1/admin', require('./api/admin')); // 管理员认证路由（不需要预先认证）
 
-app.use('/v1/*', (req, res) => res.status(404).json({ error: 'Not Found' }));
+app.use('/v1/*', (req, res) => sendError(res, 404, {
+    message: '接口不存在',
+    errorMessageCode: 'API_NOT_FOUND',
+    error: 'Not Found',
+    errorCode: 'API_NOT_FOUND_DETAIL',
+}));
 
 // === 健康检查 ===
 app.get('/health', (req, res) => {
@@ -167,11 +173,21 @@ if (fs.existsSync(staticPath)) {
 app.use((err, req, res, next) => {
     if (err && err.message === 'Not allowed by CORS' && process.env.ENABLE_MORE_LOGS === 'true') {
         console.warn(`拒绝跨域请求资源: ${req.headers.origin || '未知来源'}`);
-        return res.status(403).json({ error: 'CORS not allowed' });
+        return sendError(res, 403, {
+            message: '跨域请求被拒绝',
+            errorMessageCode: 'CORS_NOT_ALLOWED',
+            error: 'CORS not allowed',
+            errorCode: 'CORS_NOT_ALLOWED_DETAIL',
+        });
     }
 
     // console.error(err.stack || err);
-    res.status(500).json({ error: 'Internal Server Error' });
+    return sendError(res, 500, {
+        message: '服务器内部错误',
+        errorMessageCode: 'INTERNAL_SERVER_ERROR',
+        error: err?.message || 'Internal Server Error',
+        errorCode: 'INTERNAL_ERROR_DETAIL',
+    });
 });
 
 // === HTTP Server ===

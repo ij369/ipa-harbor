@@ -1,4 +1,4 @@
 [submodule "ipatool"]
 	path = ipatool
 	url = https://github.com/HaughtyEyes/ipatool.git
-	branch = fix-empty-volume-store-response
+	branch = fix-update-product-fallback

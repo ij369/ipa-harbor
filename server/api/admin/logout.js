@@ -1,4 +1,6 @@
 const dayjs = require('dayjs');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
+
 /**
  * 管理员退出登录
  */
@@ -14,17 +16,18 @@ async function logoutHandler(req, res) {
 
         console.log(`管理员退出登录: ${req.user.username} , time: ${dayjs().format('YYYY-MM-DD HH:mm:ss')}`);
 
-        return res.json({
-            success: true,
-            message: '退出登录成功'
+        return sendSuccess(res, {
+            message: '退出登录成功',
+            errorMessageCode: 'ADMIN_LOGOUT_SUCCESS',
         });
 
     } catch (error) {
         console.error('管理员退出登录错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '退出登录过程中发生错误',
-            error: error.message
+            errorMessageCode: 'ADMIN_LOGOUT_FAILED',
+            error: error.message,
+            errorCode: 'ADMIN_LOGOUT_ERROR_DETAIL',
         });
     }
 }

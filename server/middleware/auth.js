@@ -1,5 +1,6 @@
 const jwt = require('jsonwebtoken');
 const database = require('../utils/database');
+const { sendError } = require('../utils/apiResponse');
 
 // JWT密钥，从环境变量获取
 const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-key';
@@ -33,10 +34,11 @@ async function authenticateToken(req, res, next) {
         const token = req.cookies?.authToken;
 
         if (!token) {
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '未提供认证令牌',
-                error: 'No token provided'
+                errorMessageCode: 'AUTH_TOKEN_NOT_PROVIDED',
+                error: 'No token provided',
+                errorCode: 'AUTH_NO_TOKEN_PROVIDED',
             });
         }
 
@@ -47,10 +49,11 @@ async function authenticateToken(req, res, next) {
         const user = await database.getUserById(decoded.userId);
 
         if (!user) {
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '用户不存在',
-                error: 'User not found'
+                errorMessageCode: 'AUTH_USER_NOT_FOUND',
+                error: 'User not found',
+                errorCode: 'AUTH_USER_NOT_FOUND_DETAIL',
             });
         }
 
@@ -59,23 +62,26 @@ async function authenticateToken(req, res, next) {
         next();
     } catch (error) {
         if (error.name === 'TokenExpiredError') {
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '令牌已过期',
-                error: 'Token expired'
+                errorMessageCode: 'AUTH_JWT_TOKEN_EXPIRED',
+                error: 'Token expired',
+                errorCode: 'AUTH_JWT_EXPIRED_DETAIL',
             });
         } else if (error.name === 'JsonWebTokenError') {
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '无效的令牌',
-                error: 'Invalid token'
+                errorMessageCode: 'AUTH_TOKEN_INVALID',
+                error: 'Invalid token',
+                errorCode: 'AUTH_JWT_INVALID_DETAIL',
             });
         } else {
             console.error('认证中间件错误:', error);
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '认证过程中发生错误',
-                error: error.message
+                errorMessageCode: 'AUTH_MIDDLEWARE_ERROR',
+                error: error.message,
+                errorCode: 'AUTH_MIDDLEWARE_ERROR_DETAIL',
             });
         }
     }

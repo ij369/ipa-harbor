@@ -33,6 +33,7 @@ class TaskManager {
         this.runningTasks = new Map();
         this.queue = [];
         this.progressTexts = new Map(); // 存储实时进度文本
+        this.metadataPipelineGen = new Map(); // 按文件名跟踪 metadata 流程代数，删除/重下时可作废
         this.processQueue();
     }
 
@@ -106,6 +107,7 @@ class TaskManager {
             const legacyJsonFileName = `${appId}_${versionId}.json`;
 
             [fileName, legacyFileName].forEach((name) => {
+                this.bumpMetadataPipeline(name);
                 const ipaPath = path.join(DATA_DIR, name);
                 if (fs.existsSync(ipaPath)) {
                     fs.unlinkSync(ipaPath);
@@ -161,17 +163,10 @@ class TaskManager {
             '--keychain-passphrase', KEYCHAIN_PASSPHRASE
         ];
 
-        // 添加--external-version-id参数
-        // 如果是latest版本且有实际版本ID，使用实际版本ID
-        // 否则如果不是latest版本，使用原版本ID
-        if (task.versionId === 'latest' && task.actualVersionId && task.actualVersionId !== 'latest') {
-            command.push('--external-version-id', task.actualVersionId);
-            // console.log(`[DEBUG] latest版本使用实际版本ID: ${task.actualVersionId}`);
-        } else if (task.versionId !== 'latest') {
+        // 仅历史版本需要 pin 版本号；latest 不传 --external-version-id，
+        // 以便 ipatool 走 volumeStore → redownload 空响应修复（majd/ipatool#538/#547）
+        if (task.versionId !== 'latest') {
             command.push('--external-version-id', task.versionId);
-            // console.log(`[DEBUG] 指定版本使用版本ID: ${task.versionId}`);
-        } else {
-            // console.log(`[DEBUG] latest版本未获取到实际版本ID，不添加--external-version-id参数`);
         }
 
         command.push('-o', filePath, '--format', 'json');
@@ -481,10 +476,27 @@ class TaskManager {
         }
     }
 
+    // 递增代数：开始解析或删除/重下时调用，使进行中的 Apple 阶段失效
+    bumpMetadataPipeline(fileName) {
+        if (!fileName) {
+            return 0;
+        }
+        const gen = (this.metadataPipelineGen.get(fileName) || 0) + 1;
+        this.metadataPipelineGen.set(fileName, gen);
+        return gen;
+    }
+
+    canWriteMetadata(fileName, gen) {
+        return this.metadataPipelineGen.get(fileName) === gen
+            && fs.existsSync(path.join(DATA_DIR, fileName));
+    }
+
     // 删除指定文件名的ipa和json文件
     deleteFilesByName(fileName) {
         try {
             let deleted = false;
+
+            this.bumpMetadataPipeline(fileName);
 
             // 生成对应的文件路径
             const ipaPath = path.join(DATA_DIR, fileName);
@@ -671,15 +683,35 @@ class TaskManager {
         }
     }
 
-    // 解析metadata并广播（Apple 版本元数据获取失败不阻断下载完成）
+    async broadcastFileList() {
+        const files = await this.getFiles();
+        wsManager.broadcastToDefault('watch', {
+            success: true,
+            data: {
+                files,
+                total: files.length,
+                totalSize: files.reduce((sum, file) => sum + file.size, 0),
+            },
+        });
+    }
+
+    // 解析 metadata：先写 IPA plist 并广播，再可选拉 Apple 版本元数据并补广播
     async parseMetadataAndBroadcast(fileName, taskId) {
         const task = this.tasks.get(taskId);
+        const gen = this.bumpMetadataPipeline(fileName);
         const warnings = [];
-        let ipaMetadata = null;
-        let appleVersionMetadata = null;
+        const resolvedVersionId = resolveExternalVersionId(task, fileName);
+        const appId = task?.appId;
+        const bundleId = task?.bundleId;
+
+        const notify = async (payload) => {
+            await this.broadcastFileList();
+            wsManager.broadcastToDefault('task-completed', JSON.stringify(payload));
+        };
 
         try {
-            console.log(`开始解析metadata: ${fileName}`);
+            const parseStartedAt = Date.now();
+            let ipaMetadata = null;
 
             try {
                 ipaMetadata = await parseIpaMetadata(fileName, { forceReparse: true, skipWrite: true });
@@ -688,70 +720,102 @@ class TaskManager {
                 console.warn(`IPA plist 解析失败: ${fileName}`, parseError.message);
             }
 
-            const resolvedVersionId = resolveExternalVersionId(task, fileName);
-
-            if (resolvedVersionId && task?.appId) {
-                const refreshed = await tryRefreshVersionMetadata(task.appId, resolvedVersionId, {
-                    bundleId: task.bundleId,
-                    ipaMetadata,
-                    updateSidecar: false,
-                });
-
-                if (refreshed) {
-                    appleVersionMetadata = refreshed.appleMetadata;
-                } else {
-                    warnings.push('Apple 版本元数据获取失败，已跳过');
-                    await upsertVersionMetadataRecord({
-                        appId: task.appId,
-                        versionId: resolvedVersionId,
-                        bundleId: task.bundleId,
-                        displayVersion: ipaMetadata?.bundleShortVersionString || null,
-                        ipaMetadata,
-                    }).catch((dbError) => {
-                        console.warn('写入版本元数据缓存失败:', dbError.message);
-                    });
-                }
+            if (ipaMetadata && this.canWriteMetadata(fileName, gen)) {
+                writeSidecarMetadata(fileName, ipaMetadata);
             }
 
-            if (ipaMetadata) {
-                const sidecarMetadata = {
-                    ...ipaMetadata,
-                    ...(appleVersionMetadata ? {
-                        appleVersionMetadata: {
-                            ...appleVersionMetadata,
-                            fetchedAt: new Date().toISOString(),
-                        },
-                    } : {}),
-                };
-
-                writeSidecarMetadata(fileName, sidecarMetadata);
-            }
-
-            const broadcastData = {
+            await notify({
                 success: true,
-                message: warnings.length > 0
-                    ? `任务 ${taskId} 下载完成（${warnings.join('；')}）`
-                    : `任务 ${taskId} 下载完成，metadata解析成功`,
+                phase: 'ipa',
+                message: ipaMetadata
+                    ? `任务 ${taskId} IPA metadata 已就绪`
+                    : `任务 ${taskId} IPA metadata 解析失败`,
                 data: ipaMetadata,
                 warnings,
                 taskId,
                 fileName,
-            };
+            });
 
-            wsManager.broadcastToDefault('task-completed', JSON.stringify(broadcastData));
-            console.log(`metadata处理完成并已广播: ${fileName}`);
-        } catch (error) {
-            console.error(`metadata处理异常: ${fileName}`, error);
+            if (ipaMetadata) {
+                console.log(`IPA metadata 解析完成并已广播: ${fileName} (${Date.now() - parseStartedAt}ms)`);
+            }
 
-            const errorData = {
+            if (!resolvedVersionId || !appId || !this.canWriteMetadata(fileName, gen)) {
+                if (resolvedVersionId && appId && !this.canWriteMetadata(fileName, gen)) {
+                    console.log(`metadata 流程已取消，跳过 Apple 阶段: ${fileName}`);
+                }
+                return;
+            }
+
+            const refreshed = await tryRefreshVersionMetadata(appId, resolvedVersionId, {
+                bundleId,
+                ipaMetadata,
+                updateSidecar: false,
+            });
+
+            if (!this.canWriteMetadata(fileName, gen)) {
+                console.log(`metadata 流程已取消，丢弃 Apple 结果: ${fileName}`);
+                return;
+            }
+
+            let appleVersionMetadata = null;
+            if (refreshed) {
+                appleVersionMetadata = refreshed.appleMetadata;
+                if (ipaMetadata) {
+                    writeSidecarMetadata(fileName, {
+                        ...ipaMetadata,
+                        appleVersionMetadata: {
+                            ...appleVersionMetadata,
+                            fetchedAt: new Date().toISOString(),
+                        },
+                    });
+                }
+            } else {
+                warnings.push('Apple 版本元数据获取失败，已跳过');
+                console.warn(`可选 Apple 版本元数据获取失败 ${appId}/${resolvedVersionId}`);
+            }
+
+            if (ipaMetadata) {
+                await upsertVersionMetadataRecord({
+                    appId,
+                    versionId: resolvedVersionId,
+                    bundleId,
+                    displayVersion: appleVersionMetadata?.displayVersion
+                        || ipaMetadata.bundleShortVersionString
+                        || null,
+                    releaseDate: appleVersionMetadata?.releaseDate || null,
+                    appleMetadata: appleVersionMetadata,
+                    ipaMetadata,
+                }).catch((dbError) => {
+                    console.warn('写入版本元数据缓存失败:', dbError.message);
+                });
+            }
+
+            await notify({
                 success: true,
-                message: `任务 ${taskId} 下载完成，但 metadata 处理异常: ${error.message}`,
-                error: error.message,
+                phase: 'apple',
+                message: warnings.length > 0
+                    ? `任务 ${taskId} 下载完成（${warnings.join('；')}）`
+                    : `任务 ${taskId} 下载完成，metadata 已全部就绪`,
+                data: ipaMetadata,
+                appleVersionMetadata,
+                warnings,
                 taskId,
                 fileName,
-            };
-
-            wsManager.broadcastToDefault('task-completed', JSON.stringify(errorData));
+            });
+            console.log(`Apple 版本元数据阶段完成并已补广播: ${fileName}`);
+        } catch (error) {
+            console.error(`metadata处理异常: ${fileName}`, error);
+            await this.broadcastFileList().catch(() => { });
+            wsManager.broadcastToDefault('task-completed', JSON.stringify({
+                success: true,
+                phase: 'error',
+                message: `任务 ${taskId} 下载完成，但 metadata 处理异常: ${error.message}`,
+                error: error.message,
+                warnings,
+                taskId,
+                fileName,
+            }));
         }
     }
 }

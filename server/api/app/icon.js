@@ -1,5 +1,6 @@
 const https = require('https');
 const { getEffectiveRegion } = require('../../utils/userRegion');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 // 1×1 透明 GIF
 const ONE_PIXEL_GIF_BASE64 =
@@ -131,18 +132,37 @@ const getAppIconUrl = async (req, res) => {
                     }
 
                     if (!iconUrl) {
-                        return res.status(404).json({ error: 'Icon URL not found' });
+                        return sendError(res, 404, {
+                            message: '未找到应用图标URL',
+                            errorMessageCode: 'APP_ICON_URL_NOT_FOUND',
+                            error: '指定应用可能没有图标',
+                            errorCode: 'APP_ICON_URL_NOT_FOUND_DETAIL',
+                        });
                     }
-                    res.json({ iconUrl });
+                    return sendSuccess(res, {
+                        message: '获取图标URL成功',
+                        errorMessageCode: 'APP_ICON_URL_FETCH_SUCCESS',
+                        data: { iconUrl },
+                    });
                 } catch (err) {
-                    console.error('Error parsing iTunes response:', err);
-                    res.status(500).json({ error: 'Error parsing iTunes response' });
+                    console.error('解析iTunes响应失败:', err);
+                    return sendError(res, 500, {
+                        message: '解析iTunes响应失败',
+                        errorMessageCode: 'APP_ICON_URL_PARSE_FAILED',
+                        error: err.message || 'iTunes API 响应解析失败',
+                        errorCode: 'APP_ICON_URL_PARSE_ERROR_DETAIL',
+                    });
                 }
             });
         })
         .on('error', (err) => {
-            console.error('HTTPS request failed:', err);
-            res.status(500).json({ error: 'HTTPS request failed' });
+            console.error('iTunes HTTPS请求失败:', err);
+            return sendError(res, 500, {
+                message: 'iTunes请求失败',
+                errorMessageCode: 'APP_ICON_URL_REQUEST_FAILED',
+                error: err.message || 'HTTPS 请求 iTunes 失败',
+                errorCode: 'APP_ICON_URL_ITUNES_REQUEST_FAILED',
+            });
         });
 };
 

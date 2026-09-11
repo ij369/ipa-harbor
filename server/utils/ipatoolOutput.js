@@ -76,6 +76,21 @@ function extractErrorFromLines(lines) {
     return null;
 }
 
+function extractListVersionsFromLines(lines) {
+    for (let i = lines.length - 1; i >= 0; i -= 1) {
+        const line = lines[i];
+        if (line.success === true && Array.isArray(line.externalVersionIdentifiers)) {
+            return {
+                externalVersionIdentifiers: line.externalVersionIdentifiers,
+                latestExternalVersionID: line.latestExternalVersionID,
+                bundleID: line.bundleID,
+            };
+        }
+    }
+
+    return null;
+}
+
 /**
  * @param {string} stdout
  * @param {string} [stderr]
@@ -84,15 +99,6 @@ function extractErrorFromLines(lines) {
 function parseIpatoolOutput(stdout, stderr = '') {
     const combined = [stdout, stderr].filter(Boolean).join('\n');
     const lines = parseIpatoolJsonLines(combined);
-
-    if (detectTwoFactorRequired(lines, combined)) {
-        return {
-            success: false,
-            needsTwoFactor: true,
-            message: '需要二次验证码',
-            rawOutput: combined,
-        };
-    }
 
     const stderrError = extractKnownStderrError(stderr);
     if (stderrError) {
@@ -108,6 +114,15 @@ function parseIpatoolOutput(stdout, stderr = '') {
         return {
             success: false,
             error,
+            rawOutput: combined,
+        };
+    }
+
+    if (detectTwoFactorRequired(lines, combined)) {
+        return {
+            success: false,
+            needsTwoFactor: true,
+            message: '需要二次验证码',
             rawOutput: combined,
         };
     }
@@ -130,4 +145,6 @@ function parseIpatoolOutput(stdout, stderr = '') {
 module.exports = {
     parseIpatoolOutput,
     parseIpatoolJsonLines,
+    extractErrorFromLines,
+    extractListVersionsFromLines,
 };

@@ -37,6 +37,51 @@ export function useJoyDown(breakpoint) {
     return useMediaQuery(theme.breakpoints.down(breakpoint));
 }
 
+/**
+ * 带滞回的 down 断点，避免在临界宽度来回切换。
+ * 进入 compact：宽度 < breakpoint - buffer
+ * 退出 compact：宽度 >= breakpoint + buffer
+ */
+export function useStableJoyDown(breakpoint, bufferPx = 24) {
+    const theme = useTheme();
+    const breakpointPx = theme.breakpoints.values[breakpoint];
+
+    const [matches, setMatches] = useState(() => {
+        if (typeof window === 'undefined' || breakpointPx == null) {
+            return false;
+        }
+        return window.innerWidth < breakpointPx;
+    });
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || breakpointPx == null) {
+            return undefined;
+        }
+
+        const enterBelow = breakpointPx - bufferPx;
+        const exitBelow = breakpointPx + bufferPx;
+
+        const update = () => {
+            const width = window.innerWidth;
+            setMatches((prev) => {
+                if (width < enterBelow) {
+                    return true;
+                }
+                if (width >= exitBelow) {
+                    return false;
+                }
+                return prev;
+            });
+        };
+
+        update();
+        window.addEventListener('resize', update);
+        return () => window.removeEventListener('resize', update);
+    }, [breakpointPx, bufferPx]);
+
+    return matches;
+}
+
 export function useJoyUp(breakpoint) {
     const theme = useTheme();
     return useMediaQuery(theme.breakpoints.up(breakpoint));

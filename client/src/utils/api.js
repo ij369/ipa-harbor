@@ -1,6 +1,20 @@
 import Swal from 'sweetalert2';
-import i18n from '../i18n';
+import i18n, { getIntlLocale } from '../i18n';
 import { isOtaInstallEnabled, isOtaSecureContext } from './otaInstallPreference';
+import {
+    buildApiErrorText,
+    resolveApiErrorDetail,
+    resolveApiMessage,
+    resolveClientErrorMessage,
+} from './resolveApiMessage';
+
+export { buildApiErrorText, resolveApiErrorDetail, resolveApiMessage, resolveClientErrorMessage };
+
+const NETWORK_CONNECTION_FAILED = '网络连接失败，请检查服务器是否运行';
+
+function getRequestLang() {
+    return getIntlLocale(i18n.language);
+}
 
 const API_BASE_URL =
     import.meta.env.MODE === 'production' ?
@@ -70,7 +84,7 @@ export async function apiRequest(endpoint, options = {}) {
 
         const data = await parseResponseBody(response);
         if (data === null) {
-            throw new Error(`请求失败 (${response.status})`);
+            throw new Error(i18n.t('ui.requestFailed', { status: response.status }));
         }
 
         // 需要二次验证时直接返回，由登录页展示验证码输入框
@@ -84,12 +98,19 @@ export async function apiRequest(endpoint, options = {}) {
 
         // 如果请求成功但业务逻辑失败
         if (!data.success) {
-            const errorMessage = data.message || `请求失败 (${response.status})`;
-            const error = new Error(errorMessage);
+            const error = new Error(buildApiErrorText(data, response.status));
 
-            // 保留后端返回的错误类型和其他信息
+            if (data.errorMessageCode) {
+                error.errorMessageCode = data.errorMessageCode;
+            }
+            if (data.errorCode) {
+                error.errorCode = data.errorCode;
+            }
             if (data.errorType) {
                 error.errorType = data.errorType;
+            }
+            if (data.message) {
+                error.backendMessage = data.message;
             }
             if (data.error) {
                 error.backendError = data.error;
@@ -105,8 +126,10 @@ export async function apiRequest(endpoint, options = {}) {
         }
 
         if (error.message.includes('Failed to fetch')) {
-            const errorMessage = '网络连接失败，请检查服务器是否运行';
-            throw new Error(errorMessage);
+            const networkError = new Error(NETWORK_CONNECTION_FAILED);
+            networkError.networkError = true;
+            networkError.userMessage = i18n.t('ui.networkConnectionFailed');
+            throw networkError;
         }
 
         throw error;
@@ -177,9 +200,10 @@ export async function listPurchases(page = 1, maxResults = 50) {
  * @param {Array<number>} ids - 应用ID数组
  */
 export async function getAppDetails(ids) {
-    return apiRequest('/v1/app/details', {
+    const params = new URLSearchParams({ lang: getRequestLang() });
+    return apiRequest(`/v1/app/details?${params}`, {
         method: 'POST',
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids }),
     });
 }
 
@@ -202,8 +226,12 @@ export function getAppIconUrl(id, size = 100, country) {
  * @param {boolean} useThirdPartyApi - 是否使用第三方 API
  */
 export async function getAppVersions(appId, useThirdPartyApi = false) {
-    return apiRequest(`/v1/app/${appId}/versions?useThirdPartyApi=${useThirdPartyApi}`, {
-        method: 'POST'
+    const params = new URLSearchParams({
+        useThirdPartyApi: String(useThirdPartyApi),
+        lang: getRequestLang(),
+    });
+    return apiRequest(`/v1/app/${appId}/versions?${params}`, {
+        method: 'POST',
     });
 }
 

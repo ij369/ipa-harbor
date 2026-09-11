@@ -1,5 +1,7 @@
-import React, { useMemo, useState, useEffect, useRef, useCallback, lazy, Suspense, forwardRef } from 'react';
-import { Box, Typography, Chip, Stack, CircularProgress, Sheet, Badge, IconButton } from '@mui/joy';
+import React, {
+    createContext, useMemo, useState, useEffect, useRef, useCallback, useContext, lazy, Suspense, forwardRef,
+} from 'react';
+import { Box, Typography, Chip, Stack, CircularProgress, Sheet, Badge, IconButton, ToggleButtonGroup } from '@mui/joy';
 import { VirtuosoGrid } from 'react-virtuoso';
 import { useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
@@ -14,11 +16,13 @@ import {
     CheckCircle,
     CloudDone,
     InfoOutlined,
+    StorageOutlined,
+    TagOutlined,
 } from '@mui/icons-material';
 import formatFileSize from '../utils/formatFileSize.js';
 import { useTranslation } from 'react-i18next';
 import { NewDownloadButton } from '../components/NewDownloadDialog';
-import { useJoyDown } from '../hooks/useJoyMedia';
+import { useStableJoyDown } from '../hooks/useJoyMedia';
 
 const NewDownloadDialog = lazy(() => import('../components/NewDownloadDialog'));
 
@@ -30,24 +34,29 @@ const STATUS_FILTERS = [
     { key: 'downloaded', color: 'neutral', Icon: CloudDone, labelKey: 'downloaded' },
 ];
 
+const GRID_ICON_MIN = 64;
+const GRID_ICON_MAX = 96;
+
+function interpolateGridMetric(iconSize, minAt64, maxAt96) {
+    const t = (iconSize - GRID_ICON_MIN) / (GRID_ICON_MAX - GRID_ICON_MIN);
+    return minAt64 + t * (maxAt96 - minAt64);
+}
+
 // 根据 IpaIcon 实际尺寸推算单元格大小（含 hover padding 与双行标签）
-function buildGridLayout(iconSize, compact) {
-    const hoverPad = compact ? 4 : 8;
-    const labelArea = compact ? 40 : 52;
-    const cellMargin = compact ? 8 : 16;
+function buildGridLayoutFromIconSize(iconSize) {
+    const hoverPad = interpolateGridMetric(iconSize, 4, 8);
+    const labelArea = interpolateGridMetric(iconSize, 40, 52);
+    const cellMargin = interpolateGridMetric(iconSize, 8, 16);
+
     return {
         iconSize,
         cellWidth: iconSize + hoverPad * 2 + cellMargin,
-        cellHeight: iconSize + hoverPad * 2 + labelArea,
-        gap: compact ? 4 : 8,
-        listPadding: compact ? 4 : 8,
+        // 预留 hover 内边距，避免背景框被裁切
+        cellHeight: iconSize + hoverPad * 2 + labelArea + 4,
+        gap: interpolateGridMetric(iconSize, 4, 8),
+        listPadding: interpolateGridMetric(iconSize, 4, 8),
     };
 }
-
-const GRID_LAYOUT = {
-    default: buildGridLayout(128, false),
-    compact: buildGridLayout(64, true),
-};
 
 const DETAIL_QUERY_KEY = 'detail';
 const DETAIL_OPEN_STATUSES = new Set(['completed', 'downloaded']);
@@ -65,65 +74,97 @@ function findDetailItem(items, detailParam) {
     }
 }
 
-// VirtuosoGrid 通过 style 传入滚动与绝对定位，必须用原生 div + style，不能放进 sx
-function createGridComponents({ cellWidth, cellHeight, gap, listPadding, compact }) {
-    return {
-        List: forwardRef(function DownloadGridList({ style, children, ...props }, ref) {
-            return (
-                <div
-                    ref={ref}
-                    {...props}
-                    style={{
-                        display: 'flex',
-                        flexWrap: 'wrap',
-                        width: '100%',
-                        margin: 0,
-                        padding: listPadding,
-                        gap,
-                        overflowX: 'hidden',
-                        boxSizing: 'border-box',
-                        ...style,
-                    }}
-                >
-                    {children}
-                </div>
-            );
-        }),
-        Item: ({ children, style, ...props }) => (
+// 尺寸切换：state 立即更新，仅 CSS 做短过渡；不动画 top/left，避免 Virtuoso 重排发黏
+const GRID_SIZE_EASE = '0.12s ease-out';
+const GRID_ITEM_TRANSITION = `width ${GRID_SIZE_EASE}, height ${GRID_SIZE_EASE}`;
+const GRID_LIST_TRANSITION = `gap ${GRID_SIZE_EASE}, padding-top ${GRID_SIZE_EASE}, padding-right ${GRID_SIZE_EASE}, padding-bottom ${GRID_SIZE_EASE}, padding-left ${GRID_SIZE_EASE}`;
+
+// Virtuoso 内联 style 可能带 padding 简写，与 paddingTop 等混用会触发 React 警告
+function stripPaddingShorthand(style) {
+    if (!style) {
+        return {};
+    }
+
+    const {
+        padding,
+        paddingTop,
+        paddingRight,
+        paddingBottom,
+        paddingLeft,
+        ...rest
+    } = style;
+
+    return rest;
+}
+
+const DownloadGridMetricsContext = createContext(buildGridLayoutFromIconSize(GRID_ICON_MAX));
+
+const downloadGridComponents = {
+    List: forwardRef(function DownloadGridList({ style, children, ...props }, ref) {
+        const { gap, listPadding } = useContext(DownloadGridMetricsContext);
+        return (
+            <div
+                ref={ref}
+                {...props}
+                style={{
+                    ...stripPaddingShorthand(style),
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    width: '100%',
+                    margin: 0,
+                    paddingTop: listPadding,
+                    paddingRight: listPadding,
+                    paddingBottom: listPadding,
+                    paddingLeft: listPadding,
+                    gap,
+                    overflowX: 'hidden',
+                    boxSizing: 'border-box',
+                    transition: GRID_LIST_TRANSITION,
+                }}
+            >
+                {children}
+            </div>
+        );
+    }),
+    Item: ({ children, style, ...props }) => {
+        const { cellWidth, cellHeight } = useContext(DownloadGridMetricsContext);
+        return (
             <div
                 {...props}
                 style={{
+                    ...stripPaddingShorthand(style),
                     width: cellWidth,
                     height: cellHeight,
                     flex: 'none',
                     display: 'flex',
                     justifyContent: 'center',
                     alignItems: 'flex-start',
-                    paddingTop: compact ? 2 : 4,
+                    padding: 0,
                     boxSizing: 'border-box',
-                    overflow: 'hidden',
-                    ...style,
+                    overflow: 'visible',
+                    transition: GRID_ITEM_TRANSITION,
                 }}
             >
                 {children}
             </div>
-        ),
-    };
-}
+        );
+    },
+};
 
 export default function DownloadManager() {
     const { t } = useTranslation();
-    const isCompact = useJoyDown('sm');
-
-    const gridLayout = isCompact ? GRID_LAYOUT.compact : GRID_LAYOUT.default;
-    const gridComponents = useMemo(
-        () => createGridComponents({ ...gridLayout, compact: isCompact }),
-        [gridLayout.cellWidth, gridLayout.cellHeight, gridLayout.gap, gridLayout.listPadding, isCompact]
+    const isCompact = useStableJoyDown('sm');
+    const gridIconSize = isCompact ? GRID_ICON_MIN : GRID_ICON_MAX;
+    const gridLayout = useMemo(
+        () => buildGridLayoutFromIconSize(gridIconSize),
+        [gridIconSize],
     );
-    const { taskList, fileList, downloadDataReady } = useApp();
+    const { taskList, fileList, downloadDataReady, user } = useApp();
+    const iconRegion = user?.region;
     const [searchParams, setSearchParams] = useSearchParams();
     const detailParam = searchParams.get(DETAIL_QUERY_KEY);
     const [selectedFilter, setSelectedFilter] = useState('all');
+    const [subLabelMode, setSubLabelMode] = useState('version');
     const [newDownloadDialogOpen, setNewDownloadDialogOpen] = useState(false);
     const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
     const [selectedDetailItem, setSelectedDetailItem] = useState(null);
@@ -159,8 +200,23 @@ export default function DownloadManager() {
         }, { replace: false });
     }, [setSearchParams]);
 
-    const allItems = useMemo(() => {
+    const { allItems, statusCounts } = useMemo(() => {
+        const fileByName = new Map();
+        if (fileList.files) {
+            for (const file of fileList.files) {
+                fileByName.set(file.name, file);
+            }
+        }
+
+        const taskNames = new Set();
         const items = [];
+        const counts = {
+            pending: 0,
+            running: 0,
+            failed: 0,
+            completed: 0,
+            downloaded: 0,
+        };
 
         ['pending', 'running', 'failed', 'completed'].forEach(status => {
             if (taskList[status]) {
@@ -188,8 +244,8 @@ export default function DownloadManager() {
                     };
 
                     // 如果是completed状态，尝试从fileList中获取metadata
-                    if (status === 'completed' && fileList.files) {
-                        const matchingFile = fileList.files.find(file => file.name === fileName);
+                    if (status === 'completed') {
+                        const matchingFile = fileByName.get(fileName);
                         if (matchingFile) {
                             itemData = {
                                 ...itemData,
@@ -210,6 +266,8 @@ export default function DownloadManager() {
                         }
                     }
 
+                    taskNames.add(fileName);
+                    counts[status] += 1;
                     items.push(itemData);
                 });
             }
@@ -217,55 +275,40 @@ export default function DownloadManager() {
 
         // 已下载的文件（不在任务列表中的）
         if (fileList.files) {
-            fileList.files.forEach(file => {
-                const existsInTasks = items.some(item => item.name === file.name);
-
-                if (!existsInTasks) {
-                    // 优先使用 metadata 中的 itemId，兼容自定义文件名模板
-                    const appId = file.itemId || file.name.match(/^(\d+)_/)?.[1];
-
-                    items.push({
-                        id: appId || file.name,
-                        name: file.name,
-                        status: 'downloaded',
-                        progress: 100,
-                        size: file.size,
-                        type: 'file',
-                        itemId: file.itemId,
-                        bundleDisplayName: file.bundleDisplayName,
-                        artistName: file.artistName,
-                        bundleShortVersionString: file.bundleShortVersionString,
-                        bundleVersion: file.bundleVersion,
-                        productType: file.productType,
-                        softwareVersionBundleId: file.softwareVersionBundleId,
-                        softwareVersionExternalIdentifier: file.softwareVersionExternalIdentifier,
-                        releaseDate: file.releaseDate,
-                        firstReleaseDate: file.firstReleaseDate,
-                        createdAt: file.createdAt,
-                        modifiedAt: file.modifiedAt
-                    });
+            for (const file of fileList.files) {
+                if (taskNames.has(file.name)) {
+                    continue;
                 }
-            });
+
+                // 优先使用 metadata 中的 itemId，兼容自定义文件名模板
+                const appId = file.itemId || file.name.match(/^(\d+)_/)?.[1];
+
+                counts.downloaded += 1;
+                items.push({
+                    id: appId || file.name,
+                    name: file.name,
+                    status: 'downloaded',
+                    progress: 100,
+                    size: file.size,
+                    type: 'file',
+                    itemId: file.itemId,
+                    bundleDisplayName: file.bundleDisplayName,
+                    artistName: file.artistName,
+                    bundleShortVersionString: file.bundleShortVersionString,
+                    bundleVersion: file.bundleVersion,
+                    productType: file.productType,
+                    softwareVersionBundleId: file.softwareVersionBundleId,
+                    softwareVersionExternalIdentifier: file.softwareVersionExternalIdentifier,
+                    releaseDate: file.releaseDate,
+                    firstReleaseDate: file.firstReleaseDate,
+                    createdAt: file.createdAt,
+                    modifiedAt: file.modifiedAt
+                });
+            }
         }
 
-        return items;
+        return { allItems: items, statusCounts: counts };
     }, [taskList, fileList]);
-
-    const statusCounts = useMemo(() => {
-        const counts = {
-            pending: 0,
-            running: 0,
-            failed: 0,
-            completed: 0,
-            downloaded: 0
-        };
-
-        allItems.forEach(item => {
-            counts[item.status] = (counts[item.status] || 0) + 1;
-        });
-
-        return counts;
-    }, [allItems]);
 
     const filteredItems = useMemo(() => {
         if (selectedFilter === 'all') {
@@ -273,6 +316,26 @@ export default function DownloadManager() {
         }
         return allItems.filter(item => item.status === selectedFilter);
     }, [allItems, selectedFilter]);
+
+    const renderGridItem = useCallback((index, item) => {
+        if (!item) {
+            return null;
+        }
+        return (
+            <IpaIcon
+                item={item}
+                size={gridIconSize}
+                country={iconRegion}
+                onOpenDetail={openDetailDrawer}
+                subLabelMode={subLabelMode}
+            />
+        );
+    }, [gridIconSize, iconRegion, openDetailDrawer, subLabelMode]);
+
+    const computeGridItemKey = useCallback(
+        (index, item) => item?.name ?? index,
+        [],
+    );
 
     useEffect(() => {
         if (!detailParam) {
@@ -434,19 +497,16 @@ export default function DownloadManager() {
                     }}
                 >
                     <Box sx={{ position: 'absolute', inset: 0 }}>
-                        <VirtuosoGrid
-                            key={`${selectedFilter}-${isCompact ? 'compact' : 'default'}`}
-                            style={{ height: '100%', width: '100%' }}
-                            totalCount={filteredItems.length}
-                            components={gridComponents}
-                            itemContent={(index) => (
-                                <IpaIcon
-                                    item={filteredItems[index]}
-                                    size={gridLayout.iconSize}
-                                    onOpenDetail={openDetailDrawer}
-                                />
-                            )}
-                        />
+                        <DownloadGridMetricsContext.Provider value={gridLayout}>
+                            <VirtuosoGrid
+                                style={{ height: '100%', width: '100%' }}
+                                data={filteredItems}
+                                components={downloadGridComponents}
+                                computeItemKey={computeGridItemKey}
+                                itemContent={renderGridItem}
+                                increaseViewportBy={{ top: 200, bottom: 200 }}
+                            />
+                        </DownloadGridMetricsContext.Provider>
                     </Box>
                 </Sheet>
             ) : (
@@ -480,21 +540,53 @@ export default function DownloadManager() {
             />
 
             {fileList.totalSize > 0 && (
-                <Box sx={{
-                    flexShrink: 0,
-                    mt: 1,
-                    p: 1,
-                    px: 1.8,
-                    backgroundColor: 'background.level1',
-                    borderRadius: 'md',
-                }}>
+                <Box
+                    role="button"
+                    tabIndex={0}
+                    aria-label={subLabelMode === 'version' ? t('ui.subLabelModeVersion') : t('ui.subLabelModeSize')}
+                    onClick={() => setSubLabelMode((prev) => (prev === 'version' ? 'size' : 'version'))}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault();
+                            setSubLabelMode((prev) => (prev === 'version' ? 'size' : 'version'));
+                        }
+                    }}
+                    sx={{
+                        flexShrink: 0,
+                        mt: 1,
+                        p: 1,
+                        px: 1.8,
+                        backgroundColor: 'background.level1',
+                        borderRadius: 'md',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 1.5,
+                        cursor: 'pointer',
+                        userSelect: 'none',
+                    }}
+                >
                     <Typography
                         level="body-xs"
                         startDecorator={<InfoOutlined sx={{ fontSize: 14, opacity: 0.7 }} />}
-                        sx={{ color: 'text.secondary' }}
+                        sx={{ color: 'text.secondary', minWidth: 0, pointerEvents: 'none' }}
                     >
                         {t('ui.totalFiles', { count: fileList.total, size: formatFileSize(fileList.totalSize) })}
                     </Typography>
+                    <ToggleButtonGroup
+                        size="sm"
+                        variant="soft"
+                        value={subLabelMode}
+                        aria-hidden
+                        sx={{ pointerEvents: 'none', flexShrink: 0 }}
+                    >
+                        <IconButton value="version" sx={{ '--IconButton-size': '24px' }}>
+                            <TagOutlined sx={{ fontSize: 14 }} />
+                        </IconButton>
+                        <IconButton value="size" sx={{ '--IconButton-size': '24px' }}>
+                            <StorageOutlined sx={{ fontSize: 14 }} />
+                        </IconButton>
+                    </ToggleButtonGroup>
                 </Box>
             )}
         </Box>

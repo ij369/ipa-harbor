@@ -1,6 +1,7 @@
 const database = require('../../utils/database');
 const { getAppVersion } = require('../../utils/version');
 const { readAppSettings } = require('../../utils/appSettings');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 /**
  * 获取管理员登录状态
@@ -15,8 +16,8 @@ async function statusHandler(req, res) {
 
         // 如果用户已登录
         if (req.user) {
-            return res.json({
-                success: true,
+            return sendSuccess(res, {
+                errorMessageCode: 'ADMIN_STATUS_FETCH_SUCCESS',
                 data: {
                     version,
                     settings,
@@ -35,8 +36,8 @@ async function statusHandler(req, res) {
         }
 
         // 用户未登录
-        return res.json({
-            success: true,
+        return sendSuccess(res, {
+            errorMessageCode: 'ADMIN_STATUS_FETCH_SUCCESS',
             data: {
                 version,
                 settings,
@@ -49,10 +50,11 @@ async function statusHandler(req, res) {
 
     } catch (error) {
         console.error('获取管理员状态错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '获取状态时发生错误',
-            error: error.message
+            errorMessageCode: 'ADMIN_STATUS_FETCH_FAILED',
+            error: error.message,
+            errorCode: 'ADMIN_STATUS_ERROR_DETAIL',
         });
     }
 }

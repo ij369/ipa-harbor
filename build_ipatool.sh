@@ -35,7 +35,7 @@ resolve_ipatool_source() {
     haughtyeyes|fork|empty-volume-store)
       IPATOOL_USE_SUBMODULE=1
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
-      IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
+      IPATOOL_REF="${IPATOOL_REF:-fix-update-product-fallback}"
       ;;
     ota|iosconstantine|ota-compat)
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/iosconstantine/ipatool.git}"
@@ -45,7 +45,7 @@ resolve_ipatool_source() {
       IPATOOL_USE_SUBMODULE=1
       IPATOOL_APPLY_OTA_PATCH=1
       IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/HaughtyEyes/ipatool.git}"
-      IPATOOL_REF="${IPATOOL_REF:-fix-empty-volume-store-response}"
+      IPATOOL_REF="${IPATOOL_REF:-fix-update-product-fallback}"
       ;;
     *)
       echo "Unknown source: $IPATOOL_SOURCE (expected official | haughtyeyes | ota | haughtyeyes+ota)" >&2
@@ -272,6 +272,12 @@ sync_submodule_source() {
 
   SRC_DIR="${SUBMODULE_DIR}"
 
+  if git -C "$SRC_DIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo "Resetting submodule working tree before sync …"
+    git -C "$SRC_DIR" reset --hard HEAD
+    git -C "$SRC_DIR" clean -fd
+  fi
+
   echo "Updating ipatool submodule …"
   git -C "${SCRIPT_DIR}" submodule update --init ipatool
 
@@ -281,7 +287,11 @@ sync_submodule_source() {
     exit 1
   fi
 
-  echo "Resetting submodule working tree …"
+  echo "Syncing submodule to ${IPATOOL_REF} …"
+  git -C "$SRC_DIR" remote set-url origin "$IPATOOL_REPO" 2>/dev/null \
+    || git -C "$SRC_DIR" remote add origin "$IPATOOL_REPO"
+  git -C "$SRC_DIR" fetch --depth 1 origin "$IPATOOL_REF"
+  git -C "$SRC_DIR" checkout -f FETCH_HEAD
   git -C "$SRC_DIR" reset --hard HEAD
   git -C "$SRC_DIR" clean -fd
 

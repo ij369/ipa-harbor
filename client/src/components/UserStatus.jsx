@@ -13,7 +13,7 @@ import {
 } from '@mui/joy';
 import { useNavigate } from 'react-router-dom';
 import { useApp } from '../contexts/AppContext';
-import { revokeAuth, isRateLimitError } from '../utils/api';
+import { revokeAuth, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 
 import Swal from 'sweetalert2';
 import LogoutIcon from '@mui/icons-material/Logout';
@@ -53,7 +53,7 @@ export default function UserStatus() {
                     Swal.fire({
                         icon: 'error',
                         title: t('ui.logoutFailed'), // 退出失败
-                        text: error.message,
+                        text: resolveClientErrorMessage(error),
                         confirmButtonText: t('ui.confirm')
                     });
                     logout();

@@ -2,6 +2,8 @@ const bcrypt = require('bcrypt');
 const database = require('../../utils/database');
 const { generateToken } = require('../../middleware/auth');
 const dayjs = require('dayjs');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
+
 /**
  * 管理员登录
  */
@@ -11,30 +13,33 @@ async function loginHandler(req, res) {
 
         // 参数验证
         if (!username || !password) {
-            return res.status(400).json({
-                success: false,
+            return sendError(res, 400, {
                 message: '用户名和密码是必需的参数',
-                error: 'Username and password are required'
+                errorMessageCode: 'ADMIN_LOGIN_CREDENTIALS_REQUIRED',
+                error: 'Username and password are required',
+                errorCode: 'ADMIN_LOGIN_CREDENTIALS_MISSING',
             });
         }
 
         // 查找用户
         const user = await database.getUserByUsername(username);
         if (!user) {
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '用户名或密码错误',
-                error: 'Invalid credentials'
+                errorMessageCode: 'ADMIN_LOGIN_INVALID_CREDENTIALS',
+                error: 'Invalid credentials',
+                errorCode: 'ADMIN_LOGIN_INVALID_CREDENTIALS_DETAIL',
             });
         }
 
         // 验证密码
         const isPasswordValid = await bcrypt.compare(password, user.password_hash);
         if (!isPasswordValid) {
-            return res.status(401).json({
-                success: false,
+            return sendError(res, 401, {
                 message: '用户名或密码错误',
-                error: 'Invalid credentials'
+                errorMessageCode: 'ADMIN_LOGIN_INVALID_CREDENTIALS',
+                error: 'Invalid credentials',
+                errorCode: 'ADMIN_LOGIN_INVALID_CREDENTIALS_DETAIL',
             });
         }
 
@@ -55,9 +60,9 @@ async function loginHandler(req, res) {
 
         console.log(`管理员登录成功: ${username} , time: ${dayjs().format('YYYY-MM-DD HH:mm:ss')}`);
 
-        return res.json({
-            success: true,
+        return sendSuccess(res, {
             message: '登录成功',
+            errorMessageCode: 'ADMIN_LOGIN_SUCCESS',
             data: {
                 user: {
                     id: user.id,
@@ -71,10 +76,11 @@ async function loginHandler(req, res) {
 
     } catch (error) {
         console.error('管理员登录错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '管理员登录过程中发生错误',
-            error: error.message
+            errorMessageCode: 'ADMIN_LOGIN_FAILED',
+            error: error.message,
+            errorCode: 'ADMIN_LOGIN_ERROR_DETAIL',
         });
     }
 }

@@ -13,7 +13,7 @@ import { AnimatePresence, motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../contexts/AppContext';
-import { revokeAuth, isRateLimitError } from '../utils/api';
+import { revokeAuth, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import LanguageSwitcher from './LanguageSwitcher';
 import RegionSelector from './RegionSelector';
 import Swal from 'sweetalert2';
@@ -142,7 +142,7 @@ export default function MobileNavMenu({
             Swal.fire({
                 icon: 'error',
                 title: t('ui.logoutFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm'),
             });
             logout();

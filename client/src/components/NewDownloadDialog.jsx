@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Box, Stack, Input, Button, Textarea, Typography, IconButton } from '@mui/joy';
 import Dialog from './Dialog';
 import RegionSelector from './RegionSelector';
-import { getAppDetails, downloadApp, isRateLimitError } from '../utils/api';
+import { getAppDetails, downloadApp, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
 import { useApp } from '../contexts/AppContext';
@@ -161,7 +161,7 @@ export default function NewDownloadDialog({ isOpen, onClose }) {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.downloadFailed'),
-                text: error.message || '下载失败',
+                text: resolveClientErrorMessage(error) || t('ui.downloadFailed'),
                 confirmButtonText: t('ui.confirm')
             });
         } finally {

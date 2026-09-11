@@ -25,7 +25,7 @@ import {
 import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
 import FindReplaceIcon from '@mui/icons-material/FindReplace';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrlByFileName, getAppDownloadPackageUrlByFileName, isRateLimitError } from '../utils/api';
+import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrlByFileName, getAppDownloadPackageUrlByFileName, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import { isOtaSecureContext, useOtaInstallPreference } from '../utils/otaInstallPreference';
 import { useLoadAppScreenshotsPreference } from '../utils/appScreenshotsPreference';
 import { useApp } from '../contexts/AppContext';
@@ -33,9 +33,19 @@ import Swal from 'sweetalert2';
 import { getAppIconUrl } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
+import { getIntlLocale } from '../i18n';
 import { Virtuoso } from 'react-virtuoso';
 import AppScreenshots from './AppScreenshots';
 import { getAppScreenshotGroups } from '../utils/appScreenshotUrls';
+import { formatAppLanguageCodes } from '../utils/languageDisplayName';
+import {
+    clearVersionsPreloadCache,
+    commitVersionsPreloadFetch,
+    ensureVersionsPreload,
+    getVersionsPreloadEntry,
+    isVersionsPreloadConsumed,
+    markVersionsPreloadConsumed,
+} from '../utils/appVersionsPreloadCache';
 
 const VersionVirtuosoList = React.forwardRef(function VersionVirtuosoList({ style, children, ...props }, ref) {
     return (
@@ -79,7 +89,18 @@ export function toAppDetailPreviewFromId(appId) {
 }
 
 export default function AppDetail({ app, loading = false }) {
-    const { t } = useTranslation();
+    const { t, i18n } = useTranslation();
+
+    const buildVersionDisplayName = (bundleVersion, fallbackIndex) => {
+        if (bundleVersion != null && bundleVersion !== '' && bundleVersion !== '未知') {
+            return t('ui.versionNamed', { version: bundleVersion });
+        }
+        if (fallbackIndex != null) {
+            return t('ui.versionIndexed', { index: fallbackIndex });
+        }
+        return t('ui.unknown');
+    };
+
     const navigate = useNavigate();
     const [versions, setVersions] = useState([]);
     const [versionsLoading, setVersionsLoading] = useState(false);
@@ -90,6 +111,8 @@ export default function AppDetail({ app, loading = false }) {
     const [activeTab, setActiveTab] = useState(0); // 管理tabs状态
     const [storeLatestVersionId, setStoreLatestVersionId] = useState(null);
     const rootRef = useRef(null);
+    const activeTabRef = useRef(0);
+    const currentTrackIdRef = useRef(null);
     const [scrollParent, setScrollParent] = useState(null);
 
     const { taskList, user, fileList, settings } = useApp();
@@ -110,44 +133,15 @@ export default function AppDetail({ app, loading = false }) {
         return latest?.versionId != null ? String(latest.versionId) : null;
     };
 
+    useEffect(() => () => clearVersionsPreloadCache(), []);
+
     useEffect(() => {
-        setActiveTab(0);
-        setVersions([]);
-        setVersionsError(null);
-        setDataSource(null);
-        setStoreLatestVersionId(null);
-        setShowScreenshotsOnce(false);
+        currentTrackIdRef.current = app?.trackId != null ? String(app.trackId) : null;
     }, [app?.trackId]);
 
     useEffect(() => {
-        if (!app?.trackId) {
-            return undefined;
-        }
-
-        let cancelled = false;
-
-        const loadStoreLatestVersionId = async () => {
-            try {
-                const response = await getAppVersions(app.trackId);
-                if (cancelled || !response.success) {
-                    return;
-                }
-
-                const versionObjects = response.data.externalVersionIdentifiers || [];
-                setStoreLatestVersionId(extractLatestVersionId(versionObjects));
-            } catch (error) {
-                if (!isRateLimitError(error)) {
-                    console.warn('获取 App Store 最新版本 ID 失败:', error.message);
-                }
-            }
-        };
-
-        loadStoreLatestVersionId();
-
-        return () => {
-            cancelled = true;
-        };
-    }, [app?.trackId, app?.version]);
+        activeTabRef.current = activeTab;
+    }, [activeTab]);
 
     const handleVersionsError = async () => {
         const isFree = app.price === 0;
@@ -225,107 +219,222 @@ export default function AppDetail({ app, loading = false }) {
         try {
             // 处理第三方API返回的日期格式 "2025-10-18 02:33:52"
             const date = new Date(dateString.replace(' ', 'T'));
-            const lng = localStorage.getItem('language') || 'en';
-            return date.toLocaleDateString(lng.startsWith('zh') ? 'zh-CN' : 'en-US');
+            return date.toLocaleDateString(getIntlLocale(i18n.language));
         } catch (error) {
             return t('ui.dateFormatError'); // 日期格式错误
         }
     };
 
-    // 获取版本列表
-    const fetchVersions = async (useThirdPartyApi = false) => {
-        if (!app.trackId) return;
+    const parseVersionsResponse = (response) => {
+        if (!response?.success || !response.data) {
+            return null;
+        }
+
+        const versionObjects = response.data.externalVersionIdentifiers || [];
+        const storeLatestVersionId = extractLatestVersionId(versionObjects);
+        const versionsData = versionObjects.map((versionObj, index) => ({
+            versionId: versionObj.versionId,
+            bundleVersion: versionObj.bundleVersion,
+            releaseDate: versionObj.releaseDate,
+            isLatest: storeLatestVersionId != null
+                && String(versionObj.versionId) === storeLatestVersionId,
+            displayName: buildVersionDisplayName(
+                versionObj.bundleVersion,
+                versionObjects.length - index,
+            ),
+        }));
+
+        return {
+            versions: versionsData,
+            storeLatestVersionId,
+            source: response.source,
+        };
+    };
+
+    const applyVersionsSuccess = (parsed) => {
+        setVersions(parsed.versions);
+        setStoreLatestVersionId(parsed.storeLatestVersionId);
+        setDataSource(parsed.source);
+        setVersionsError(null);
+
+        if (parsed.source === 'third-party') {
+            console.log('[INFO] 版本列表来源：第三方API');
+        } else if (parsed.source === 'third-party-fallback') {
+            console.log('[INFO] 版本列表来源：第三方API（ipatool 回退）');
+        } else {
+            console.log('[INFO] 版本列表来源：ipatool');
+        }
+    };
+
+    const getVersionsSourceWarningKey = (source) => {
+        if (source === 'third-party-fallback') {
+            return 'ui.thirdPartyFallbackWarning';
+        }
+        if (source === 'third-party') {
+            return 'ui.thirdPartyApiWarning';
+        }
+        return null;
+    };
+
+    const syncVersionsStateFromCache = (trackId) => {
+        const preloadEntry = getVersionsPreloadEntry(trackId);
+
+        if (preloadEntry?.parsed) {
+            setStoreLatestVersionId(preloadEntry.parsed.storeLatestVersionId);
+        } else {
+            setStoreLatestVersionId(null);
+        }
+
+        if (preloadEntry?.consumed && preloadEntry.parsed) {
+            applyVersionsSuccess(preloadEntry.parsed);
+            setVersionsLoading(false);
+            return;
+        }
+
+        if (preloadEntry?.consumed && preloadEntry.error) {
+            setVersions([]);
+            setVersionsError(resolveClientErrorMessage(preloadEntry.error));
+            setDataSource(null);
+            setVersionsLoading(false);
+            return;
+        }
+
+        setVersions([]);
+        setVersionsError(null);
+        setDataSource(null);
+        setVersionsLoading(false);
+    };
+
+    const updatePreloadCacheAfterFetch = (trackId, { parsed = null, error = null } = {}) => {
+        commitVersionsPreloadFetch(trackId, app.version, { parsed, error });
+    };
+
+    const applyPreloadEntrySideEffects = async (trackId) => {
+        const preloadEntry = getVersionsPreloadEntry(trackId);
+        if (!preloadEntry) {
+            return;
+        }
+
+        if (preloadEntry.parsed && currentTrackIdRef.current === trackId) {
+            setStoreLatestVersionId(preloadEntry.parsed.storeLatestVersionId);
+        }
+
+        if (
+            activeTabRef.current === 1
+            && currentTrackIdRef.current === trackId
+            && !preloadEntry.consumed
+        ) {
+            if (preloadEntry.parsed) {
+                preloadEntry.consumed = true;
+                applyVersionsSuccess(preloadEntry.parsed);
+                setVersionsLoading(false);
+                return;
+            }
+
+            if (preloadEntry.error) {
+                if (isRateLimitError(preloadEntry.error)) {
+                    return;
+                }
+
+                preloadEntry.consumed = true;
+                setVersionsError(resolveClientErrorMessage(preloadEntry.error));
+                setVersionsLoading(false);
+                await processVersionsFetchError(preloadEntry.error);
+            }
+        } else if (preloadEntry.error && !isRateLimitError(preloadEntry.error)) {
+            console.warn(`预加载版本列表失败 (${trackId}):`, preloadEntry.error.message);
+        }
+    };
+
+    useEffect(() => {
+        if (!app?.trackId) {
+            return;
+        }
+
+        const trackId = String(app.trackId);
+        setActiveTab(0);
+        activeTabRef.current = 0;
+        setShowScreenshotsOnce(false);
+        syncVersionsStateFromCache(trackId);
+    }, [app?.trackId]);
+
+    const consumePreloadedVersions = async (trackId, preloadEntry) => {
+        if (!preloadEntry || preloadEntry.consumed) {
+            return false;
+        }
+
+        if (preloadEntry.parsed) {
+            markVersionsPreloadConsumed(trackId, true);
+            applyVersionsSuccess(preloadEntry.parsed);
+            return true;
+        }
+
+        if (preloadEntry.error) {
+            markVersionsPreloadConsumed(trackId, true);
+            setVersionsError(resolveClientErrorMessage(preloadEntry.error));
+            await processVersionsFetchError(preloadEntry.error);
+            return true;
+        }
+
+        return false;
+    };
+
+    const activateHistoryVersionsTab = async () => {
+        if (!app.trackId) {
+            return;
+        }
+
+        const trackId = String(app.trackId);
+
+        if (isVersionsPreloadConsumed(trackId)) {
+            await fetchVersions(false);
+            return;
+        }
+
+        const preloadEntry = getVersionsPreloadEntry(trackId);
+        if (!preloadEntry) {
+            markVersionsPreloadConsumed(trackId, true);
+            await fetchVersions(false);
+            return;
+        }
+
+        if (await consumePreloadedVersions(trackId, preloadEntry)) {
+            return;
+        }
 
         setVersionsLoading(true);
         setVersionsError(null);
 
         try {
-            const response = await getAppVersions(app.trackId, useThirdPartyApi);
-            if (response.success && response.data) {
-                // 处理版本数据结构：externalVersionIdentifiers 
-                const versionObjects = response.data.externalVersionIdentifiers || [];
-                const versionsData = versionObjects.map((versionObj, index) => ({
-                    versionId: versionObj.versionId,
-                    bundleVersion: versionObj.bundleVersion,
-                    releaseDate: versionObj.releaseDate,
-                    isLatest: versionObj.bundleVersion === app.version,
-                    displayName: versionObj.bundleVersion !== '未知'
-                        ? `版本 ${versionObj.bundleVersion}`
-                        : `版本 ${versionObjects.length - index}`
-                }));
-                setVersions(versionsData);
-                setStoreLatestVersionId(extractLatestVersionId(versionObjects));
-                setDataSource(response.source);
+            await preloadEntry.promise;
+            const latestPreload = getVersionsPreloadEntry(trackId);
+            if (latestPreload?.trackId === trackId) {
+                await consumePreloadedVersions(trackId, latestPreload);
+            }
+        } finally {
+            setVersionsLoading(false);
+        }
+    };
 
-                // 显示数据源信息
-                if (response.source === 'third-party') {
-                    console.log('[INFO] 版本列表来源：第三方API');
-                } else {
-                    console.log('[INFO] 版本列表来源：ipatool');
-                }
+    // 获取版本列表（显式刷新或第三方 API）
+    const fetchVersions = async (useThirdPartyApi = false) => {
+        if (!app.trackId) return;
+
+        const trackId = String(app.trackId);
+        markVersionsPreloadConsumed(trackId, true);
+        setVersionsLoading(true);
+        setVersionsError(null);
+
+        try {
+            const response = await getAppVersions(app.trackId, useThirdPartyApi);
+            const parsed = parseVersionsResponse(response);
+            if (parsed) {
+                applyVersionsSuccess(parsed);
+                updatePreloadCacheAfterFetch(trackId, { parsed });
             }
         } catch (error) {
-            if (isRateLimitError(error)) return;
-            console.error('获取版本列表失败:', error);
-            console.log('版本列表错误类型:', error.errorType);
-            console.log('版本列表错误对象:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
-            setVersionsError(error.message);
-
-            if (error.errorType === 'LICENSE_REQUIRED') {
-                // 处理许可证需要错误
-                const isFree = app.price === 0;
-                if (isFree) {
-                    const result = await Swal.fire({
-                        title: t('ui.needClaimFirst'), // 需要先领取该应用
-                        html: t('ui.claimAppHint'), // 该应用需要先领取许可证才能查看版本列表。<br/>点击"领取"按钮来获取该应用的许可证。
-                        icon: 'info',
-                        showCancelButton: true,
-                        confirmButtonText: t('ui.claim'), // 领取
-                        cancelButtonText: t('ui.cancel')
-                    });
-
-                    if (result.isConfirmed) {
-                        try {
-                            await purchaseApp(app.bundleId);
-                            Swal.fire({
-                                icon: 'success',
-                                title: t('ui.claimSuccess'), // 已获取成功
-                                text: t('ui.refetchingVersions'), // 正在重新获取版本列表...
-                                timer: 1500,
-                                showConfirmButton: false
-                            });
-                            // 重新获取版本列表
-                            setTimeout(fetchVersions, 1000);
-                        } catch (purchaseError) {
-                            Swal.fire({
-                                icon: 'error',
-                                title: t('ui.claimFailed'), // 获取失败
-                                text: purchaseError.message,
-                                confirmButtonText: t('ui.ok')
-                            });
-                        }
-                    }
-                } else {
-                    Swal.fire({
-                        title: t('ui.needPurchase'), // 需要购买
-                        text: t('ui.paidAppHint'), // 该应用为收费应用，需要在设备的 App Store 上执行购买后才能查看版本列表。
-                        icon: 'info',
-                        confirmButtonText: t('ui.ok')
-                    });
-                }
-            } else if (error.errorType === 'TOKEN_EXPIRED') {
-                handleTokenExpiredError();
-            } else if (error.message.includes('第三方API未找到该应用的版本信息')) {
-                // 第三方API未找到数据的情况
-                Swal.fire({
-                    title: t('ui.loadThirdPartyVersions'), // 第三方API无数据
-                    text: t('ui.thirdPartyApiWarning'), // 第三方API中未找到该应用的版本信息，请尝试其他方式获取版本列表。
-                    icon: 'info',
-                    confirmButtonText: t('ui.ok')
-                });
-            } else if (error.message.includes('获取版本列表时发生错误')) {
-                handleVersionsError();
-            }
+            updatePreloadCacheAfterFetch(trackId, { error });
+            await processVersionsFetchError(error);
         } finally {
             setVersionsLoading(false);
         }
@@ -348,6 +457,108 @@ export default function AppDetail({ app, loading = false }) {
         }
     };
 
+    const processVersionsFetchError = async (error) => {
+        if (isRateLimitError(error)) {
+            return true;
+        }
+
+        console.error('获取版本列表失败:', error);
+        console.log('版本列表错误类型:', error.errorType);
+        console.log('版本列表错误对象:', JSON.stringify(error, Object.getOwnPropertyNames(error)));
+        setVersionsError(resolveClientErrorMessage(error));
+
+        if (error.errorType === 'LICENSE_REQUIRED') {
+            const isFree = app.price === 0;
+            if (isFree) {
+                const result = await Swal.fire({
+                    title: t('ui.needClaimFirst'),
+                    html: t('ui.claimAppHint'),
+                    icon: 'info',
+                    showCancelButton: true,
+                    confirmButtonText: t('ui.claim'),
+                    cancelButtonText: t('ui.cancel'),
+                });
+
+                if (result.isConfirmed) {
+                    try {
+                        await purchaseApp(app.bundleId);
+                        Swal.fire({
+                            icon: 'success',
+                            title: t('ui.claimSuccess'),
+                            text: t('ui.refetchingVersions'),
+                            timer: 1500,
+                            showConfirmButton: false,
+                        });
+                        setTimeout(fetchVersions, 1000);
+                    } catch (purchaseError) {
+                        Swal.fire({
+                            icon: 'error',
+                            title: t('ui.claimFailed'),
+                            text: purchaseError.message,
+                            confirmButtonText: t('ui.ok'),
+                        });
+                    }
+                }
+            } else {
+                Swal.fire({
+                    title: t('ui.needPurchase'),
+                    text: t('ui.paidAppHint'),
+                    icon: 'info',
+                    confirmButtonText: t('ui.ok'),
+                });
+            }
+        } else if (error.errorType === 'TOKEN_EXPIRED') {
+            handleTokenExpiredError();
+        } else if (error.errorMessageCode === 'APP_VERSIONS_THIRD_PARTY_NOT_FOUND') {
+            Swal.fire({
+                title: t('ui.loadThirdPartyVersions'),
+                text: t('ui.thirdPartyApiWarning'),
+                icon: 'info',
+                confirmButtonText: t('ui.ok'),
+            });
+        } else if (error.errorMessageCode === 'APP_VERSIONS_ERROR') {
+            handleVersionsError();
+        }
+
+        return false;
+    };
+
+    useEffect(() => {
+        if (!app?.trackId) {
+            return undefined;
+        }
+
+        const trackId = String(app.trackId);
+        const entry = ensureVersionsPreload(trackId, app.version, async () => {
+            try {
+                const response = await getAppVersions(trackId, false);
+                const parsed = parseVersionsResponse(response);
+                if (!parsed) {
+                    throw new Error('获取版本列表时发生错误');
+                }
+                return parsed;
+            } catch (error) {
+                if (isRateLimitError(error)) {
+                    return null;
+                }
+                throw error;
+            }
+        });
+
+        if (!entry) {
+            return undefined;
+        }
+
+        if (entry.parsed) {
+            applyPreloadEntrySideEffects(trackId);
+            return undefined;
+        }
+
+        entry.promise.then(() => applyPreloadEntrySideEffects(trackId));
+
+        return undefined;
+    }, [app?.trackId, app?.version]);
+
     // 手动拉取单个版本的 Apple 元数据
     const handleRefreshVersionMetadata = async (versionId) => {
         if (!app.trackId || !versionId) return;
@@ -364,8 +575,8 @@ export default function AppDetail({ app, loading = false }) {
                         ...v,
                         releaseDate: response.data.releaseDate || v.releaseDate,
                         bundleVersion,
-                        displayName: bundleVersion && bundleVersion !== '未知'
-                            ? `版本 ${bundleVersion}`
+                        displayName: bundleVersion != null && bundleVersion !== '' && bundleVersion !== '未知'
+                            ? t('ui.versionNamed', { version: bundleVersion })
                             : v.displayName,
                     };
                 }));
@@ -382,7 +593,7 @@ export default function AppDetail({ app, loading = false }) {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.refreshVersionMetadataFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.ok'),
             });
         } finally {
@@ -465,7 +676,7 @@ export default function AppDetail({ app, loading = false }) {
                 Swal.fire({
                     icon: 'error',
                     title: t('ui.failedToDownload'), // 下载失败
-                    text: error.message,
+                    text: resolveClientErrorMessage(error),
                     confirmButtonText: t('ui.confirm')
                 });
             }
@@ -554,7 +765,7 @@ export default function AppDetail({ app, loading = false }) {
                 Swal.fire({
                     icon: 'error',
                     title: t('ui.deleteFailed'), // 删除失败
-                    text: error.message,
+                    text: resolveClientErrorMessage(error),
                     confirmButtonText: t('ui.confirm')
                 });
             }
@@ -1020,7 +1231,7 @@ export default function AppDetail({ app, loading = false }) {
                             startDecorator={<Download />}
                             onClick={() => handleDownload(version.versionId, app.bundleId)}
                         >
-                            下载
+                            {t('ui.download')}
                         </Button>
                     );
             }
@@ -1033,15 +1244,16 @@ export default function AppDetail({ app, loading = false }) {
                 startDecorator={<Download />}
                 onClick={() => handleDownload(version.versionId, app.bundleId)}
             >
-                下载
+                {t('ui.download')}
             </Button>
         );
     };
 
     const renderHistoricalVersionItem = (version, index) => {
         const localFile = getLocalFileForVersion(version.versionId);
-        const displayName = localFile?.bundleShortVersionString && localFile.bundleShortVersionString !== '未知'
-            ? `版本 ${localFile.bundleShortVersionString}`
+        const shortVersion = localFile?.bundleShortVersionString;
+        const displayName = shortVersion && shortVersion !== '未知'
+            ? t('ui.versionNamed', { version: shortVersion })
             : version.displayName;
         const releaseDate = version.releaseDate;
         const versionActions = renderVersionDownloadButton(version);
@@ -1140,6 +1352,7 @@ export default function AppDetail({ app, loading = false }) {
     }
 
     const displayName = app.trackName || (app.trackId != null ? `ID: ${app.trackId}` : t('ui.loading'));
+    const primaryGenreDisplayName = app.genres?.[0] || app.primaryGenreName || '';
 
     const renderAppHeader = (isLoading = false) => (
         <Stack direction="row" gap={3} sx={{ mb: 3 }}>
@@ -1172,10 +1385,10 @@ export default function AppDetail({ app, loading = false }) {
                                 <Typography level="body-md">{app.artistName}</Typography>
                             </Stack>
                         ) : null}
-                        {app.primaryGenreName ? (
+                        {primaryGenreDisplayName ? (
                             <Stack direction="row" gap={1} alignItems="center">
                                 <Category fontSize="small" />
-                                <Typography level="body-sm">{app.primaryGenreName}</Typography>
+                                <Typography level="body-sm">{primaryGenreDisplayName}</Typography>
                             </Stack>
                         ) : null}
                     </>
@@ -1313,6 +1526,8 @@ export default function AppDetail({ app, loading = false }) {
         );
     }
 
+    const versionsSourceWarningKey = getVersionsSourceWarningKey(dataSource);
+
     return (
         <Box ref={rootRef}>
             {renderAppHeader(false)}
@@ -1333,8 +1548,9 @@ export default function AppDetail({ app, loading = false }) {
                 value={activeTab}
                 onChange={(event, value) => {
                     setActiveTab(value);
+                    activeTabRef.current = value;
                     if (value === 1) {
-                        fetchVersions();
+                        activateHistoryVersionsTab();
                     }
                 }}
                 sx={{ bgcolor: 'transparent', position: 'sticky', top: 0, zIndex: 1000 }}
@@ -1395,6 +1611,7 @@ export default function AppDetail({ app, loading = false }) {
                                 ipadTitle={t('ui.appScreenshotsIpad')}
                                 loadOnceLabel={t('ui.loadAppScreenshotsOnce')}
                                 emptyLabel={t('ui.noAppScreenshots')}
+                                screenshotAlt={app.trackName || t('ui.appScreenshots')}
                             />
                         )}
 
@@ -1405,7 +1622,7 @@ export default function AppDetail({ app, loading = false }) {
                                 <Stack direction="row" gap={2}>
                                     <Typography level="body-sm" sx={{ flexShrink: 0 }}>{t('ui.languages')}:</Typography>
                                     <Typography level="body-sm" sx={{ textAlign: 'right', flex: 1 }}>
-                                        {app.languageCodesISO2A ? app.languageCodesISO2A.join(', ') : t('ui.unknown')}
+                                        {formatAppLanguageCodes(app.languageCodesISO2A, i18n.language) ?? t('ui.unknown')}
                                     </Typography>
                                 </Stack>
                                 <Stack direction="row" gap={2}>
@@ -1446,8 +1663,8 @@ export default function AppDetail({ app, loading = false }) {
                 </TabPanel>
 
                 <TabPanel value={1} sx={{ p: 0, pt: 1.5 }}>
-                    {/* 数据源标记 */}
-                    {dataSource === 'third-party' && (
+                    {/* 数据源标记（第三方 API 或 ipatool 回退） */}
+                    {versionsSourceWarningKey && (
                         <Typography
                             level="body-xs"
                             sx={{
@@ -1457,7 +1674,7 @@ export default function AppDetail({ app, loading = false }) {
                                 fontStyle: 'italic',
                             }}
                         >
-                            {t('ui.thirdPartyApiWarning')}
+                            {t(versionsSourceWarningKey)}
                         </Typography>
                     )}
 

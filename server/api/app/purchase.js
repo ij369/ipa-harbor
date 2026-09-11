@@ -1,5 +1,6 @@
 const { exec } = require('child_process');
 const path = require('path');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
 
 // ipatool二进制文件路径
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
@@ -49,10 +50,11 @@ async function purchaseHandler(req, res) {
 
         // 参数验证
         if (!bundleId) {
-            return res.status(400).json({
-                success: false,
+            return sendError(res, 400, {
                 message: 'Bundle ID是必需的参数',
-                error: '请在URL路径中提供bundleId'
+                errorMessageCode: 'APP_PURCHASE_BUNDLE_ID_REQUIRED',
+                error: '请在URL路径中提供bundleId',
+                errorCode: 'APP_PURCHASE_BUNDLE_ID_MISSING',
             });
         }
 
@@ -65,17 +67,18 @@ async function purchaseHandler(req, res) {
             const result = await executeIpatool(command);
 
             if (result.success) {
-                return res.json({
-                    success: true,
+                return sendSuccess(res, {
                     message: '购买/领取成功',
+                    errorMessageCode: 'APP_PURCHASE_SUCCESS',
                     bundleId: bundleId,
                     data: result.data || result.rawOutput
                 });
             } else {
-                return res.status(500).json({
-                    success: false,
+                return sendError(res, 500, {
                     message: '购买/领取失败',
-                    error: result.error
+                    errorMessageCode: 'APP_PURCHASE_FAILED',
+                    error: result.error,
+                    errorCode: 'APP_PURCHASE_EXEC_FAILED',
                 });
             }
         } catch (execError) {
@@ -85,10 +88,11 @@ async function purchaseHandler(req, res) {
             if (execError.stdout && (
                 execError.stdout.includes('failed to get account')
             )) {
-                return res.status(401).json({
-                    success: false,
+                return sendError(res, 401, {
                     message: '用户未登录或认证信息已过期',
-                    error: '请先登录'
+                    errorMessageCode: 'AUTH_NOT_LOGGED_IN',
+                    error: '请先登录',
+                    errorCode: 'AUTH_LOGIN_REQUIRED',
                 });
             }
 
@@ -98,26 +102,29 @@ async function purchaseHandler(req, res) {
                 execError.stderr.includes('已购买') ||
                 execError.stderr.includes('already own')
             )) {
-                return res.status(409).json({
-                    success: false,
+                return sendError(res, 409, {
                     message: '该应用已经购买过了',
-                    error: '无需重复购买'
+                    errorMessageCode: 'APP_PURCHASE_ALREADY_OWNED',
+                    error: '无需重复购买',
+                    errorCode: 'APP_PURCHASE_NO_REPEAT',
                 });
             }
 
-            return res.status(500).json({
-                success: false,
+            return sendError(res, 500, {
                 message: '购买/领取时发生错误',
-                error: execError.message || '执行命令失败'
+                errorMessageCode: 'APP_PURCHASE_ERROR',
+                error: execError.message || '执行命令失败',
+                errorCode: 'APP_PURCHASE_EXEC_FAILED',
             });
         }
 
     } catch (error) {
         // console.error('购买处理错误:', error);
-        return res.status(500).json({
-            success: false,
+        return sendError(res, 500, {
             message: '服务器内部错误',
-            error: error.message
+            errorMessageCode: 'INTERNAL_SERVER_ERROR',
+            error: error.message,
+            errorCode: 'INTERNAL_ERROR_DETAIL',
         });
     }
 }

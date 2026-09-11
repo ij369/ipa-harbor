@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { getAdminStatus, adminLogin, adminLogout } from '../utils/api';
+import { getAdminStatus, adminLogin, adminLogout, resolveClientErrorMessage } from '../utils/api';
 import dayjs from 'dayjs';
 
 const AdminContext = createContext();
@@ -20,6 +20,7 @@ export const AdminProvider = ({ children }) => {
         expiresAt: null,
         settings: null,
         settingsLoaded: false,
+        statusLoaded: false,
         loading: true,
         error: null
     });
@@ -38,15 +39,17 @@ export const AdminProvider = ({ children }) => {
                 expiresAt: response.data.expiresAt,
                 settings: response.data.settings || null,
                 settingsLoaded: true,
-                loading: false
+                statusLoaded: true,
+                loading: false,
+                error: null,
             }));
         } catch (error) {
             console.error('检查管理员状态失败:', error);
             setAdminState(prev => ({
                 ...prev,
                 loading: false,
-                settingsLoaded: true,
-                error: error.message
+                statusLoaded: false,
+                error: resolveClientErrorMessage(error)
             }));
         }
     };
@@ -77,7 +80,7 @@ export const AdminProvider = ({ children }) => {
             setAdminState(prev => ({
                 ...prev,
                 loading: false,
-                error: error.message
+                error: resolveClientErrorMessage(error)
             }));
             throw error;
         }

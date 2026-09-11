@@ -135,7 +135,7 @@ async function ensureVersionMetadataCached(appId, versionIds, { fetchMissing = f
         const row = cacheMap.get(versionId);
         return {
             versionId,
-            bundleVersion: row?.display_version || '未知',
+            bundleVersion: row?.display_version && row.display_version !== '未知' ? row.display_version : null,
             releaseDate: row?.release_date || null,
         };
     });

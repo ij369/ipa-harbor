@@ -15,6 +15,7 @@ import {
     Stack
 } from '@mui/joy';
 import { useAdmin } from '../contexts/AdminContext';
+import { resolveClientErrorMessage } from '../utils/api';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 
@@ -62,7 +63,7 @@ const AdminLogin = () => {
             // navigate('/');
         } catch (error) {
             // setLoginError(error.message || '登录失败');
-            setLoginError(error.message || t('ui.searchFailed'));
+            setLoginError(resolveClientErrorMessage(error) || t('apiErrorMessages.ADMIN_LOGIN_FAILED'));
         } finally {
             setLoginLoading(false);
         }

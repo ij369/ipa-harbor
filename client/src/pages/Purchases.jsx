@@ -25,7 +25,7 @@ import {
     monoFontSx,
     monoCellStyle,
 } from '../styles/tableColumns';
-import { listPurchases, getAppDetails, getAppIconUrl, isRateLimitError } from '../utils/api';
+import { listPurchases, getAppDetails, getAppIconUrl, isRateLimitError, resolveApiMessage, resolveClientErrorMessage } from '../utils/api';
 import Dialog from '../components/Dialog';
 import AppDetail, { toAppDetailPreview } from '../components/AppDetail';
 
@@ -76,10 +76,10 @@ export default function Purchases() {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.loadPurchasesFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm')
             }).then(() => {
-                if (error.message.includes('认证') || error.message.includes('登录') || error.message.includes('token')) {
+                if (error.errorMessageCode === 'AUTH_NOT_LOGGED_IN' || error.errorType === 'TOKEN_EXPIRED') {
                     navigate('/apple-id');
                 }
             });
@@ -116,7 +116,12 @@ export default function Purchases() {
                 setAppDetails(response.data);
                 setCurrentDetailIndex(0);
             } else {
-                throw new Error(response.message || 'Failed to get app details');
+                const detailsError = new Error(resolveApiMessage(response) || t('ui.getDetailsFailed'));
+                detailsError.errorMessageCode = response.errorMessageCode;
+                detailsError.errorCode = response.errorCode;
+                detailsError.backendMessage = response.message;
+                detailsError.backendError = response.error;
+                throw detailsError;
             }
         } catch (error) {
             if (isRateLimitError(error)) return;
@@ -124,7 +129,7 @@ export default function Purchases() {
             Swal.fire({
                 icon: 'error',
                 title: t('ui.getDetailsFailed'),
-                text: error.message,
+                text: resolveClientErrorMessage(error),
                 confirmButtonText: t('ui.confirm')
             });
             setShowDetailDialog(false);
