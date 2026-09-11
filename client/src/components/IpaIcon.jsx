@@ -5,7 +5,7 @@ import {
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import MouseTooltip from './MouseTooltip';
 import IpaAppIcon from './IpaAppIcon';
-import { downloadApp, deleteTask, isRateLimitError, getAppDownloadPackageUrlByFileName, resolveClientErrorMessage } from '../utils/api';
+import { downloadApp, deleteTask, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import Swal from 'sweetalert2';
 import formatFileSize from '../utils/formatFileSize.js';
 import { useTranslation } from 'react-i18next';
@@ -355,32 +355,7 @@ function IpaIcon({
         );
     };
 
-    const downloadUrl = name ? getAppDownloadPackageUrlByFileName(name) : null;
-    const canLinkDownload = ['completed', 'downloaded'].includes(status) && downloadUrl;
-
-    const renderAppIcon = (iconProps) => {
-        const icon = <IpaAppIcon {...iconProps} />;
-
-        if (!canLinkDownload) {
-            return icon;
-        }
-
-        return (
-            <Link
-                component="a"
-                href={downloadUrl}
-                onClick={(e) => e.preventDefault()} // 阻止默认a事件，同时右键仍可 href 另存为下载
-                sx={{
-                    display: 'block',
-                    lineHeight: 0,
-                    textDecoration: 'none',
-                    color: 'inherit',
-                }}
-            >
-                {icon}
-            </Link>
-        );
-    };
+    const renderAppIcon = (iconProps) => <IpaAppIcon {...iconProps} />;
 
     const renderContent = () => {
         switch (status) {

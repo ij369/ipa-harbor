@@ -2,34 +2,25 @@
  * 设置用户地区（手动覆盖 Apple ID storefront 默认地区）
  */
 
-const { exec } = require('child_process');
-const path = require('path');
 const {
     enrichUserData,
     setManualRegion,
 } = require('../../utils/userRegion');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
+const { execIpatool } = require('../../utils/ipatoolExec');
 
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+async function getUserInfo() {
+    const { error, stdout } = await execIpatool(['auth', 'info'], { timeout: 15000 });
 
-function getUserInfo() {
-    return new Promise((resolve, reject) => {
-        const command = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+    if (error) {
+        throw new Error('用户未登录或认证信息已过期');
+    }
 
-        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-            if (error) {
-                reject(new Error('用户未登录或认证信息已过期'));
-            } else {
-                try {
-                    const result = JSON.parse(stdout);
-                    resolve(result);
-                } catch (parseError) {
-                    reject(new Error('解析用户信息失败'));
-                }
-            }
-        });
-    });
+    try {
+        return JSON.parse(stdout);
+    } catch (parseError) {
+        throw new Error('解析用户信息失败');
+    }
 }
 
 async function handler(req, res) {

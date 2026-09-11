@@ -1,9 +1,10 @@
 const jwt = require('jsonwebtoken');
 const database = require('../utils/database');
 const { sendError } = require('../utils/apiResponse');
+const { loadJwtSecret } = require('../utils/jwtSecret');
 
-// JWT密钥，从环境变量获取
-const JWT_SECRET = process.env.JWT_SECRET || 'secret-jwt-key';
+// 优先环境变量，否则读取 data/.ipatool/JWT_SECRET（不存在则自动生成）
+const JWT_SECRET = loadJwtSecret();
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN || '2d'; // 2天
 
 /**

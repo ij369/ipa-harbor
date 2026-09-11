@@ -1,36 +1,30 @@
-const { exec } = require('child_process');
-const path = require('path');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
+const { execIpatool } = require('../../utils/ipatoolExec');
 
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+async function executeIpatool(args) {
+    const { error, stdout, stderr } = await execIpatool(args, { timeout: 60000 });
 
-function executeIpatool(command) {
-    return new Promise((resolve, reject) => {
-        exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
-            if (error) {
-                reject({
-                    success: false,
-                    error: error.message,
-                    stderr: stderr,
-                    stdout: stdout
-                });
-            } else {
-                try {
-                    const result = JSON.parse(stdout);
-                    resolve({
-                        success: true,
-                        data: result
-                    });
-                } catch (parseError) {
-                    resolve({
-                        success: true,
-                        rawOutput: stdout
-                    });
-                }
-            }
-        });
-    });
+    if (error) {
+        throw {
+            success: false,
+            error: error.message,
+            stderr,
+            stdout,
+        };
+    }
+
+    try {
+        const result = JSON.parse(stdout);
+        return {
+            success: true,
+            data: result,
+        };
+    } catch (parseError) {
+        return {
+            success: true,
+            rawOutput: stdout,
+        };
+    }
 }
 
 /**
@@ -41,10 +35,12 @@ async function listPurchasesHandler(req, res) {
         const page = Math.max(parseInt(req.query.page, 10) || 1, 1);
         const maxResults = Math.min(Math.max(parseInt(req.query.maxResults, 10) || 50, 1), 100);
 
-        const command = `"${IPATOOL_PATH}" list-purchases --page ${page} --max-results ${maxResults} --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
         try {
-            const result = await executeIpatool(command);
+            const result = await executeIpatool([
+                'list-purchases',
+                '--page', String(page),
+                '--max-results', String(maxResults),
+            ]);
 
             if (result.success) {
                 const data = result.data || {};

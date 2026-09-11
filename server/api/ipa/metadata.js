@@ -4,9 +4,24 @@ const bplist = require('bplist-parser');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
-const { resolveItemId } = require('../../utils/ipaFileName');
+const { resolveItemId, isValidIpaStorageFileName } = require('../../utils/ipaFileName');
 const { normalizePlistMetadata, normalizeStoredMetadata } = require('../../utils/ipaMetadata');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
+
+const DATA_DIR = path.join(__dirname, '../../data');
+
+function resolveMetadataPaths(fileName) {
+    const baseName = path.basename(String(fileName || ''));
+    if (!isValidIpaStorageFileName(baseName)) {
+        return null;
+    }
+
+    return {
+        baseName,
+        ipaPath: path.join(DATA_DIR, baseName),
+        jsonPath: path.join(DATA_DIR, baseName.replace(/\.ipa$/, '.json')),
+    };
+}
 
 const CD_SIGNATURE = 0x02014b50;
 const EOCD_SIGNATURE = 0x06054b50;
@@ -25,10 +40,13 @@ function applyItemIdFromFileName(metadata, fileName) {
 }
 
 function writeSidecarMetadata(fileName, metadata) {
-    const dataDir = path.join(__dirname, '../../data');
-    const jsonPath = path.join(dataDir, fileName.replace('.ipa', '.json'));
-    fs.writeFileSync(jsonPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
-    return jsonPath;
+    const paths = resolveMetadataPaths(fileName);
+    if (!paths) {
+        throw new Error(`无效的文件名: ${fileName}`);
+    }
+
+    fs.writeFileSync(paths.jsonPath, `${JSON.stringify(metadata, null, 2)}\n`, 'utf8');
+    return paths.jsonPath;
 }
 
 function parsePlistBuffer(buffer) {
@@ -289,28 +307,31 @@ function parseIpaMetadataWithYauzl(ipaPath, fileName, { skipWrite = false } = {}
  */
 function parseIpaMetadata(fileName, options = {}) {
     const { forceReparse = false, skipWrite = false } = options;
-    const dataDir = path.join(__dirname, '../../data');
-    const ipaPath = path.join(dataDir, fileName);
-    const jsonPath = path.join(dataDir, fileName.replace('.ipa', '.json'));
+    const paths = resolveMetadataPaths(fileName);
+    if (!paths) {
+        return Promise.reject(new Error(`无效的文件名: ${fileName}`));
+    }
+
+    const { baseName, ipaPath, jsonPath } = paths;
 
     if (!fs.existsSync(ipaPath)) {
-        return Promise.reject(new Error(`IPA文件不存在: ${fileName}`));
+        return Promise.reject(new Error(`IPA文件不存在: ${baseName}`));
     }
 
     if (!forceReparse && fs.existsSync(jsonPath)) {
         try {
             const existingJson = normalizeStoredMetadata(JSON.parse(fs.readFileSync(jsonPath, 'utf8')));
-            return Promise.resolve(applyItemIdFromFileName(existingJson, fileName));
+            return Promise.resolve(applyItemIdFromFileName(existingJson, baseName));
         } catch (error) {
             console.log('读取现有JSON文件失败，重新解析IPA');
         }
     }
 
     try {
-        return Promise.resolve(parseIpaMetadataFast(ipaPath, fileName, { skipWrite }));
+        return Promise.resolve(parseIpaMetadataFast(ipaPath, baseName, { skipWrite }));
     } catch (fastError) {
-        console.warn(`快速解析 metadata 失败，回退 yauzl: ${fileName}`, fastError.message);
-        return parseIpaMetadataWithYauzl(ipaPath, fileName, { skipWrite });
+        console.warn(`快速解析 metadata 失败，回退 yauzl: ${baseName}`, fastError.message);
+        return parseIpaMetadataWithYauzl(ipaPath, baseName, { skipWrite });
     }
 }
 
@@ -330,19 +351,20 @@ async function metadataHandler(req, res) {
             });
         }
 
-        if (!fileName.endsWith('.ipa')) {
+        const paths = resolveMetadataPaths(fileName);
+        if (!paths) {
             return sendError(res, 400, {
                 message: '无效的文件格式',
                 errorMessageCode: 'IPA_METADATA_INVALID_FORMAT',
-                error: '文件名必须以.ipa结尾',
-                errorCode: 'IPA_METADATA_FILENAME_NOT_IPA',
+                error: '文件名须为 appId_versionId.ipa 格式',
+                errorCode: 'IPA_METADATA_FILENAME_INVALID',
             });
         }
 
-        console.log(`开始解析IPA文件: ${fileName}`);
+        console.log(`开始解析IPA文件: ${paths.baseName}`);
 
         try {
-            const metadata = await parseIpaMetadata(fileName);
+            const metadata = await parseIpaMetadata(paths.baseName);
             return sendSuccess(res, {
                 message: 'IPA元数据解析成功',
                 errorMessageCode: 'IPA_METADATA_FETCH_SUCCESS',

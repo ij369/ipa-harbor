@@ -8,8 +8,9 @@ const statusHandler = require('./status');
 const checkUpdateHandler = require('./checkUpdate');
 const updateSettingsHandler = require('./settings');
 const { authenticateToken, optionalAuth } = require('../../middleware/auth');
+const setupRateLimit = require('../../middleware/setupRateLimit');
 
-router.post('/setup', setupHandler);           // 初始设置（创建管理员账户）
+router.post('/setup', setupRateLimit, setupHandler);           // 初始设置（创建管理员账户）
 router.post('/login', loginHandler);           // 管理员登录
 router.post('/logout', authenticateToken, logoutHandler); // 管理员退出登录
 router.get('/status', optionalAuth, statusHandler);       // 获取登录状态

@@ -25,7 +25,7 @@ import {
 import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
 import FindReplaceIcon from '@mui/icons-material/FindReplace';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, getAppInstallPackageUrlByFileName, getAppDownloadPackageUrlByFileName, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
+import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, openManifestInstall, openPackageDownload, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import { isOtaSecureContext, useOtaInstallPreference } from '../utils/otaInstallPreference';
 import { useLoadAppScreenshotsPreference } from '../utils/appScreenshotsPreference';
 import { useApp } from '../contexts/AppContext';
@@ -718,20 +718,36 @@ export default function AppDetail({ app, loading = false }) {
         return `${appId}_${resolvedId}.ipa`;
     };
 
-    const getDownloadUrl = (versionId) => {
-        return getAppDownloadPackageUrlByFileName(findStorageFileName(versionId));
+    const handlePackageDownload = async (versionId) => {
+        try {
+            await openPackageDownload(findStorageFileName(versionId));
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: resolveClientErrorMessage(error, t('ui.downloadFailed')),
+            });
+        }
     };
 
-    const getInstallUrl = (versionId) => {
-        const fileName = findStorageFileName(versionId);
-        const baseName = fileName.replace(/\.ipa$/i, '');
+    const canShowInstall = (versionId) => {
+        const baseName = findStorageFileName(versionId).replace(/\.ipa$/i, '');
+        return baseName.includes('_');
+    };
 
-        // manifest 路由要求文件名含 appId_versionId 形式
+    const handleManifestInstall = async (versionId) => {
+        const baseName = findStorageFileName(versionId).replace(/\.ipa$/i, '');
         if (!baseName.includes('_')) {
-            return null;
+            return;
         }
 
-        return getAppInstallPackageUrlByFileName(baseName);
+        try {
+            await openManifestInstall(baseName);
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: resolveClientErrorMessage(error, t('ui.downloadFailed')),
+            });
+        }
     };
 
     // 删除任务
@@ -886,9 +902,7 @@ export default function AppDetail({ app, loading = false }) {
                 );
 
             case 'completed': {
-                const installUrl = getInstallUrl('latest');
-                const downloadUrl = getDownloadUrl('latest');
-                const showInstall = showOtaInstall && installUrl;
+                const showInstall = showOtaInstall && canShowInstall('latest');
 
                 return (
                     <>
@@ -902,22 +916,26 @@ export default function AppDetail({ app, loading = false }) {
                         >
                             <Stack direction="row" gap={1} justifyContent="space-between" alignItems="center">
                                 {showInstall ? (
-                                    <Link href={installUrl} sx={{ flex: 1, minWidth: 0 }}>
-                                        <Button fullWidth size="sm" color="success" startDecorator={<InstallMobile />}>
-                                            {t('ui.install')}
-                                        </Button>
-                                    </Link>
-                                ) : null}
-                                <Link
-                                    href={downloadUrl}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    sx={{ flex: 1, minWidth: 0 }}
-                                >
-                                    <Button fullWidth size="sm" startDecorator={<Download />}>
-                                        {t('ui.downloadIPA')}
+                                    <Button
+                                        fullWidth
+                                        size="sm"
+                                        color="success"
+                                        startDecorator={<InstallMobile />}
+                                        sx={{ flex: 1, minWidth: 0 }}
+                                        onClick={() => handleManifestInstall('latest')}
+                                    >
+                                        {t('ui.install')}
                                     </Button>
-                                </Link>
+                                ) : null}
+                                <Button
+                                    fullWidth
+                                    size="sm"
+                                    startDecorator={<Download />}
+                                    sx={{ flex: 1, minWidth: 0 }}
+                                    onClick={() => handlePackageDownload('latest')}
+                                >
+                                    {t('ui.downloadIPA')}
+                                </Button>
                             </Stack>
                             <Stack direction="row" gap={1} justifyContent="space-between" alignItems="center">
                                 <IconButton
@@ -950,22 +968,26 @@ export default function AppDetail({ app, loading = false }) {
                             }}
                         >
                             {showInstall ? (
-                                <Link href={installUrl} sx={{ flex: 1, minWidth: 0 }}>
-                                    <Button fullWidth size="sm" color="success" startDecorator={<InstallMobile />}>
-                                        {t('ui.install')}
-                                    </Button>
-                                </Link>
-                            ) : null}
-                            <Link
-                                href={downloadUrl}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                sx={{ flex: 1, minWidth: 0 }}
-                            >
-                                <Button fullWidth size="sm" startDecorator={<Download />}>
-                                    {t('ui.downloadIPA')}
+                                <Button
+                                    fullWidth
+                                    size="sm"
+                                    color="success"
+                                    startDecorator={<InstallMobile />}
+                                    sx={{ flex: 1, minWidth: 0 }}
+                                    onClick={() => handleManifestInstall('latest')}
+                                >
+                                    {t('ui.install')}
                                 </Button>
-                            </Link>
+                            ) : null}
+                            <Button
+                                fullWidth
+                                size="sm"
+                                startDecorator={<Download />}
+                                sx={{ flex: 1, minWidth: 0 }}
+                                onClick={() => handlePackageDownload('latest')}
+                            >
+                                {t('ui.downloadIPA')}
+                            </Button>
                             <Button
                                 size="sm"
                                 variant="outlined"
@@ -1151,18 +1173,25 @@ export default function AppDetail({ app, loading = false }) {
                             >
                                 <Delete />
                             </IconButton>
-                            {showOtaInstall && getInstallUrl(version.versionId) && (
+                            {showOtaInstall && canShowInstall(version.versionId) && (
                                 <Tooltip variant="outlined" color="primary" arrow size="sm" title={t('ui.installOtaHint')}>
-                                    <Link href={getInstallUrl(version.versionId)}>
-                                        <Button size="sm" color="success" startDecorator={<InstallMobile />}>
-                                            {t('ui.install')}
-                                        </Button>
-                                    </Link>
+                                    <Button
+                                        size="sm"
+                                        color="success"
+                                        startDecorator={<InstallMobile />}
+                                        onClick={() => handleManifestInstall(version.versionId)}
+                                    >
+                                        {t('ui.install')}
+                                    </Button>
                                 </Tooltip>
                             )}
-                            <Link href={getDownloadUrl(version.versionId)} target="_blank" rel="noopener noreferrer">
-                                <Button size="sm" startDecorator={<Download />}>{t('ui.downloadIPA')}</Button>
-                            </Link>
+                            <Button
+                                size="sm"
+                                startDecorator={<Download />}
+                                onClick={() => handlePackageDownload(version.versionId)}
+                            >
+                                {t('ui.downloadIPA')}
+                            </Button>
                         </Stack>
                     );
 

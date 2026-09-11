@@ -1,44 +1,36 @@
-const { exec } = require('child_process');
-const path = require('path');
 const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
-
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+const { execIpatool } = require('../../utils/ipatoolExec');
 
 /**
  * 执行ipatool命令的通用函数
- * @param {string} command - 要执行的命令
+ * @param {string[]} args - ipatool 子命令参数
  * @returns {Promise} 返回Promise对象
  */
-function executeIpatool(command) {
-    return new Promise((resolve, reject) => {
-        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-            if (error) {
-                reject({
-                    success: false,
-                    error: error.message,
-                    stderr: stderr,
-                    stdout: stdout
-                });
-            } else {
-                try {
-                    // 尝试解析JSON输出
-                    const result = JSON.parse(stdout);
-                    resolve({
-                        success: true,
-                        data: result
-                    });
-                } catch (parseError) {
-                    // 如果不是JSON格式，返回原始输出
-                    resolve({
-                        success: true,
-                        rawOutput: stdout
-                    });
-                }
-            }
-        });
-    });
+async function executeIpatool(args) {
+    const { error, stdout, stderr } = await execIpatool(args, { timeout: 15000 });
+
+    if (error) {
+        throw {
+            success: false,
+            error: error.message,
+            stderr,
+            stdout,
+        };
+    }
+
+    try {
+        const result = JSON.parse(stdout);
+        return {
+            success: true,
+            data: result,
+        };
+    } catch (parseError) {
+        return {
+            success: true,
+            rawOutput: stdout,
+        };
+    }
 }
 
 /**
@@ -46,13 +38,10 @@ function executeIpatool(command) {
  */
 async function revokeHandler(req, res) {
     try {
-        // 构建ipatool revoke命令
-        const command = `"${IPATOOL_PATH}" auth revoke --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
         // console.log('执行撤销认证命令');
 
         try {
-            const result = await executeIpatool(command);
+            const result = await executeIpatool(['auth', 'revoke']);
 
             if (result.success) {
                 clearIpatoolAccountCache();

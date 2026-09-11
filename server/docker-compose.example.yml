@@ -30,6 +30,9 @@ services:
       # - MAX_CONCURRENT_DOWNLOADS=2
       # Optional: change admin JWT secret on production deployments (default is insecure)
       # - JWT_SECRET=your-random-secret
+      # Optional: OTA/download ticket TTL in ms (defaults: manifest 3m, ipa 1d)
+      # - MANIFEST_TICKET_TTL_MS=180000
+      # - PACKAGE_TICKET_TTL_MS=86400000
     volumes:
       # Persist data: IPA files, partial downloads (tmp), admin database, and ipatool config ($HOME/.ipatool)
       - ./data:/app/data

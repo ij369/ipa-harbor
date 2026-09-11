@@ -8,8 +8,82 @@ const https = require('https');
 const { metadataHandler, parseIpaMetadata } = require('./metadata');
 
 const { getEffectiveRegion } = require('../../utils/userRegion');
-const { optionalAuth } = require('../../middleware/auth');
+const { optionalAuth, authenticateToken } = require('../../middleware/auth');
 const { buildContentDisposition, resolveDownloadFileName } = require('../../utils/filenameTemplate');
+const { isValidIpaStorageFileName, isValidIpaStorageBaseName } = require('../../utils/ipaFileName');
+const {
+    verifyPackageTicket,
+    verifyManifestTicket,
+    buildPackageDownloadUrl,
+    buildManifestInstallUrl,
+} = require('../../utils/packageTicket');
+const { sendSuccess, sendError } = require('../../utils/apiResponse');
+
+function resolveIpaPackagePath(fileName, dataDir) {
+    const baseName = path.basename(fileName);
+    if (!isValidIpaStorageFileName(baseName)) {
+        return null;
+    }
+
+    return path.join(dataDir, baseName);
+}
+
+async function streamPackageFile(req, res, fileName) {
+    const dataDir = path.join(__dirname, '../../data');
+    const filePath = resolveIpaPackagePath(fileName, dataDir);
+    if (!filePath) {
+        return res.status(400).send('Invalid file name format');
+    }
+
+    if (!fs.existsSync(filePath)) {
+        return res.status(404).send('File not found');
+    }
+
+    let contentDisposition = 'attachment; filename="app.ipa"';
+    try {
+        const displayName = await resolveDownloadFileName(fileName, req.user?.id);
+        contentDisposition = buildContentDisposition(displayName);
+    } catch (error) {
+        console.warn('解析下载文件名失败，使用默认文件名:', error.message);
+    }
+
+    const stat = fs.statSync(filePath);
+    const fileSize = stat.size;
+    const range = req.headers.range;
+
+    if (!range) {
+        res.writeHead(200, {
+            'Content-Length': fileSize,
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': contentDisposition,
+        });
+        fs.createReadStream(filePath).pipe(res);
+        return undefined;
+    }
+
+    const parts = range.replace(/bytes=/, '').split('-');
+    const start = parseInt(parts[0], 10);
+    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
+
+    if (start >= fileSize || end >= fileSize) {
+        res.status(416).send('Requested range not satisfiable');
+        return undefined;
+    }
+
+    const chunkSize = end - start + 1;
+    const fileStream = fs.createReadStream(filePath, { start, end });
+
+    res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': 'application/octet-stream',
+        'Content-Disposition': contentDisposition,
+    });
+
+    fileStream.pipe(res);
+    return undefined;
+}
 
 // 获取应用图标URL的辅助函数
 async function getAppIconUrls(appId, userRegion = null) {
@@ -58,19 +132,70 @@ async function getAppIconUrls(appId, userRegion = null) {
 // 路由定义
 router.post('/metadata', metadataHandler);  // 解析IPA元数据
 
-// 生成manifest.plist文件用于无线安装 (目前有问题，貌似不可用)
-router.get('/install-package/:fileName/manifest.plist', async (req, res) => {
-    try {
-        const { fileName } = req.params;
+router.get('/package-url/:fileName', authenticateToken, async (req, res) => {
+    const { fileName } = req.params;
 
-        // 验证文件名格式 (应该是 appId_versionId 格式)
-        if (!fileName || !fileName.includes('_')) {
+    if (!isValidIpaStorageFileName(path.basename(fileName))) {
+        return sendError(res, 400, {
+            message: '无效的文件格式',
+            errorMessageCode: 'IPA_PACKAGE_URL_INVALID_FORMAT',
+            error: '文件名须为 appId_versionId.ipa 格式',
+            errorCode: 'IPA_PACKAGE_URL_FILENAME_INVALID',
+        });
+    }
+
+    return sendSuccess(res, {
+        message: '获取下载链接成功',
+        errorMessageCode: 'IPA_PACKAGE_URL_SUCCESS',
+        data: {
+            url: buildPackageDownloadUrl(req, fileName),
+        },
+    });
+});
+
+router.get('/install-package-url/:fileName', authenticateToken, async (req, res) => {
+    const baseName = path.basename(String(req.params.fileName || '')).replace(/\.ipa$/i, '');
+
+    if (!isValidIpaStorageBaseName(baseName)) {
+        return sendError(res, 400, {
+            message: '无效的文件格式',
+            errorMessageCode: 'IPA_INSTALL_PACKAGE_URL_INVALID_FORMAT',
+            error: '文件名须为 appId_versionId 格式',
+            errorCode: 'IPA_INSTALL_PACKAGE_URL_FILENAME_INVALID',
+        });
+    }
+
+    const manifestUrl = buildManifestInstallUrl(req, baseName, { forceHttps: true });
+
+    return sendSuccess(res, {
+        message: '获取 OTA 安装链接成功',
+        errorMessageCode: 'IPA_INSTALL_PACKAGE_URL_SUCCESS',
+        data: {
+            manifestUrl,
+            installUrl: `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`,
+        },
+    });
+});
+
+// 生成manifest.plist文件用于无线安装 (目前有问题，貌似不可用)
+router.get('/install-package/:fileName/:ticket/manifest.plist', async (req, res) => {
+    try {
+        const { fileName, ticket } = req.params;
+
+        if (!isValidIpaStorageBaseName(fileName)) {
             return res.status(400).send('Invalid file name format');
+        }
+
+        if (!verifyManifestTicket(fileName, ticket)) {
+            return res.status(403).send('Invalid or expired ticket');
         }
 
         const ipaFileName = `${fileName}.ipa`;
         const dataDir = path.join(__dirname, '../../data');
-        const ipaPath = path.join(dataDir, ipaFileName);
+        const ipaPath = resolveIpaPackagePath(ipaFileName, dataDir);
+        if (!ipaPath) {
+            return res.status(400).send('Invalid file name format');
+        }
 
         // 检查IPA文件是否存在
         if (!fs.existsSync(ipaPath)) {
@@ -98,9 +223,8 @@ router.get('/install-package/:fileName/manifest.plist', async (req, res) => {
             const iconUrl57 = metadata.softwareIcon57x57URL || iconUrls.iconUrl60 || '';
             const iconUrl512 = iconUrls.iconUrl512 || '';
 
-            // 构建IPA下载URL
-            const host = req.get('host');
-            const ipaUrl = `https://${host}/v1/ipa/getpackage/${fileName}.ipa`; // 必须https
+            // OTA 安装必须使用 HTTPS 且带 ticket 签名
+            const ipaUrl = buildPackageDownloadUrl(req, ipaFileName, { forceHttps: true });
             console.log(
                 'ipaUrl', ipaUrl,
                 'iconUrl57', iconUrl57,
@@ -163,64 +287,18 @@ router.get('/install-package/:fileName/manifest.plist', async (req, res) => {
     }
 });
 
-router.get('/getpackage/:fileName', optionalAuth, async (req, res) => {
-    const { fileName } = req.params;
+router.get('/getpackage/:fileName/:ticket', optionalAuth, async (req, res) => {
+    const { fileName, ticket } = req.params;
 
-    if (!fileName) {
-        return res.status(400).send('fileName parameter is required');
+    if (!fileName || !ticket) {
+        return res.status(400).send('fileName and ticket are required');
     }
 
-    const dataDir = path.join(__dirname, '../../data');
-    const filePath = path.join(dataDir, fileName);
-
-    // 检查文件是否存在
-    if (!fs.existsSync(filePath)) {
-        return res.status(404).send('File not found');
+    if (!verifyPackageTicket(fileName, ticket)) {
+        return res.status(403).send('Invalid or expired ticket');
     }
 
-    let contentDisposition = 'attachment; filename="app.ipa"';
-    try {
-        const displayName = await resolveDownloadFileName(fileName, req.user?.id);
-        contentDisposition = buildContentDisposition(displayName);
-    } catch (error) {
-        console.warn('解析下载文件名失败，使用默认文件名:', error.message);
-    }
-
-    const stat = fs.statSync(filePath);
-    const fileSize = stat.size;
-    const range = req.headers.range;
-
-    if (!range) {
-        res.writeHead(200, {
-            'Content-Length': fileSize,
-            'Content-Type': 'application/octet-stream',
-            'Content-Disposition': contentDisposition,
-        });
-        fs.createReadStream(filePath).pipe(res);
-        return;
-    }
-
-    const parts = range.replace(/bytes=/, '').split('-');
-    const start = parseInt(parts[0], 10);
-    const end = parts[1] ? parseInt(parts[1], 10) : fileSize - 1;
-
-    if (start >= fileSize || end >= fileSize) {
-        res.status(416).send('Requested range not satisfiable');
-        return;
-    }
-
-    const chunkSize = end - start + 1;
-    const fileStream = fs.createReadStream(filePath, { start, end });
-
-    res.writeHead(206, {
-        'Content-Range': `bytes ${start}-${end}/${fileSize}`,
-        'Accept-Ranges': 'bytes',
-        'Content-Length': chunkSize,
-        'Content-Type': 'application/octet-stream',
-        'Content-Disposition': contentDisposition,
-    });
-
-    fileStream.pipe(res);
+    return streamPackageFile(req, res, fileName);
 });
 
 module.exports = router;

@@ -1,5 +1,3 @@
-const { exec } = require('child_process');
-const path = require('path');
 const https = require('https');
 const { ensureVersionMetadataCached, upsertVersionMetadataRecord } = require('../../utils/versionMetadata');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
@@ -8,14 +6,11 @@ const {
     extractErrorFromLines,
     extractListVersionsFromLines,
 } = require('../../utils/ipatoolOutput');
-
-// ipatool二进制文件路径
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+const { execIpatool } = require('../../utils/ipatoolExec');
 
 /**
  * 执行ipatool命令的通用函数（带重试机制）
- * @param {string} command - 要执行的命令
+ * @param {string[]} args - ipatool 子命令参数
  * @param {number} maxRetries - 最大重试次数，默认为2
  * @param {number} currentAttempt - 当前尝试次数，默认为1
  * @returns {Promise} 返回Promise对象
@@ -38,71 +33,60 @@ function classifyIpatoolOutput(allOutput) {
     return null;
 }
 
-function executeIpatool(command, maxRetries = 2, currentAttempt = 1) {
-    return new Promise((resolve, reject) => {
-        exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
-            const combined = [stdout, stderr].filter(Boolean).join('\n');
-            const lines = parseIpatoolJsonLines(combined);
-            const classified = classifyIpatoolOutput(combined);
+async function executeIpatool(args, maxRetries = 2, currentAttempt = 1) {
+    const { error, stdout, stderr } = await execIpatool(args, { timeout: 30000 });
+    const combined = [stdout, stderr].filter(Boolean).join('\n');
+    const lines = parseIpatoolJsonLines(combined);
+    const classified = classifyIpatoolOutput(combined);
 
-            if (classified) {
-                reject({
-                    success: false,
-                    ...classified,
-                    stderr,
-                    stdout,
-                });
-                return;
-            }
+    if (classified) {
+        throw {
+            success: false,
+            ...classified,
+            stderr,
+            stdout,
+        };
+    }
 
-            const versionData = extractListVersionsFromLines(lines);
-            if (versionData) {
-                resolve({
-                    success: true,
-                    data: versionData,
-                });
-                return;
-            }
+    const versionData = extractListVersionsFromLines(lines);
+    if (versionData) {
+        return {
+            success: true,
+            data: versionData,
+        };
+    }
 
-            const ipatoolError = extractErrorFromLines(lines);
-            if (ipatoolError) {
-                reject({
-                    success: false,
-                    error: ipatoolError,
-                    stderr,
-                    stdout,
-                });
-                return;
-            }
+    const ipatoolError = extractErrorFromLines(lines);
+    if (ipatoolError) {
+        throw {
+            success: false,
+            error: ipatoolError,
+            stderr,
+            stdout,
+        };
+    }
 
-            const shouldRetry = combined.includes('An unknown error has occurred') && currentAttempt <= maxRetries;
-            if (shouldRetry) {
-                setTimeout(() => {
-                    executeIpatool(command, maxRetries, currentAttempt + 1)
-                        .then(resolve)
-                        .catch(reject);
-                }, 1000);
-                return;
-            }
+    const shouldRetry = combined.includes('An unknown error has occurred') && currentAttempt <= maxRetries;
+    if (shouldRetry) {
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        return executeIpatool(args, maxRetries, currentAttempt + 1);
+    }
 
-            if (error) {
-                reject({
-                    success: false,
-                    error: error.message || '执行命令失败',
-                    stderr,
-                    stdout,
-                });
-                return;
-            }
+    if (error) {
+        throw {
+            success: false,
+            error: error.message || '执行命令失败',
+            stderr,
+            stdout,
+        };
+    }
 
-            reject({
-                success: false,
-                error: '未能解析 ipatool 响应',
-                stderr,
-                stdout,
-            });
-        });
-    });
+    throw {
+        success: false,
+        error: '未能解析 ipatool 响应',
+        stderr,
+        stdout,
+    };
 }
 
 async function buildThirdPartyVersionResponse(appId) {
@@ -228,10 +212,9 @@ async function versionsHandler(req, res) {
             });
         }
 
-        // 构建ipatool list-versions命令
-        const command = `"${IPATOOL_PATH}" list-versions -i "${appId}" --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
+        const listVersionsArgs = ['list-versions', '-i', String(appId)];
 
-        // console.log(`执行获取版本列表命令: ${command}`);
+        // console.log(`执行获取版本列表命令: list-versions -i ${appId}`);
 
         try {
             // 根据参数决定使用哪种数据源
@@ -250,7 +233,7 @@ async function versionsHandler(req, res) {
                 // console.log(`[DEBUG] 使用ipatool获取应用 ${appId} 的版本列表`);
 
                 // 同时请求ipatool和第三方API（原有逻辑）
-                const ipatoolResult = await executeIpatool(command);
+                const ipatoolResult = await executeIpatool(listVersionsArgs);
 
                 if (ipatoolResult.success) {
                     const externalVersionIdentifiers = ipatoolResult.data.externalVersionIdentifiers?.reverse() || [];
@@ -360,8 +343,7 @@ async function versionsHandler(req, res) {
  */
 async function getLatestVersionId(appId) {
     try {
-        const command = `"${IPATOOL_PATH}" list-versions -i "${appId}" --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-        const ipatoolResult = await executeIpatool(command);
+        const ipatoolResult = await executeIpatool(['list-versions', '-i', String(appId)]);
 
         if (ipatoolResult.success && ipatoolResult.data) {
             const externalVersionIdentifiers = ipatoolResult.data.externalVersionIdentifiers?.slice().reverse() || [];

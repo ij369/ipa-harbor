@@ -1,34 +1,26 @@
-const { exec } = require('child_process');
-const path = require('path');
 const { enrichUserData } = require('../../utils/userRegion');
 const { parseIpatoolOutput } = require('../../utils/ipatoolOutput');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
+const { execIpatool } = require('../../utils/ipatoolExec');
 
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+async function executeIpatool(args) {
+    const { error, stdout, stderr } = await execIpatool(args, { timeout: 15000 });
+    const parsed = parseIpatoolOutput(stdout, stderr);
 
-function executeIpatool(command) {
-    return new Promise((resolve, reject) => {
-        exec(command, { timeout: 15000 }, (error, stdout, stderr) => {
-            const parsed = parseIpatoolOutput(stdout, stderr);
+    if (parsed.success && parsed.data?.email) {
+        return {
+            success: true,
+            data: parsed.data,
+        };
+    }
 
-            if (parsed.success && parsed.data?.email) {
-                resolve({
-                    success: true,
-                    data: parsed.data,
-                });
-                return;
-            }
-
-            reject({
-                success: false,
-                error: parsed.error || error?.message || '执行命令失败',
-                stderr,
-                stdout,
-                rawOutput: parsed.rawOutput,
-            });
-        });
-    });
+    throw {
+        success: false,
+        error: parsed.error || error?.message || '执行命令失败',
+        stderr,
+        stdout,
+        rawOutput: parsed.rawOutput,
+    };
 }
 
 function isNotLoggedInError(execError) {
@@ -43,10 +35,8 @@ function isNotLoggedInError(execError) {
 
 async function infoHandler(req, res) {
     try {
-        const command = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
         try {
-            const result = await executeIpatool(command);
+            const result = await executeIpatool(['auth', 'info']);
 
             if (result.success && result.data?.email) {
                 const userData = await enrichUserData(result.data);

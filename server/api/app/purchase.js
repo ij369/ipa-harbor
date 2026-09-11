@@ -1,44 +1,35 @@
-const { exec } = require('child_process');
-const path = require('path');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
-
-// ipatool二进制文件路径
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+const { execIpatool } = require('../../utils/ipatoolExec');
 
 /**
  * 执行ipatool命令的通用函数
- * @param {string} command - 要执行的命令
+ * @param {string[]} args - ipatool 子命令参数
  * @returns {Promise} 返回Promise对象
  */
-function executeIpatool(command) {
-    return new Promise((resolve, reject) => {
-        exec(command, { timeout: 60000 }, (error, stdout, stderr) => {
-            if (error) {
-                reject({
-                    success: false,
-                    error: error.message,
-                    stderr: stderr,
-                    stdout: stdout
-                });
-            } else {
-                try {
-                    // 尝试解析JSON输出
-                    const result = JSON.parse(stdout);
-                    resolve({
-                        success: true,
-                        data: result
-                    });
-                } catch (parseError) {
-                    // 如果不是JSON格式，返回原始输出
-                    resolve({
-                        success: true,
-                        rawOutput: stdout
-                    });
-                }
-            }
-        });
-    });
+async function executeIpatool(args) {
+    const { error, stdout, stderr } = await execIpatool(args, { timeout: 60000 });
+
+    if (error) {
+        throw {
+            success: false,
+            error: error.message,
+            stderr,
+            stdout,
+        };
+    }
+
+    try {
+        const result = JSON.parse(stdout);
+        return {
+            success: true,
+            data: result,
+        };
+    } catch (parseError) {
+        return {
+            success: true,
+            rawOutput: stdout,
+        };
+    }
 }
 
 /**
@@ -58,13 +49,10 @@ async function purchaseHandler(req, res) {
             });
         }
 
-        // 构建ipatool purchase命令
-        const command = `"${IPATOOL_PATH}" purchase -b "${bundleId}" --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
-        // console.log(`执行购买命令: ${command}`);
+        // console.log(`执行购买命令: purchase -b ${bundleId}`);
 
         try {
-            const result = await executeIpatool(command);
+            const result = await executeIpatool(['purchase', '-b', bundleId]);
 
             if (result.success) {
                 return sendSuccess(res, {

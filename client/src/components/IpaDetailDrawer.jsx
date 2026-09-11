@@ -15,8 +15,8 @@ import {
     getAppIconUrl,
     deleteTask,
     isRateLimitError,
-    getAppDownloadPackageUrlByFileName,
-    getAppInstallPackageUrlByFileName,
+    openPackageDownload,
+    openManifestInstall,
     resolveClientErrorMessage,
 } from '../utils/api';
 import formatFileSize from '../utils/formatFileSize.js';
@@ -127,10 +127,29 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
     const shelfIconSrc = finalAppId ? getAppIconUrl(finalAppId, 200, user?.region) : null;
     const drawerOpen = open && Boolean(item);
     const installBaseName = name.replace(/\.ipa$/i, '');
-    const installUrl = installBaseName.includes('_')
-        ? getAppInstallPackageUrlByFileName(installBaseName)
-        : null;
-    const showInstall = otaInstallEnabled && isOtaSecureContext() && installUrl;
+    const showInstall = otaInstallEnabled && isOtaSecureContext() && installBaseName.includes('_');
+
+    const handleManifestInstall = async () => {
+        try {
+            await openManifestInstall(installBaseName);
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: resolveClientErrorMessage(error, t('ui.downloadFailed')),
+            });
+        }
+    };
+
+    const handlePackageDownload = async () => {
+        try {
+            await openPackageDownload(name);
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: resolveClientErrorMessage(error, t('ui.downloadFailed')),
+            });
+        }
+    };
 
     const handleViewAppDetail = () => {
         if (!finalAppId) {
@@ -525,29 +544,25 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
                         {showInstall ? (
                             <>
                                 <IconButton
-                                    component={Link}
-                                    href={getAppDownloadPackageUrlByFileName(name)}
                                     variant="soft"
                                     aria-label={t('ui.download')}
                                     title={t('ui.download')}
+                                    onClick={handlePackageDownload}
                                 >
                                     <DownloadIcon />
                                 </IconButton>
                                 <Button
-                                    component={Link}
-                                    href={installUrl}
                                     color="success"
                                     startDecorator={<InstallMobile />}
+                                    onClick={handleManifestInstall}
                                 >
                                     {t('ui.install')}
                                 </Button>
                             </>
                         ) : (
-                            <Link href={getAppDownloadPackageUrlByFileName(name)}>
-                                <Button startDecorator={<DownloadIcon />}>
-                                    {t('ui.download')}
-                                </Button>
-                            </Link>
+                            <Button startDecorator={<DownloadIcon />} onClick={handlePackageDownload}>
+                                {t('ui.download')}
+                            </Button>
                         )}
                     </Stack>
                 </Stack>

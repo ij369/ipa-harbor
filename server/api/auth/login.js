@@ -1,71 +1,46 @@
-const { exec } = require('child_process');
-const path = require('path');
 const { enrichUserData } = require('../../utils/userRegion');
 const { parseIpatoolOutput } = require('../../utils/ipatoolOutput');
 const { clearIpatoolAccountCache } = require('../../utils/ipatoolAccount');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
-
-const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
-const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
+const { IPATOOL_PATH, execIpatool } = require('../../utils/ipatoolExec');
 
 /** 首次登录可能较慢（SAP 初始化），适当延长超时 */
 const LOGIN_TIMEOUT_MS = 600000;
 const INFO_TIMEOUT_MS = 60000;
 
-const IPATOOL_EXEC_ENV = {
-    ...process.env,
-    // Linux Docker 无 GUI keyring 时避免 dbus 阻塞
-    DBUS_SESSION_BUS_ADDRESS: process.env.DBUS_SESSION_BUS_ADDRESS || 'unix:path=/nonexistent',
-};
-
 /**
  * 执行 ipatool 命令并解析 JSON 输出
- * @param {string} command - 要执行的命令
+ * @param {string[]} args - ipatool 子命令参数
  * @param {number} timeoutMs - 超时时间（毫秒）
  * @returns {Promise} 返回Promise对象
  */
-function executeIpatool(command, timeoutMs = INFO_TIMEOUT_MS) {
-    return new Promise((resolve, reject) => {
-        exec(command, { timeout: timeoutMs, env: IPATOOL_EXEC_ENV }, (error, stdout, stderr) => {
-            const parsed = parseIpatoolOutput(stdout, stderr);
+async function executeIpatool(args, timeoutMs = INFO_TIMEOUT_MS) {
+    const { error, stdout, stderr } = await execIpatool(args, { timeout: timeoutMs });
+    const parsed = parseIpatoolOutput(stdout, stderr);
 
-            if (parsed.needsTwoFactor) {
-                resolve({
-                    success: false,
-                    needsTwoFactor: true,
-                    message: parsed.message || '需要二次验证码',
-                    rawOutput: parsed.rawOutput,
-                });
-                return;
-            }
+    if (parsed.needsTwoFactor) {
+        return {
+            success: false,
+            needsTwoFactor: true,
+            message: parsed.message || '需要二次验证码',
+            rawOutput: parsed.rawOutput,
+        };
+    }
 
-            if (parsed.success && parsed.data) {
-                resolve({
-                    success: true,
-                    data: parsed.data,
-                });
-                return;
-            }
+    if (parsed.success && parsed.data) {
+        return {
+            success: true,
+            data: parsed.data,
+        };
+    }
 
-            if (error || !parsed.success) {
-                reject({
-                    success: false,
-                    error: parsed.error || error?.message || '执行命令失败',
-                    stderr,
-                    stdout,
-                    rawOutput: parsed.rawOutput,
-                });
-                return;
-            }
-
-            reject({
-                success: false,
-                error: '未能解析 ipatool 响应',
-                stderr,
-                stdout,
-            });
-        });
-    });
+    throw {
+        success: false,
+        error: parsed.error || error?.message || '执行命令失败',
+        stderr,
+        stdout,
+        rawOutput: parsed.rawOutput,
+    };
 }
 
 /**
@@ -85,18 +60,15 @@ async function loginHandler(req, res) {
             });
         }
 
-        // 构建ipatool命令
-        let command = `"${IPATOOL_PATH}" auth login -e "${email}" -p "${password}" --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
-        // 如果提供了二次验证码，添加到命令中
+        const loginArgs = ['auth', 'login', '-e', email, '-p', password];
         if (twoFactor) {
-            command += ` --auth-code "${twoFactor}"`;
+            loginArgs.push('--auth-code', twoFactor);
         }
 
-        console.log(`执行登录命令: ${command.replace(password, '***').replace(twoFactor || '', '***')}`);
+        console.log(`执行登录命令: ${IPATOOL_PATH} auth login -e ${email} -p ***${twoFactor ? ' --auth-code ***' : ''}`);
 
         try {
-            const result = await executeIpatool(command, LOGIN_TIMEOUT_MS);
+            const result = await executeIpatool(loginArgs, LOGIN_TIMEOUT_MS);
 
             if (result.needsTwoFactor) {
                 return sendError(res, 200, {
@@ -119,10 +91,8 @@ async function loginHandler(req, res) {
 
             clearIpatoolAccountCache();
 
-            const infoCommand = `"${IPATOOL_PATH}" auth info --keychain-passphrase "${KEYCHAIN_PASSPHRASE}" --non-interactive --format "json"`;
-
             try {
-                const infoResult = await executeIpatool(infoCommand, INFO_TIMEOUT_MS);
+                const infoResult = await executeIpatool(['auth', 'info'], INFO_TIMEOUT_MS);
 
                 if (infoResult.success && infoResult.data?.email) {
                     const userData = await enrichUserData(infoResult.data);

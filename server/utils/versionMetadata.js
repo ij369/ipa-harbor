@@ -1,61 +1,49 @@
-const { exec } = require('child_process');
 const path = require('path');
 const fs = require('fs');
 const database = require('./database');
 const { normalizeStoredMetadata } = require('./ipaMetadata');
-const { KEYCHAIN_PASSPHRASE } = require('../config/keychain');
+const { execIpatool } = require('./ipatoolExec');
 
-const IPATOOL_PATH = path.join(__dirname, '../bin/ipatool');
 const DATA_DIR = path.join(__dirname, '../data');
 const FETCH_CONCURRENCY = 3;
 
-function fetchVersionMetadataFromIpatool(appId, externalVersionId) {
-    return new Promise((resolve, reject) => {
-        const command = [
-            `"${IPATOOL_PATH}"`,
-            'get-version-metadata',
-            '-i', `"${appId}"`,
-            '--external-version-id', `"${externalVersionId}"`,
-            '--keychain-passphrase', `"${KEYCHAIN_PASSPHRASE}"`,
-            '--non-interactive',
-            '--format', 'json',
-        ].join(' ');
+async function fetchVersionMetadataFromIpatool(appId, externalVersionId) {
+    const { error, stdout, stderr } = await execIpatool([
+        'get-version-metadata',
+        '-i', String(appId),
+        '--external-version-id', String(externalVersionId),
+    ], { timeout: 30000 });
 
-        exec(command, { timeout: 30000 }, (error, stdout, stderr) => {
-            const output = `${stdout || ''}${stderr || ''}`;
+    const output = `${stdout || ''}${stderr || ''}`;
 
-            if (output.includes('password token is expired')) {
-                reject(Object.assign(new Error('密码令牌已过期，请重新登录'), { errorType: 'TOKEN_EXPIRED' }));
-                return;
-            }
+    if (output.includes('password token is expired')) {
+        throw Object.assign(new Error('密码令牌已过期，请重新登录'), { errorType: 'TOKEN_EXPIRED' });
+    }
 
-            if (output.includes('HTTP 429') || output.includes('rate limited by Apple')) {
-                reject(Object.assign(new Error('Apple 请求过于频繁，请稍后再试'), { errorType: 'RATE_LIMITED' }));
-                return;
-            }
+    if (output.includes('HTTP 429') || output.includes('rate limited by Apple')) {
+        throw Object.assign(new Error('Apple 请求过于频繁，请稍后再试'), { errorType: 'RATE_LIMITED' });
+    }
 
-            if (error) {
-                reject(new Error(error.message || stderr || 'get-version-metadata 失败'));
-                return;
-            }
+    if (error) {
+        throw new Error(error.message || stderr || 'get-version-metadata 失败');
+    }
 
-            try {
-                const parsed = JSON.parse(stdout);
-                if (!parsed.success) {
-                    reject(new Error(parsed.error || 'get-version-metadata 返回失败'));
-                    return;
-                }
+    let parsed;
+    try {
+        parsed = JSON.parse(stdout);
+    } catch (parseError) {
+        throw new Error(`解析 get-version-metadata 响应失败: ${parseError.message}`);
+    }
 
-                resolve({
-                    externalVersionID: String(parsed.externalVersionID || externalVersionId),
-                    displayVersion: parsed.displayVersion || null,
-                    releaseDate: parsed.releaseDate || null,
-                });
-            } catch (parseError) {
-                reject(new Error(`解析 get-version-metadata 响应失败: ${parseError.message}`));
-            }
-        });
-    });
+    if (!parsed.success) {
+        throw new Error(parsed.error || 'get-version-metadata 返回失败');
+    }
+
+    return {
+        externalVersionID: String(parsed.externalVersionID || externalVersionId),
+        displayVersion: parsed.displayVersion || null,
+        releaseDate: parsed.releaseDate || null,
+    };
 }
 
 async function upsertVersionMetadataRecord({

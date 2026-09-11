@@ -309,39 +309,46 @@ export function canUseOtaInstall() {
 }
 
 /**
- * 通过磁盘存储文件名（不含 .ipa 或含均可）获取 OTA 安装 URL
- * @param {string} fileBaseName - 如 6766042246_887851211
+ * 获取带 ticket 签名的 OTA manifest URL（需管理员登录）
+ * @param {string} fileBaseName - 如 6766042246_887851211 或含 .ipa
  */
-export function getAppInstallPackageUrlByFileName(fileBaseName) {
+export async function fetchManifestInstallUrl(fileBaseName) {
     const baseName = String(fileBaseName).replace(/\.ipa$/i, '');
-    const manifestUrl = `${API_BASE_URL}/v1/ipa/install-package/${encodeURIComponent(baseName)}/manifest.plist`;
-    return `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
+    const response = await apiRequest(`/v1/ipa/install-package-url/${encodeURIComponent(baseName)}`);
+    return response.data?.installUrl || null;
 }
 
 /**
- * 获取应用安装包 URL（默认 appId_versionId 命名）
- * @param {number} appId - 应用ID
- * @param {string} versionId - 版本ID
+ * 打开 OTA 安装（先向服务端换取带 ticket 的 manifest 链接）
+ * @param {string} fileBaseName
  */
-export function getAppInstallPackageUrl(appId, versionId) {
-    return getAppInstallPackageUrlByFileName(`${appId}_${versionId}`);
+export async function openManifestInstall(fileBaseName) {
+    const installUrl = await fetchManifestInstallUrl(fileBaseName);
+    if (!installUrl) {
+        throw new Error('无法获取 OTA 安装链接');
+    }
+    window.location.href = installUrl;
 }
 
 /**
- * 获取应用下载包URL
- * @param {number} appId - 应用ID
- * @param {string} versionId - 版本ID
- */
-export function getAppDownloadPackageUrl(appId, versionId) {
-    return `${API_BASE_URL}/v1/ipa/getpackage/${appId}_${versionId}.ipa`;
-}
-
-/**
- * 通过磁盘存储文件名获取下载 URL
+ * 获取带 ticket 签名的 IPA 下载 URL（需管理员登录）
  * @param {string} fileName - 如 6766042246_887851211.ipa
  */
-export function getAppDownloadPackageUrlByFileName(fileName) {
-    return `${API_BASE_URL}/v1/ipa/getpackage/${encodeURIComponent(fileName)}`;
+export async function fetchPackageDownloadUrl(fileName) {
+    const response = await apiRequest(`/v1/ipa/package-url/${encodeURIComponent(fileName)}`);
+    return response.data?.url || null;
+}
+
+/**
+ * 打开 IPA 下载（先向服务端换取 ticket 签名链接）
+ * @param {string} fileName
+ */
+export async function openPackageDownload(fileName) {
+    const url = await fetchPackageDownloadUrl(fileName);
+    if (!url) {
+        throw new Error('无法获取下载链接');
+    }
+    window.open(url, '_blank', 'noopener,noreferrer');
 }
 
 // ===== 管理员认证相关API =====
