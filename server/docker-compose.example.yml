@@ -38,6 +38,8 @@ services:
       # Optional: OTA/download ticket TTL in ms (defaults: manifest 3m, ipa 1d)
       # - MANIFEST_TICKET_TTL_MS=180000
       # - PACKAGE_TICKET_TTL_MS=86400000
+      # Set to 1 when behind nginx, Cloudflare, or other reverse proxy so rate limiting uses the real client IP; omit for direct access
+      # - TRUST_PROXY=1
     volumes:
       # Persist data: IPA files, partial downloads (tmp), admin database, and ipatool config ($HOME/.ipatool)
       - ./data:/app/data

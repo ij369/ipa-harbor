@@ -37,6 +37,8 @@ services:
       # 可选：OTA/下载 ticket 有效期（毫秒，默认 manifest 3 分钟、ipa 1 天）
       # - MANIFEST_TICKET_TTL_MS=180000
       # - PACKAGE_TICKET_TTL_MS=86400000
+      # 经 nginx、Cloudflare 等反向代理访问时设为 1，限流才按真实客户端 IP；直连勿设
+      # - TRUST_PROXY=1
     volumes:
       # 持久化 data：IPA、未完成下载(tmp)、管理员数据库、ipatool 配置($HOME/.ipatool)
       - ./data:/app/data

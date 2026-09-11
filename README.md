@@ -60,7 +60,7 @@ On first visit, go to `/setup` and use the `ADMIN_INIT_PIN` from the command abo
 
 ### Public Network Startup Command (nginx reverse proxy)
 + This simplifies to directly proxy the http port (environment variable PORT)
-+ Set `-e TRUST_PROXY=1` when proxying (included below) so rate limiting uses the real client IP. Do not set it for direct access.
++ Set `-e TRUST_PROXY=1` when proxying via nginx or Cloudflare (included below) so rate limiting uses the real client IP. Do not set it for direct access.
 
 Assuming you own a domain `example.com`
 Used `docker network create my_network` to create a `my_network` network
@@ -353,7 +353,7 @@ ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，�
 
 ### 公网环境启动命令（nginx 反向代理）
 + 这样简化成直接代理http端口（环境变量PORT）
-+ 反代时需加 `-e TRUST_PROXY=1`（下方命令已包含），限流才按真实客户端 IP 计数；直连访问不要设置
++ 经 nginx、Cloudflare 等反代时需加 `-e TRUST_PROXY=1`（下方命令已包含），限流才按真实客户端 IP 计数；直连访问不要设置
 
 假设你拥有一个域名 `example.com`
 使用了 `docker network create my_network` 来创建了一个`my_network`网络
