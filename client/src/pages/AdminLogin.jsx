@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
     Box,
     Card,
@@ -12,7 +12,8 @@ import {
     Alert,
     Divider,
     Chip,
-    Stack
+    Stack,
+    Link,
 } from '@mui/joy';
 import { useAdmin } from '../contexts/AdminContext';
 import { resolveClientErrorMessage } from '../utils/api';
@@ -222,6 +223,11 @@ const AdminLogin = () => {
                                     {t('ui.login')}
                                 </Button>
                             </form>
+                            <Typography level="body-sm" sx={{ mt: 1.5, textAlign: 'center' }}>
+                                <Link component={RouterLink} to="/recover">
+                                    {t('ui.adminRecoverLink')}
+                                </Link>
+                            </Typography>
                             <Divider sx={{ mt: 1.5 }} />
                             {/* 语言切换器 */}
                             <Stack direction="row" alignItems="center" gap={1} sx={{ mt: 1.5 }}>

@@ -12,6 +12,11 @@ services:
       # openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10; echo
       # 最重要：建议随机一个字符串替换keychain_passphrase_here, 出于安全考虑不设置这个就禁止启动，是有必要的，这个字符串泄露会导致 Keychain 解开，Apple ID访问权限就打开了，所以放在环境变量里
       - KEYCHAIN_PASSPHRASE=keychain_passphrase_here
+      # 初始化 PIN，用于初始化以及重置管理员密码
+      # openssl rand -base64 24 | tr -dc '0-9' | head -c8; echo
+      - ADMIN_INIT_PIN=init_pin_here
+      # 可选：启用 /recover
+      # - ADMIN_RECOVERY_ENABLED=true
       # Linux Docker 无 GUI keyring 时使用
       - DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
       # http 端口

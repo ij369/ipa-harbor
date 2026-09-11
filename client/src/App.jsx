@@ -14,6 +14,7 @@ import Purchases from './pages/Purchases';
 import Settings from './pages/Settings';
 import AdminLogin from './pages/AdminLogin';
 import AdminSetup from './pages/AdminSetup';
+import AdminRecover from './pages/AdminRecover';
 import AppleIdLogin from './pages/AppleIdLogin';
 import './App.css';
 
@@ -35,6 +36,12 @@ function App() {
               <Route path="/login" element={
                 <AdminGuard requireAuth={false}>
                   <AdminLogin />
+                </AdminGuard>
+              } />
+
+              <Route path="/recover" element={
+                <AdminGuard requireAuth={false} allowRecover={true}>
+                  <AdminRecover />
                 </AdminGuard>
               } />
 

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link as RouterLink, useNavigate } from 'react-router-dom';
 import {
     Box,
     Card,
@@ -11,13 +11,13 @@ import {
     Button,
     Alert,
     LinearProgress,
-    Stack
+    Stack,
+    Link,
 } from '@mui/joy';
 import { CheckCircle } from '@mui/icons-material';
-import { adminSetup, resolveClientErrorMessage } from '../utils/api';
+import { adminRecover, resolveClientErrorMessage } from '../utils/api';
 import { useAdmin } from '../contexts/AdminContext';
 import { useTranslation } from 'react-i18next';
-import LanguageSwitcher from '../components/LanguageSwitcher';
 import RadioButtonCheckedIcon from '@mui/icons-material/RadioButtonChecked';
 import InfoOutlineIcon from '@mui/icons-material/InfoOutline';
 
@@ -45,14 +45,14 @@ const pageCardSx = {
     flexShrink: 0,
 };
 
-const AdminSetup = () => {
+const AdminRecover = () => {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { checkAdminStatus, setupRequiresInitPin } = useAdmin();
+    const { setupRequiresInitPin } = useAdmin();
 
     const [formData, setFormData] = useState({
         username: '',
-        password: '',
+        newPassword: '',
         initPin: '',
     });
     const [loading, setLoading] = useState(false);
@@ -63,13 +63,13 @@ const AdminSetup = () => {
         const { name, value } = e.target;
         setFormData(prev => ({
             ...prev,
-            [name]: value
+            [name]: value,
         }));
     };
 
     const validateForm = () => {
-        if (!formData.username || !formData.password) {
-            setError(t('ui.usernamePlaceholder') + ' & ' + t('ui.passwordPlaceholder_admin'));
+        if (!formData.username || !formData.newPassword) {
+            setError(t('ui.adminRecoverCredentialsRequired'));
             return false;
         }
 
@@ -78,7 +78,7 @@ const AdminSetup = () => {
             return false;
         }
 
-        if (formData.password.length < 6) {
+        if (formData.newPassword.length < 6) {
             setError(t('ui.passwordMinLength'));
             return false;
         }
@@ -102,19 +102,18 @@ const AdminSetup = () => {
         setError('');
 
         try {
-            await adminSetup({
+            await adminRecover({
                 username: formData.username,
-                password: formData.password,
+                newPassword: formData.newPassword,
                 initPin: formData.initPin || undefined,
             });
             setSuccess(true);
 
-            setTimeout(async () => {
-                await checkAdminStatus();
+            setTimeout(() => {
                 navigate('/login');
             }, 2000);
         } catch (err) {
-            setError(resolveClientErrorMessage(err) || t('apiErrorMessages.ADMIN_SETUP_FAILED'));
+            setError(resolveClientErrorMessage(err) || t('apiErrorMessages.ADMIN_RECOVERY_FAILED'));
         } finally {
             setLoading(false);
         }
@@ -127,10 +126,10 @@ const AdminSetup = () => {
                     <CardContent sx={{ textAlign: 'center' }}>
                         <CheckCircle sx={{ fontSize: 64, color: 'success.main', mb: 2 }} />
                         <Typography level="h3" sx={{ mb: 2, color: 'success.main' }}>
-                            {t('ui.setupComplete')}
+                            {t('ui.adminRecoverSuccessTitle')}
                         </Typography>
                         <Typography level="body-md" sx={{ mb: 2 }}>
-                            {t('ui.adminCreatedSuccess')}
+                            {t('ui.adminRecoverSuccessHint')}
                         </Typography>
                         <LinearProgress sx={{ mt: 2 }} />
                     </CardContent>
@@ -143,18 +142,16 @@ const AdminSetup = () => {
         <Box className="safe-area-bottom safe-area-x" sx={pageShellSx}>
             <Card sx={pageCardSx}>
                 <CardContent>
-                    <Typography color='text.primary' sx={{ mb: 1, textAlign: 'center', fontSize: '1.625rem', fontWeight: 'bold' }}>
-                        {t('ui.adminSetupTitle', { appName: 'IPA Harbor' })}
-                    </Typography>
-                    <Typography level="body-md" sx={{ my: 1, textAlign: 'center' }}>
-                        {t('ui.firstRunSetup')}
+                    <Typography color="text.primary" sx={{ mb: 1, textAlign: 'center', fontSize: '1.625rem', fontWeight: 'bold' }}>
+                        {t('ui.adminRecoverTitle')}
                     </Typography>
 
                     <Alert color="primary" sx={{ my: 2 }}>
                         <Typography level="body-xs" startDecorator={<InfoOutlineIcon sx={{ fontSize: '0.75rem', color: 'primary.main' }} />}>
-                            {t('ui.createAdminHint')}
+                            {t('ui.adminRecoverInfo')}
                         </Typography>
                     </Alert>
+
                     <form onSubmit={handleSubmit}>
                         <FormControl sx={{ mb: 3 }}>
                             <FormLabel>{t('ui.username')}</FormLabel>
@@ -168,11 +165,11 @@ const AdminSetup = () => {
                         </FormControl>
 
                         <FormControl sx={{ mb: 3 }}>
-                            <FormLabel>{t('ui.password')}</FormLabel>
+                            <FormLabel>{t('ui.newPassword')}</FormLabel>
                             <Input
-                                name="password"
+                                name="newPassword"
                                 type="password"
-                                value={formData.password}
+                                value={formData.newPassword}
                                 onChange={handleInputChange}
                                 placeholder={t('ui.passwordInputPlaceholder')}
                                 required
@@ -193,11 +190,6 @@ const AdminSetup = () => {
                             </FormControl>
                         )}
 
-                        <FormControl sx={{ mb: 2 }}>
-                            <FormLabel>{t('ui.language')}</FormLabel>
-                            <LanguageSwitcher variant="select" size="md" fullWidth={true} />
-                        </FormControl>
-
                         {error && (
                             <Alert color="danger" sx={{ mb: 2 }}>
                                 {error}
@@ -211,7 +203,7 @@ const AdminSetup = () => {
                             disabled={loading}
                             size="lg"
                         >
-                            {t('ui.createAdminAccount')}
+                            {t('ui.adminRecoverSubmit')}
                         </Button>
                     </form>
 
@@ -219,16 +211,22 @@ const AdminSetup = () => {
                         {t('ui.securityRequirements')}
                     </Typography>
                     <Stack direction="column" gap={1}>
-                        {[t('ui.usernameMinLength'), t('ui.passwordMinLength'), t('ui.strongPasswordRecommend')].map((item, index) => (
-                            <Typography key={'req-' + index} level="body-xs" startDecorator={<RadioButtonCheckedIcon sx={{ fontSize: '0.75rem', color: 'success.main' }} />}>
+                        {[t('ui.usernameMinLength'), t('ui.passwordMinLength')].map((item, index) => (
+                            <Typography key={`req-${index}`} level="body-xs" startDecorator={<RadioButtonCheckedIcon sx={{ fontSize: '0.75rem', color: 'success.main' }} />}>
                                 {item}
                             </Typography>
                         ))}
                     </Stack>
+
+                    <Typography level="body-sm" sx={{ mt: 2, textAlign: 'center' }}>
+                        <Link component={RouterLink} to="/login">
+                            {t('ui.backToLogin')}
+                        </Link>
+                    </Typography>
                 </CardContent>
             </Card>
         </Box>
     );
 };
 
-export default AdminSetup;
+export default AdminRecover;

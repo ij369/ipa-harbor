@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 
 const setupHandler = require('./setup');
+const recoverHandler = require('./recover');
+const changePasswordHandler = require('./changePassword');
 const loginHandler = require('./login');
 const logoutHandler = require('./logout');
 const statusHandler = require('./status');
@@ -11,6 +13,8 @@ const { authenticateToken, optionalAuth } = require('../../middleware/auth');
 const setupRateLimit = require('../../middleware/setupRateLimit');
 
 router.post('/setup', setupRateLimit, setupHandler);           // 初始设置（创建管理员账户）
+router.post('/recover', setupRateLimit, recoverHandler);       // 管理员恢复（需 ADMIN_RECOVERY_ENABLED）
+router.post('/change-password', authenticateToken, changePasswordHandler); // 修改登录密码
 router.post('/login', loginHandler);           // 管理员登录
 router.post('/logout', authenticateToken, logoutHandler); // 管理员退出登录
 router.get('/status', optionalAuth, statusHandler);       // 获取登录状态

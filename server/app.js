@@ -18,6 +18,7 @@ const { migrateExistingJsonSidecars } = require('./utils/versionMetadata');
 const { authenticateToken } = require('./middleware/auth');
 const { sendError } = require('./utils/apiResponse');
 const { NODE_ENV, KEYCHAIN_PASSPHRASE } = require('./config/keychain');
+const { bootstrapAdminStartup, syncSetupMarkerWithUsers } = require('./utils/adminBootstrap');
 
 process.stdout.write('\x1Bc');
 console.clear();
@@ -226,34 +227,38 @@ try {
 }
 
 // === 启动 HTTP 服务器 ===
-httpServer.listen(PORT, async () => {
-    console.log(hrLine);
-    console.log(`${green}Server started successfully.${reset}`);
-    if (NODE_ENV === 'production') {
-        console.log(`${green}HTTP port:${reset} ${PORT}`);
-        if (httpsServer) {
-            console.log(`${green}HTTPS port:${reset} ${HTTPS_PORT}`);
-        }
-    } else {
-        console.log(`${green}HTTP:${reset} http://${HOST}:${PORT}`);
-        if (httpsServer) {
-            console.log(`${green}HTTPS:${reset} https://${HOST}:${HTTPS_PORT}`);
-        }
-    }
-    console.log(hrLine);
-
-    // 初始化数据库
+async function startHttpServer() {
     try {
+        await bootstrapAdminStartup();
         await database.init();
+        await syncSetupMarkerWithUsers(database);
         await migrateExistingJsonSidecars();
-        // console.log('数据库系统就绪');
     } catch (error) {
-        console.error('数据库初始化失败:', error);
+        console.error('服务启动初始化失败:', error);
+        process.exit(1);
     }
 
-    // 启动定时广播任务
-    startCronTasks();
-});
+    httpServer.listen(PORT, () => {
+        console.log(hrLine);
+        console.log(`${green}Server started successfully.${reset}`);
+        if (NODE_ENV === 'production') {
+            console.log(`${green}HTTP port:${reset} ${PORT}`);
+            if (httpsServer) {
+                console.log(`${green}HTTPS port:${reset} ${HTTPS_PORT}`);
+            }
+        } else {
+            console.log(`${green}HTTP:${reset} http://${HOST}:${PORT}`);
+            if (httpsServer) {
+                console.log(`${green}HTTPS:${reset} https://${HOST}:${HTTPS_PORT}`);
+            }
+        }
+        console.log(hrLine);
+
+        startCronTasks();
+    });
+}
+
+startHttpServer();
 
 // === 定时广播任务 ===
 function startCronTasks() {

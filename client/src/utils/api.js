@@ -400,13 +400,34 @@ export async function adminLogout() {
 
 /**
  * 初始设置（创建管理员账户）
- * @param {string} username - 用户名
- * @param {string} password - 密码
+ * @param {{ username: string, password: string, initPin?: string }} payload
  */
-export async function adminSetup(username, password) {
+export async function adminSetup(payload) {
     return apiRequest('/v1/admin/setup', {
         method: 'POST',
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify(payload),
+    });
+}
+
+/**
+ * 管理员恢复（重置密码或重建账户）
+ * @param {{ username: string, newPassword: string, initPin?: string }} payload
+ */
+export async function adminRecover(payload) {
+    return apiRequest('/v1/admin/recover', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+/**
+ * 修改当前管理员登录密码
+ * @param {{ currentPassword: string, newPassword: string }} payload
+ */
+export async function adminChangePassword(payload) {
+    return apiRequest('/v1/admin/change-password', {
+        method: 'POST',
+        body: JSON.stringify(payload),
     });
 }
 

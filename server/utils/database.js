@@ -386,6 +386,24 @@ class Database {
     }
 
     /**
+     * 更新用户密码
+     */
+    async updateUserPassword(userId, passwordHash) {
+        return new Promise((resolve, reject) => {
+            const sql = 'UPDATE users SET password_hash = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?';
+            this.db.run(sql, [passwordHash, userId], function (err) {
+                if (err) {
+                    reject(err);
+                } else if (this.changes === 0) {
+                    reject(new Error('用户不存在'));
+                } else {
+                    resolve({ id: userId, updated: true });
+                }
+            });
+        });
+    }
+
+    /**
      * 根据ID获取用户
      */
     async getUserById(id) {

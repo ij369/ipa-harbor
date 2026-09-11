@@ -16,6 +16,7 @@ It supports app search, historical version downloads, and containerized deployme
 docker run -d \
   -p 3388:3080 \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e ADMIN_INIT_PIN=20251024 \
   -e PORT=3080 \
   -v ipa_data:/app/data \
   --name ipa-harbor \
@@ -27,7 +28,7 @@ docker run -d \
 
 Then open your browser and visit: http://localhost:3388
 
-The first login will prompt you to configure the admin password for accessing the panel later.
+On first run, you will create an admin account; use init PIN **`20251024`**. Use a random value for public deployments.
 
 <br />
 
@@ -38,6 +39,7 @@ docker run -d \
   -p 80:3080 \
   -p 443:3443 \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e ADMIN_INIT_PIN=$(openssl rand -base64 24 | tr -dc '0-9' | head -c8) \
   -e PORT=3080 \
   -e HTTPS_PORT=3443 \
   -e ALLOW_LAN_ACCESS=false \
@@ -52,7 +54,7 @@ The ipa_certs volume requires two certificate files (`server.crt` and `server.ke
 Then open your browser and visit: http://your-domain.com and https://your-domain.com to access.
 Note: LAN access requires `ALLOW_LAN_ACCESS=true`.
 
-The first login will prompt you to configure the admin password for accessing the panel later.
+On first visit, go to `/setup` and use the `ADMIN_INIT_PIN` from the command above. Save that value for recovery if needed.
 
 <br />
 
@@ -69,6 +71,7 @@ The corresponding command is
 ```bash
 docker run -d \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e ADMIN_INIT_PIN=$(openssl rand -base64 24 | tr -dc '0-9' | head -c8) \
   -e PORT=3080 \
   -e ALLOW_LAN_ACCESS=false \
   -e ALLOWED_DOMAINS=example.com \
@@ -112,7 +115,7 @@ server {
 
 Then open your browser and visit: http://example.com to access. Similarly, you can configure nginx to listen on port 443 with certificates and reverse proxy `http://ipa_harbor:3080` to achieve https access.
 
-The first login will prompt you to configure the admin password for accessing the panel later.
+On first visit, go to `/setup` and use the `ADMIN_INIT_PIN` from the command above.
 
 
 ### Parameter Description
@@ -122,6 +125,10 @@ The first login will prompt you to configure the admin password for accessing th
 `-e ENABLE_MORE_LOGS=true` enables more detailed logs.
 
 `-e KEYCHAIN_PASSPHRASE=X96A49763R`: Randomly generated key to ensure Keychain security, as the Keychain stores Apple ID access credentials.
+
+`-e ADMIN_INIT_PIN=...`: Init PIN for setup and admin password reset.
+
+`-e ADMIN_RECOVERY_ENABLED=true` (optional): Enables `/recover`.
 
 `-e ALLOW_LAN_ACCESS=true` allows LAN IP access, enabled by default. If deploying to public network, it is recommended to set to `false`.
 
@@ -302,6 +309,7 @@ IPA 文件是苹果 iOS 和 iPadOS 应用的存档文件，你可以理解成安
 docker run -d \
   -p 3388:3080 \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e ADMIN_INIT_PIN=20251024 \
   -e PORT=3080 \
   -v ipa_data:/app/data \
   --name ipa-harbor \
@@ -313,7 +321,7 @@ docker run -d \
 
 然后打开浏览器访问： http://localhost:3388
 
-首次登录会进入配置管理员密码，用于后续进入面板。
+首次会创建管理员账户：其中，初始化 PIN 填 **`20251024`** 公网环境请务必使用随机值。
 
 <br />
 
@@ -324,6 +332,7 @@ docker run -d \
   -p 80:3080 \
   -p 443:3443 \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e ADMIN_INIT_PIN=$(openssl rand -base64 24 | tr -dc '0-9' | head -c8) \
   -e PORT=3080 \
   -e HTTPS_PORT=3443 \
   -e ALLOW_LAN_ACCESS=false \
@@ -338,7 +347,7 @@ ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，�
 然后打开浏览器访问： http://your-domain.com 和 https://your-domain.com 即可访问。
 注意，局域网访问需要 `ALLOW_LAN_ACCESS=true`。
 
-首次登录会进入配置管理员密码，用于后续进入面板。
+首次访问请打开 `/setup`，使用上文命令中的 `ADMIN_INIT_PIN`。请妥善保存以便恢复时使用。
 
 <br />
 
@@ -355,6 +364,7 @@ ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，�
 ```bash
 docker run -d \
   -e KEYCHAIN_PASSPHRASE=$(openssl rand -base64 15 | tr -dc 'A-Za-z0-9' | head -c10) \
+  -e ADMIN_INIT_PIN=$(openssl rand -base64 24 | tr -dc '0-9' | head -c8) \
   -e PORT=3080 \
   -e ALLOW_LAN_ACCESS=false \
   -e ALLOWED_DOMAINS=example.com \
@@ -398,7 +408,7 @@ server {
 
 然后打开浏览器访问： http://example.com 即可访问，同样的也可以 nginx 监听 443 端口配置好证书反代`http://ipa_harbor:3080` 实现 https 访问
 
-首次登录会进入配置管理员密码，用于后续进入面板。
+首次访问请打开 `/setup`，使用上文命令中的 `ADMIN_INIT_PIN`。
 
 
 ### 参数说明
@@ -408,6 +418,10 @@ server {
 `-e ENABLE_MORE_LOGS=true` 会有更详细的日志
 
 `-e KEYCHAIN_PASSPHRASE=X96A49763R`：随机生成密钥，保证 Keychain 安全, 因为 Keychain 内存着 Apple ID 的访问权。
+
+`-e ADMIN_INIT_PIN=...`：初始化 PIN，用于初始化以及重置管理员密码
+
+`-e ADMIN_RECOVERY_ENABLED=true`（可选）：启用 `/recover`
 
 `-e ALLOW_LAN_ACCESS=true` 允许局域网IP访问，默认开启，如果部署到公网建议设置为`false`
 

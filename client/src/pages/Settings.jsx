@@ -8,12 +8,16 @@ import {
     Box,
     Button,
     Chip,
+    FormControl,
+    FormLabel,
     IconButton,
+    Input,
     Sheet,
     Stack,
     Switch,
     Tooltip,
     Typography,
+    Alert,
 } from '@mui/joy';
 import {
     AdminPanelSettings as AdminPanelSettingsIcon,
@@ -32,7 +36,7 @@ import FilenameTemplateEditor from '../components/FilenameTemplateEditor';
 import { useJoyDown } from '../hooks/useJoyMedia';
 import { useApp } from '../contexts/AppContext';
 import { useAdmin } from '../contexts/AdminContext';
-import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus, revokeAuth, resolveClientErrorMessage } from '../utils/api';
+import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus, revokeAuth, resolveClientErrorMessage, adminChangePassword } from '../utils/api';
 import {
     cloneTemplate,
     DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
@@ -158,6 +162,13 @@ export default function Settings() {
     } = useAdmin();
     const [language, setLanguage] = useState(normalizeLanguageCode(i18n.language));
     const [logoutLoading, setLogoutLoading] = useState(false);
+    const [changePasswordLoading, setChangePasswordLoading] = useState(false);
+    const [changePasswordForm, setChangePasswordForm] = useState({
+        currentPassword: '',
+        newPassword: '',
+    });
+    const [changePasswordError, setChangePasswordError] = useState('');
+    const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
     const [appleIdLogoutLoading, setAppleIdLogoutLoading] = useState(false);
     const [adminAccountExpanded, setAdminAccountExpanded] = useState(false);
     const [appleIdExpanded, setAppleIdExpanded] = useState(false);
@@ -355,6 +366,41 @@ export default function Settings() {
             console.error('退出系统失败:', error);
         } finally {
             setLogoutLoading(false);
+        }
+    };
+
+    const handleChangePasswordInput = (e) => {
+        const { name, value } = e.target;
+        setChangePasswordForm(prev => ({
+            ...prev,
+            [name]: value,
+        }));
+    };
+
+    const handleChangePassword = async (e) => {
+        e.preventDefault();
+        setChangePasswordError('');
+        setChangePasswordSuccess('');
+
+        if (!changePasswordForm.currentPassword || !changePasswordForm.newPassword) {
+            setChangePasswordError(t('ui.changePasswordRequired'));
+            return;
+        }
+
+        if (changePasswordForm.newPassword.length < 6) {
+            setChangePasswordError(t('ui.passwordMinLength'));
+            return;
+        }
+
+        setChangePasswordLoading(true);
+        try {
+            await adminChangePassword(changePasswordForm);
+            setChangePasswordSuccess(t('ui.changePasswordSuccess'));
+            setChangePasswordForm({ currentPassword: '', newPassword: '' });
+        } catch (error) {
+            setChangePasswordError(resolveClientErrorMessage(error) || t('apiErrorMessages.ADMIN_CHANGE_PASSWORD_FAILED'));
+        } finally {
+            setChangePasswordLoading(false);
         }
     };
 
@@ -608,6 +654,48 @@ export default function Settings() {
                                                 {logoutLoading ? t('ui.loggingOut') : t('ui.logoutSystem')}
                                             </Button>
                                         </Stack>
+                                        <Box component="form" onSubmit={handleChangePassword} sx={{ mt: 1.5 }}>
+                                            <Typography level="body-sm" fontWeight="md" sx={{ mb: 1 }}>
+                                                {t('ui.changePassword')}
+                                            </Typography>
+                                            <Stack spacing={1.25}>
+                                                <FormControl>
+                                                    <FormLabel>{t('ui.currentPassword')}</FormLabel>
+                                                    <Input
+                                                        name="currentPassword"
+                                                        type="password"
+                                                        value={changePasswordForm.currentPassword}
+                                                        onChange={handleChangePasswordInput}
+                                                        placeholder={t('ui.currentPasswordPlaceholder')}
+                                                    />
+                                                </FormControl>
+                                                <FormControl>
+                                                    <FormLabel>{t('ui.newPassword')}</FormLabel>
+                                                    <Input
+                                                        name="newPassword"
+                                                        type="password"
+                                                        value={changePasswordForm.newPassword}
+                                                        onChange={handleChangePasswordInput}
+                                                        placeholder={t('ui.passwordInputPlaceholder')}
+                                                    />
+                                                </FormControl>
+                                                <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    loading={changePasswordLoading}
+                                                    disabled={changePasswordLoading}
+                                                    sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
+                                                >
+                                                    {t('ui.changePasswordSubmit')}
+                                                </Button>
+                                                {changePasswordError && (
+                                                    <Alert color="danger" size="sm">{changePasswordError}</Alert>
+                                                )}
+                                                {changePasswordSuccess && (
+                                                    <Alert color="success" size="sm">{changePasswordSuccess}</Alert>
+                                                )}
+                                            </Stack>
+                                        </Box>
                                     </AccordionDetails>
                                 </Accordion>
 

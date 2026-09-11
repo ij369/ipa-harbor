@@ -16,6 +16,7 @@ export const AdminProvider = ({ children }) => {
     const [adminState, setAdminState] = useState({
         isInitialized: false,
         isLoggedIn: false,
+        setupRequiresInitPin: false,
         user: null,
         expiresAt: null,
         settings: null,
@@ -35,6 +36,7 @@ export const AdminProvider = ({ children }) => {
                 ...prev,
                 isInitialized: response.data.isInitialized,
                 isLoggedIn: response.data.isLoggedIn,
+                setupRequiresInitPin: Boolean(response.data.setupRequiresInitPin),
                 user: response.data.user,
                 expiresAt: response.data.expiresAt,
                 settings: response.data.settings || null,

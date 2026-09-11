@@ -1,19 +1,34 @@
 const bcrypt = require('bcrypt');
 const database = require('../../utils/database');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
+const {
+    isSetupCompleted,
+    markSetupCompleted,
+    syncSetupMarkerWithUsers,
+    verifyInitPin,
+} = require('../../utils/adminBootstrap');
 
-// 从环境变量获取配置
-const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS) || 12;
-const SINGLE_USER_MODE = process.env.SINGLE_USER_MODE !== 'false'; // 默认为单用户模式
+const SALT_ROUNDS = parseInt(process.env.BCRYPT_SALT_ROUNDS, 10) || 12;
+const SINGLE_USER_MODE = process.env.SINGLE_USER_MODE !== 'false';
 
 /**
  * 初始设置 - 创建管理员账户
  */
 async function setupHandler(req, res) {
     try {
-        const { username, password } = req.body;
+        await syncSetupMarkerWithUsers(database);
 
-        // 参数验证
+        if (isSetupCompleted()) {
+            return sendError(res, 410, {
+                message: '系统已完成初始化',
+                errorMessageCode: 'ADMIN_SETUP_ALREADY_INITIALIZED',
+                error: 'System setup already completed',
+                errorCode: 'ADMIN_SETUP_COMPLETED',
+            });
+        }
+
+        const { username, password, initPin } = req.body;
+
         if (!username || !password) {
             return sendError(res, 400, {
                 message: '用户名和密码是必需的参数',
@@ -23,7 +38,24 @@ async function setupHandler(req, res) {
             });
         }
 
-        // 用户名长度验证
+        if (!initPin) {
+            return sendError(res, 400, {
+                message: '初始化 PIN 是必需的参数',
+                errorMessageCode: 'ADMIN_SETUP_INIT_PIN_REQUIRED',
+                error: 'Init PIN is required',
+                errorCode: 'ADMIN_SETUP_INIT_PIN_MISSING',
+            });
+        }
+
+        if (!verifyInitPin(initPin)) {
+            return sendError(res, 403, {
+                message: '初始化 PIN 错误',
+                errorMessageCode: 'ADMIN_INIT_PIN_INVALID',
+                error: 'Invalid init PIN',
+                errorCode: 'ADMIN_INIT_PIN_MISMATCH',
+            });
+        }
+
         if (username.length < 3 || username.length > 50) {
             return sendError(res, 400, {
                 message: '用户名长度必须在3-50个字符之间',
@@ -33,7 +65,6 @@ async function setupHandler(req, res) {
             });
         }
 
-        // 密码强度验证
         if (password.length < 6) {
             return sendError(res, 400, {
                 message: '密码长度至少为6个字符',
@@ -43,7 +74,6 @@ async function setupHandler(req, res) {
             });
         }
 
-        // 检查是否已有用户
         const userCount = await database.getUserCount();
 
         if (SINGLE_USER_MODE && userCount > 0) {
@@ -55,7 +85,6 @@ async function setupHandler(req, res) {
             });
         }
 
-        // 检查用户名是否已存在
         const existingUser = await database.getUserByUsername(username);
         if (existingUser) {
             return sendError(res, 409, {
@@ -66,11 +95,9 @@ async function setupHandler(req, res) {
             });
         }
 
-        // 生成密码哈希
         const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
-
-        // 创建用户
         const newUser = await database.createUser(username, passwordHash);
+        markSetupCompleted();
 
         console.log(`管理员账户创建成功: ${username}`);
 
@@ -81,10 +108,9 @@ async function setupHandler(req, res) {
             data: {
                 id: newUser.id,
                 username: newUser.username,
-                created: true
-            }
+                created: true,
+            },
         });
-
     } catch (error) {
         console.error('创建管理员账户错误:', error);
 
