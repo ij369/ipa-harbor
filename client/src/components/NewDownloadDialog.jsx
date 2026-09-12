@@ -5,7 +5,7 @@ import RegionSelector from './RegionSelector';
 import { getAppDetails, downloadApp, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import { Add } from '@mui/icons-material';
 
 const STORAGE_KEY = 'new_download_memory';
@@ -43,7 +43,7 @@ export function NewDownloadButton({ onClick, compact = false }) {
 
 export default function NewDownloadDialog({ isOpen, onClose }) {
     const { t } = useTranslation();
-    const { user, setUser } = useApp();
+    const { user, setUser } = useAppSession();
     const [appId, setAppId] = useState('');
     const [versionId, setVersionId] = useState('');
     const [memory, setMemory] = useState('');

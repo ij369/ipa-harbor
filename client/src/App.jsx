@@ -6,7 +6,7 @@ import { joyTheme } from './theme/joyTheme';
 import CssBaseline from '@mui/joy/CssBaseline';
 import { AppProvider } from './contexts/AppContext';
 import { AdminProvider } from './contexts/AdminContext';
-import AppShell from './components/AppShell';
+import { AppShellWithDownload } from './components/AppShell';
 import AdminGuard from './components/AdminGuard';
 import Home from './pages/Home';
 import DownloadManager from './pages/DownloadManager';
@@ -53,7 +53,7 @@ function App() {
 
               <Route element={
                 <AdminGuard>
-                  <AppShell />
+                  <AppShellWithDownload />
                 </AdminGuard>
               }>
                 <Route index element={<Home />} />

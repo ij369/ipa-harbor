@@ -22,7 +22,7 @@ import {
 import { ArrowBack, ExpandMore } from '@mui/icons-material';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { login, revokeAuth, isRateLimitError, getAdminStatus, checkAppUpdate, resolveClientErrorMessage } from '../utils/api';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import Swal from 'sweetalert2';
 import { useTranslation } from 'react-i18next';
 
@@ -42,7 +42,7 @@ const hideScrollbarSx = {
 const AppleIdLogin = () => {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { setUser, user, isAuthenticated, checkAuthStatus, logout } = useApp();
+    const { setUser, user, isAuthenticated, checkAuthStatus, logout } = useAppSession();
     const prefersReducedMotion = useReducedMotion();
 
     const [formData, setFormData] = useState({
@@ -714,4 +714,4 @@ const AppleIdLogin = () => {
     );
 };
 
-export default AppleIdLogin;
+export default React.memo(AppleIdLogin);

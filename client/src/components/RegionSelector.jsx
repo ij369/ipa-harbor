@@ -940,7 +940,6 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
             onClose={() => onClose(false)}
             title={t('ui.specifyRegionTitle')}
             size="large"
-            zIndex={1310}
             fillBody
             actions={(
                 <Stack spacing={1} sx={{ width: '100%' }}>

@@ -1,13 +1,18 @@
+import React from 'react';
 import { Box } from '@mui/joy';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useLocation, useOutlet } from 'react-router-dom';
+import { useStandaloneDisplay } from '../hooks/useJoyMedia';
 
 const EASE_OUT = [0.22, 1, 0.36, 1];
 
-export default function PageTransition() {
+function PageTransition() {
     const location = useLocation();
     const outlet = useOutlet();
     const prefersReducedMotion = useReducedMotion();
+    const standalone = useStandaloneDisplay();
+    const isScrollUnderHeaderPage = location.pathname === '/settings';
+    const pageClassName = standalone && !isScrollUnderHeaderPage ? 'app-shell-page' : undefined;
 
     return (
         <Box
@@ -22,6 +27,7 @@ export default function PageTransition() {
             <AnimatePresence initial={false}>
                 <Box
                     component={motion.div}
+                    className={pageClassName}
                     key={location.pathname}
                     initial={prefersReducedMotion ? false : { opacity: 0 }}
                     animate={{
@@ -52,3 +58,5 @@ export default function PageTransition() {
         </Box>
     );
 }
+
+export default React.memo(PageTransition);

@@ -4,9 +4,27 @@ body {
   --safe-area-inset-left: env(safe-area-inset-left, 0px);
   --safe-area-inset-right: env(safe-area-inset-right, 0px);
   --app-shell-header-base: 64px;
+  --app-shell-footer-nav: 49px;
+  --app-shell-footer-pad: 6px;
+  --app-shell-footer-height: calc(var(--app-shell-footer-nav) + max(var(--app-shell-footer-pad), var(--safe-area-inset-bottom)));
+  /* 层级：footer < 展开菜单 < header < Tooltip … */
+  --z-app-shell-footer: 1280;
+  --z-app-shell-nav: 1290;
+  --z-app-shell-header: 1300;
+  --z-tooltip: 1350;
+  --z-popover: 1380;
+  --z-overlay: 1400;
+  --z-lightbox: 1500;
+  --z-swalert: 1700;
   --safe-area-pad-top: 16px;
   --layout-transition-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --layout-transition-duration: 220ms;
+  /* standalone 顶底栏毛玻璃 */
+  --app-shell-glass-blur: 120px;
+  --app-shell-glass-saturate: 180%;
+  --app-shell-glass-opacity: 92%;
+  --app-shell-glass-backdrop-filter: blur(var(--app-shell-glass-blur)) saturate(var(--app-shell-glass-saturate));
+  --app-shell-glass-background: color-mix(in srgb, var(--joy-palette-background-surface, #fff) var(--app-shell-glass-opacity), transparent);
 }
 
 /* Dialog 尺寸过渡 */
@@ -68,9 +86,83 @@ body,
   padding-top: var(--safe-area-pad-top);
 }
 
-/* 全屏菜单与 Header 底边对齐 */
+/* standalone 顶底栏：fixed + 毛玻璃（类名仅 A2HS 使用，参数见 --app-shell-glass-*） */
+.app-shell-header--fixed,
+.app-shell-footer--fixed {
+  -webkit-backdrop-filter: var(--app-shell-glass-backdrop-filter);
+  backdrop-filter: var(--app-shell-glass-backdrop-filter);
+  background-color: var(--app-shell-glass-background);
+}
+
+.app-shell-header--fixed {
+  z-index: var(--z-app-shell-header);
+}
+
+.app-shell-footer--fixed {
+  z-index: var(--z-app-shell-footer);
+}
+
+/* standalone 横屏：隐藏顶栏、压缩底栏占位，内容区顶底尽量贴边, 匹配 iPhone 横屏高度不够的情况 */
+@media (orientation: landscape) and (max-height: 480px) {
+  .app-shell-main--standalone {
+    --app-shell-header-base: 0px;
+    --app-shell-footer-nav: 28px;
+    --app-shell-footer-pad: 2px;
+    --app-shell-footer-height: calc(var(--app-shell-footer-nav) + max(var(--app-shell-footer-pad), var(--safe-area-inset-bottom)));
+  }
+
+  .app-shell-header--fixed {
+    display: none;
+  }
+
+  .app-shell-main--standalone .app-shell-page,
+  .app-shell-main--standalone .app-shell-page-scroll {
+    padding-top: 0;
+    padding-bottom: var(--app-shell-footer-height);
+  }
+
+  .app-shell-main--standalone .app-shell-page-title {
+    margin-bottom: 12px;
+  }
+
+  .app-shell-main--standalone .app-shell-page-content {
+    padding-bottom: 12px;
+  }
+}
+
+/* 截图灯箱：高于 fixed 顶底栏与 Dialog */
+.yarl__portal {
+  z-index: var(--z-lightbox);
+}
+
+/* standalone 默认页：顶底栏占位，避免内容被 fixed Header/Footer 遮住 */
+.app-shell-main--standalone .app-shell-page {
+  padding-top: calc(var(--app-shell-header-base) + var(--safe-area-inset-top));
+  padding-bottom: var(--app-shell-footer-height);
+  box-sizing: border-box;
+}
+
+/* 设置页等自管滚动的页面：滚动区顶底到边缘，内容从毛玻璃 Header/Footer 下穿过 */
+.app-shell-main--standalone .app-shell-page-scroll {
+  padding-top: calc(var(--app-shell-header-base) + var(--safe-area-inset-top));
+  padding-bottom: var(--app-shell-footer-height);
+  box-sizing: border-box;
+}
+
+/* 全屏菜单：高于 footer、低于 header，内容与 Header 底边对齐 */
 .app-shell-nav-overlay {
-  padding-top: var(--app-shell-header-base);
+  z-index: var(--z-app-shell-nav);
+  --app-shell-nav-inset-top: var(--app-shell-header-base);
+  padding-top: var(--app-shell-nav-inset-top);
+}
+
+.app-shell-nav-backdrop {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: var(--app-shell-nav-inset-top);
+  background-color: var(--joy-palette-background-body, #fff);
 }
 
 /* IPA Drawer 顶栏材质
@@ -312,7 +404,8 @@ body,
   }
 
   .app-shell-nav-overlay {
-    padding-top: var(--app-shell-header-height);
+    --app-shell-nav-inset-top: var(--app-shell-header-height);
+    padding-top: var(--app-shell-nav-inset-top);
   }
 
   .dialog-content.dialog-fullscreen .dialog-header {
@@ -323,8 +416,9 @@ body,
 
 /* iPhone 安全区 */
 
-/* SweetAlert2：弹窗/Toast 全局避开刘海与安全区 */
+/* SweetAlert2：弹窗/Toast 全局避开刘海与安全区，层级高于 Dialog/抽屉/灯箱 */
 .swal2-container {
+  z-index: var(--z-swalert) !important;
   padding-top: max(0.625em, var(--safe-area-inset-top));
   padding-right: max(0.625em, var(--safe-area-inset-right));
   padding-bottom: max(0.625em, var(--safe-area-inset-bottom));

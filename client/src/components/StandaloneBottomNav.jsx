@@ -13,12 +13,27 @@ const NAV_ICONS = {
 };
 
 const ICON_SIZE = 32;
+const ICON_SIZE_LANDSCAPE = 20;
 
 const noSelectSx = {
     userSelect: 'none',
     WebkitUserSelect: 'none',
     WebkitTouchCallout: 'none',
     WebkitTapHighlightColor: 'transparent',
+};
+
+const landscapeNavSx = {
+    minHeight: 'auto',
+    pb: 'max(2px, env(safe-area-inset-bottom, 0px))',
+};
+
+const landscapeTabSx = {
+    flexDirection: 'row',
+    gap: '3px',
+    minHeight: 28,
+    py: 0,
+    px: 0.5,
+    fontSize: '0.625rem',
 };
 
 export default function StandaloneBottomNav({ navItems, currentPath, onNavigate }) {
@@ -33,6 +48,7 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
     return (
         <Box
             component="nav"
+            className="app-shell-footer-nav"
             aria-label="Bottom Navigation"
             sx={{
                 ...noSelectSx,
@@ -45,6 +61,7 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
                 pl: 'max(0px, env(safe-area-inset-left, 0px))',
                 pr: 'max(0px, env(safe-area-inset-right, 0px))',
                 '& *': noSelectSx,
+                '@media (orientation: landscape)': landscapeNavSx,
             }}
         >
             <Box
@@ -56,12 +73,17 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
                     justifyContent: 'center',
                     width: '100%',
                     minHeight: 49,
+                    '@media (orientation: landscape)': {
+                        minHeight: 28,
+                    },
                 }}
             >
                 {navItems.map((item) => {
                     const Icon = NAV_ICONS[item.path];
                     const isSelected = currentPath === item.path;
-                    const badgeCount = item.badge?.count || 0;
+                    const badge = item.badge;
+                    const badgeCount = badge?.count || 0;
+                    const showDotBadge = badge?.dot && badgeCount === 0;
                     const itemColor = getItemColor(isSelected);
 
                     return (
@@ -96,6 +118,7 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
                                 textAlign: 'center',
                                 color: itemColor,
                                 transition: 'color 0.15s ease',
+                                '@media (orientation: landscape)': landscapeTabSx,
                             }}
                         >
                             <Box
@@ -108,14 +131,48 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
                                     width: ICON_SIZE,
                                     height: ICON_SIZE,
                                     flexShrink: 0,
+                                    '@media (orientation: landscape)': {
+                                        width: ICON_SIZE_LANDSCAPE,
+                                        height: ICON_SIZE_LANDSCAPE,
+                                    },
                                 }}
                             >
                                 <Icon
                                     sx={{
                                         fontSize: ICON_SIZE,
                                         color: itemColor,
+                                        '@media (orientation: landscape)': {
+                                            fontSize: ICON_SIZE_LANDSCAPE,
+                                        },
                                     }}
                                 />
+                                {showDotBadge && (
+                                    <Box
+                                        component="span"
+                                        aria-hidden="true"
+                                        sx={{
+                                            position: 'absolute',
+                                            top: 0,
+                                            right: -2,
+                                            width: 11,
+                                            height: 11,
+                                            borderRadius: '999px',
+                                            bgcolor: badge.color === 'danger'
+                                                ? theme.vars.palette.danger[500]
+                                                : theme.vars.palette.primary[500],
+                                            boxShadow: `
+                                                0 0 0 2px ${theme.vars.palette.background.surface},
+                                                0 1px 3px rgba(0, 0, 0, 0.22)
+                                            `,
+                                            '@media (orientation: landscape)': {
+                                                top: -2,
+                                                right: -4,
+                                                width: 9,
+                                                height: 9,
+                                            },
+                                        }}
+                                    />
+                                )}
                                 {badgeCount > 0 && (
                                     <Box
                                         component="span"
@@ -130,13 +187,20 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
                                             alignItems: 'center',
                                             justifyContent: 'center',
                                             borderRadius: '999px',
-                                            bgcolor: item.badge.color === 'primary'
+                                            bgcolor: badge.color === 'primary'
                                                 ? theme.vars.palette.primary[500]
                                                 : theme.vars.palette.neutral[500],
                                             color: '#fff',
                                             fontSize: '0.625rem',
                                             fontWeight: 600,
                                             lineHeight: 1.2,
+                                            '@media (orientation: landscape)': {
+                                                top: -4,
+                                                right: -8,
+                                                minWidth: 14,
+                                                height: 14,
+                                                fontSize: '0.5625rem',
+                                            },
                                         }}
                                     >
                                         {badgeCount}
@@ -148,6 +212,12 @@ export default function StandaloneBottomNav({ navItems, currentPath, onNavigate 
                                 sx={{
                                     color: itemColor,
                                     lineHeight: 1.2,
+                                    '@media (orientation: landscape)': {
+                                        whiteSpace: 'nowrap',
+                                        overflow: 'hidden',
+                                        textOverflow: 'ellipsis',
+                                        maxWidth: '100%',
+                                    },
                                 }}
                             >
                                 {item.label}

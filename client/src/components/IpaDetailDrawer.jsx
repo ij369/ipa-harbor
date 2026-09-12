@@ -8,7 +8,6 @@ import DeleteIcon from '@mui/icons-material/Delete';
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { useTranslation } from 'react-i18next';
-import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
 import IpaAppIcon from './IpaAppIcon';
 import {
@@ -20,7 +19,7 @@ import {
     resolveClientErrorMessage,
 } from '../utils/api';
 import formatFileSize from '../utils/formatFileSize.js';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import { useFullscreenDialog } from '../hooks/useJoyMedia';
 import { isOtaSecureContext, useOtaInstallPreference } from '../utils/otaInstallPreference';
 import { getIntlLocale } from '../i18n';
@@ -72,10 +71,9 @@ function extractAppInfo(fileName) {
     return match ? { appId: match[1], versionId: match[2] } : { appId: null, versionId: null };
 }
 
-export default function IpaDetailDrawer({ item, open, onClose, onExitComplete }) {
+export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, onViewAppDetail }) {
     const { t } = useTranslation();
-    const navigate = useNavigate();
-    const { user } = useApp();
+    const { user } = useAppSession();
     const [otaInstallEnabled] = useOtaInstallPreference();
     const prefersReducedMotion = useReducedMotion();
     const fullscreen = useFullscreenDialog();
@@ -152,11 +150,10 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
     };
 
     const handleViewAppDetail = () => {
-        if (!finalAppId) {
+        if (!finalAppId || !onViewAppDetail) {
             return;
         }
-        onClose?.();
-        navigate(`/?openAppId=${encodeURIComponent(finalAppId)}`);
+        onViewAppDetail(finalAppId);
     };
 
     const formatDate = (dateString) => {
@@ -583,7 +580,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete })
                     sx={{
                         position: 'fixed',
                         inset: 0,
-                        zIndex: 1300,
+                        zIndex: 'var(--z-overlay)',
                     }}
                 >
                     <Box

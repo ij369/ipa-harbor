@@ -31,12 +31,13 @@ import {
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import LanguageSwitcher from '../components/LanguageSwitcher';
+import AdminChangePassword from '../components/AdminChangePassword';
 import Dialog from '../components/Dialog';
 import FilenameTemplateEditor from '../components/FilenameTemplateEditor';
 import { useJoyDown } from '../hooks/useJoyMedia';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import { useAdmin } from '../contexts/AdminContext';
-import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus, revokeAuth, resolveClientErrorMessage, adminChangePassword } from '../utils/api';
+import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus, revokeAuth, resolveClientErrorMessage } from '../utils/api';
 import {
     cloneTemplate,
     DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
@@ -149,10 +150,10 @@ function TablerDockerIcon({ sx }) {
     );
 }
 
-export default function Settings() {
+function Settings() {
     const { t, i18n } = useTranslation();
     const navigate = useNavigate();
-    const { user, isAuthenticated, loading, logout, settings, setSettings, settingsLoaded } = useApp();
+    const { user, isAuthenticated, loading, logout, settings, setSettings, settingsLoaded } = useAppSession();
     const {
         updateAppSettings,
         user: adminUser,
@@ -162,13 +163,6 @@ export default function Settings() {
     } = useAdmin();
     const [language, setLanguage] = useState(normalizeLanguageCode(i18n.language));
     const [logoutLoading, setLogoutLoading] = useState(false);
-    const [changePasswordLoading, setChangePasswordLoading] = useState(false);
-    const [changePasswordForm, setChangePasswordForm] = useState({
-        currentPassword: '',
-        newPassword: '',
-    });
-    const [changePasswordError, setChangePasswordError] = useState('');
-    const [changePasswordSuccess, setChangePasswordSuccess] = useState('');
     const [appleIdLogoutLoading, setAppleIdLogoutLoading] = useState(false);
     const [adminAccountExpanded, setAdminAccountExpanded] = useState(false);
     const [appleIdExpanded, setAppleIdExpanded] = useState(false);
@@ -369,41 +363,6 @@ export default function Settings() {
         }
     };
 
-    const handleChangePasswordInput = (e) => {
-        const { name, value } = e.target;
-        setChangePasswordForm(prev => ({
-            ...prev,
-            [name]: value,
-        }));
-    };
-
-    const handleChangePassword = async (e) => {
-        e.preventDefault();
-        setChangePasswordError('');
-        setChangePasswordSuccess('');
-
-        if (!changePasswordForm.currentPassword || !changePasswordForm.newPassword) {
-            setChangePasswordError(t('ui.changePasswordRequired'));
-            return;
-        }
-
-        if (changePasswordForm.newPassword.length < 6) {
-            setChangePasswordError(t('ui.passwordMinLength'));
-            return;
-        }
-
-        setChangePasswordLoading(true);
-        try {
-            await adminChangePassword(changePasswordForm);
-            setChangePasswordSuccess(t('ui.changePasswordSuccess'));
-            setChangePasswordForm({ currentPassword: '', newPassword: '' });
-        } catch (error) {
-            setChangePasswordError(resolveClientErrorMessage(error) || t('apiErrorMessages.ADMIN_CHANGE_PASSWORD_FAILED'));
-        } finally {
-            setChangePasswordLoading(false);
-        }
-    };
-
     const handleAppleIdLogout = async () => {
         const result = await Swal.fire({
             title: t('ui.confirmRevokeLogin'),
@@ -535,9 +494,11 @@ export default function Settings() {
                 overflow: 'hidden',
             }}
         >
-            <Box className="safe-area-scroll-bottom" sx={scrollSx}>
-                <Box component="header" sx={{ pt: 3, mb: 3, flexShrink: 0 }}>
-                    <Typography level="h2">{t('ui.settings')}</Typography>
+            <Box className="safe-area-scroll-bottom app-shell-page-scroll" sx={scrollSx}>
+                <Box component="header" sx={{ pt: 3, flexShrink: 0 }}>
+                    <Typography level="h2" className="app-shell-page-title" sx={{ mb: 3, flexShrink: 0 }}>
+                        {t('ui.settings')}
+                    </Typography>
                 </Box>
 
                 <Stack gap={3} sx={{ pb: 3 }}>
@@ -609,38 +570,42 @@ export default function Settings() {
                                                 transition: 'padding 0.25s ease',
                                             }}
                                         >
-                                            <Box sx={{ minWidth: 0 }}>
-                                                {adminUser && (
-                                                    <Stack direction="row" spacing={1} alignItems="center" sx={{ minWidth: 0 }}>
-                                                        <Avatar
-                                                            variant="soft"
-                                                            color="neutral"
-                                                            size="sm"
-                                                            sx={{
-                                                                flexShrink: 0,
-                                                                '--Avatar-size': '28px',
-                                                            }}
-                                                        >
-                                                            <AdminPanelSettingsIcon sx={{ fontSize: 18 }} />
-                                                        </Avatar>
-                                                        <Stack spacing={0} sx={{ minWidth: 0 }}>
-                                                            <Typography level="body-sm" fontWeight="md" noWrap sx={{ lineHeight: 1.4 }}>
-                                                                {adminUser.username}
+                                            {adminUser && (
+                                                <Stack
+                                                    direction="row"
+                                                    spacing={1}
+                                                    alignItems="center"
+                                                    sx={{ flex: 1, minWidth: 0 }}
+                                                >
+                                                    <Avatar
+                                                        variant="soft"
+                                                        color="neutral"
+                                                        size="sm"
+                                                        sx={{
+                                                            flexShrink: 0,
+                                                            '--Avatar-size': '28px',
+                                                        }}
+                                                    >
+                                                        <AdminPanelSettingsIcon sx={{ fontSize: 18 }} />
+                                                    </Avatar>
+                                                    <Stack spacing={0} sx={{ flex: 1, minWidth: 0 }}>
+                                                        <Typography level="body-sm" fontWeight="md" noWrap sx={{ lineHeight: 1.4 }}>
+                                                            {adminUser.username}
+                                                        </Typography>
+                                                        <Stack direction="row" alignItems="center" gap={0.5} sx={{ mt: 0.125 }}>
+                                                            <Typography level="body-xs" sx={{ color: 'text.tertiary', lineHeight: 1.3 }}>
+                                                                {t('ui.expiryTime')}: {getFormattedExpiresAt()}
                                                             </Typography>
-                                                            <Stack direction="row" alignItems="center" gap={0.5} sx={{ mt: 0.125 }}>
-                                                                <Typography level="body-xs" sx={{ color: 'text.tertiary', lineHeight: 1.3 }}>
-                                                                    {t('ui.expiryTime')}: {getFormattedExpiresAt()}
-                                                                </Typography>
-                                                                {isExpiringSoon() && (
-                                                                    <Chip color="warning" size="sm">
-                                                                        {t('ui.expiringSoon')}
-                                                                    </Chip>
-                                                                )}
-                                                            </Stack>
+                                                            {isExpiringSoon() && (
+                                                                <Chip color="warning" size="sm">
+                                                                    {t('ui.expiringSoon')}
+                                                                </Chip>
+                                                            )}
                                                         </Stack>
                                                     </Stack>
-                                                )}
-                                            </Box>
+                                                    <AdminChangePassword sx={{ flexShrink: 0, ml: 'auto' }} />
+                                                </Stack>
+                                            )}
                                             <Button
                                                 color="danger"
                                                 variant="outlined"
@@ -654,48 +619,6 @@ export default function Settings() {
                                                 {logoutLoading ? t('ui.loggingOut') : t('ui.logoutSystem')}
                                             </Button>
                                         </Stack>
-                                        <Box component="form" onSubmit={handleChangePassword} sx={{ mt: 1.5 }}>
-                                            <Typography level="body-sm" fontWeight="md" sx={{ mb: 1 }}>
-                                                {t('ui.changePassword')}
-                                            </Typography>
-                                            <Stack spacing={1.25}>
-                                                <FormControl>
-                                                    <FormLabel>{t('ui.currentPassword')}</FormLabel>
-                                                    <Input
-                                                        name="currentPassword"
-                                                        type="password"
-                                                        value={changePasswordForm.currentPassword}
-                                                        onChange={handleChangePasswordInput}
-                                                        placeholder={t('ui.currentPasswordPlaceholder')}
-                                                    />
-                                                </FormControl>
-                                                <FormControl>
-                                                    <FormLabel>{t('ui.newPassword')}</FormLabel>
-                                                    <Input
-                                                        name="newPassword"
-                                                        type="password"
-                                                        value={changePasswordForm.newPassword}
-                                                        onChange={handleChangePasswordInput}
-                                                        placeholder={t('ui.passwordInputPlaceholder')}
-                                                    />
-                                                </FormControl>
-                                                <Button
-                                                    type="submit"
-                                                    size="sm"
-                                                    loading={changePasswordLoading}
-                                                    disabled={changePasswordLoading}
-                                                    sx={{ alignSelf: { xs: 'stretch', sm: 'flex-start' } }}
-                                                >
-                                                    {t('ui.changePasswordSubmit')}
-                                                </Button>
-                                                {changePasswordError && (
-                                                    <Alert color="danger" size="sm">{changePasswordError}</Alert>
-                                                )}
-                                                {changePasswordSuccess && (
-                                                    <Alert color="success" size="sm">{changePasswordSuccess}</Alert>
-                                                )}
-                                            </Stack>
-                                        </Box>
                                     </AccordionDetails>
                                 </Accordion>
 
@@ -1054,3 +977,5 @@ export default function Settings() {
         </Box>
     );
 }
+
+export default React.memo(Settings);

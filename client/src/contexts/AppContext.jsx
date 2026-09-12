@@ -1,9 +1,17 @@
-import React, { createContext, useContext, useReducer, useEffect, useRef } from 'react';
+import React, {
+    createContext,
+    useCallback,
+    useContext,
+    useEffect,
+    useMemo,
+    useReducer,
+    useRef,
+} from 'react';
 import { getUserInfo } from '../utils/api';
 import { useAdmin } from './AdminContext';
 import { DEFAULT_DOWNLOAD_FILENAME_TEMPLATE, normalizeTemplate } from '../utils/filenameTemplate';
 
-const initialState = {
+const sessionInitialState = {
     user: null,
     isAuthenticated: false,
     loading: true,
@@ -13,105 +21,89 @@ const initialState = {
         showVersionMetadataRefresh: false,
     },
     settingsLoaded: false,
-    // Ws 相关状态
+};
+
+const downloadInitialState = {
     wsConnected: false,
     wsReconnecting: false,
-    // 任务相关状态
     taskList: {
         running: [],
         pending: [],
         completed: [],
         failed: [],
         cancelled: [],
-        summary: {}
+        summary: {},
     },
     fileList: {
         files: [],
         total: 0,
-        totalSize: 0
+        totalSize: 0,
     },
     taskListSynced: false,
     fileListSynced: false,
     downloadDataReady: false,
 };
 
-const ActionTypes = {
+const SessionActionTypes = {
     SET_LOADING: 'SET_LOADING',
     SET_USER: 'SET_USER',
     CLEAR_USER: 'CLEAR_USER',
     SET_ERROR: 'SET_ERROR',
-    // WS相关
+    SET_SETTINGS: 'SET_SETTINGS',
+};
+
+const DownloadActionTypes = {
     SET_WS_CONNECTED: 'SET_WS_CONNECTED',
     SET_WS_RECONNECTING: 'SET_WS_RECONNECTING',
-    // 任务相关
     SET_TASK_LIST: 'SET_TASK_LIST',
     SET_FILE_LIST: 'SET_FILE_LIST',
-    SET_SETTINGS: 'SET_SETTINGS',
     RESET_DOWNLOAD_DATA_SYNC: 'RESET_DOWNLOAD_DATA_SYNC',
 };
 
-function appReducer(state, action) {
+function isSamePayload(left, right) {
+    if (left === right) {
+        return true;
+    }
+    try {
+        return JSON.stringify(left) === JSON.stringify(right);
+    } catch {
+        return false;
+    }
+}
+
+function sessionReducer(state, action) {
     switch (action.type) {
-        case ActionTypes.SET_LOADING:
+        case SessionActionTypes.SET_LOADING:
+            if (state.loading === action.payload) {
+                return state;
+            }
             return {
                 ...state,
-                loading: action.payload
+                loading: action.payload,
             };
-        case ActionTypes.SET_USER:
+        case SessionActionTypes.SET_USER:
             return {
                 ...state,
                 user: action.payload,
                 isAuthenticated: true,
                 loading: false,
-                error: null
+                error: null,
             };
-        case ActionTypes.CLEAR_USER:
+        case SessionActionTypes.CLEAR_USER:
             return {
                 ...state,
                 user: null,
                 isAuthenticated: false,
                 loading: false,
-                error: null
+                error: null,
             };
-        case ActionTypes.SET_ERROR:
+        case SessionActionTypes.SET_ERROR:
             return {
                 ...state,
                 error: action.payload,
-                loading: false
+                loading: false,
             };
-        case ActionTypes.SET_WS_CONNECTED:
-            return {
-                ...state,
-                wsConnected: action.payload,
-                wsReconnecting: false
-            };
-        case ActionTypes.SET_WS_RECONNECTING:
-            return {
-                ...state,
-                wsReconnecting: action.payload
-            };
-        case ActionTypes.SET_TASK_LIST:
-            return {
-                ...state,
-                taskList: action.payload,
-                taskListSynced: true,
-                downloadDataReady: state.fileListSynced,
-            };
-        case ActionTypes.SET_FILE_LIST:
-            return {
-                ...state,
-                fileList: action.payload,
-                fileListSynced: true,
-                downloadDataReady: state.taskListSynced,
-            };
-        case ActionTypes.RESET_DOWNLOAD_DATA_SYNC:
-            return {
-                ...state,
-                taskListSynced: false,
-                fileListSynced: false,
-                downloadDataReady: false,
-            };
-        case ActionTypes.SET_SETTINGS:
+        case SessionActionTypes.SET_SETTINGS:
             return {
                 ...state,
                 settings: {
@@ -128,14 +120,80 @@ function appReducer(state, action) {
     }
 }
 
-const AppContext = createContext();
+function downloadReducer(state, action) {
+    switch (action.type) {
+        case DownloadActionTypes.SET_WS_CONNECTED:
+            if (state.wsConnected === action.payload && !state.wsReconnecting) {
+                return state;
+            }
+            return {
+                ...state,
+                wsConnected: action.payload,
+                wsReconnecting: false,
+            };
+        case DownloadActionTypes.SET_WS_RECONNECTING:
+            if (state.wsReconnecting === action.payload) {
+                return state;
+            }
+            return {
+                ...state,
+                wsReconnecting: action.payload,
+            };
+        case DownloadActionTypes.SET_TASK_LIST:
+            if (isSamePayload(state.taskList, action.payload)) {
+                // 刷新后 WS 重推的空列表与初始值相同，仍需标记已同步
+                if (state.taskListSynced) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    taskListSynced: true,
+                    downloadDataReady: state.fileListSynced,
+                };
+            }
+            return {
+                ...state,
+                taskList: action.payload,
+                taskListSynced: true,
+                downloadDataReady: state.fileListSynced,
+            };
+        case DownloadActionTypes.SET_FILE_LIST:
+            if (isSamePayload(state.fileList, action.payload)) {
+                if (state.fileListSynced) {
+                    return state;
+                }
+                return {
+                    ...state,
+                    fileListSynced: true,
+                    downloadDataReady: state.taskListSynced,
+                };
+            }
+            return {
+                ...state,
+                fileList: action.payload,
+                fileListSynced: true,
+                downloadDataReady: state.taskListSynced,
+            };
+        case DownloadActionTypes.RESET_DOWNLOAD_DATA_SYNC:
+            if (!state.taskListSynced && !state.fileListSynced && !state.downloadDataReady) {
+                return state;
+            }
+            return {
+                ...state,
+                taskListSynced: false,
+                fileListSynced: false,
+                downloadDataReady: false,
+            };
+        default:
+            return state;
+    }
+}
 
-export function AppProvider({ children }) {
-    const [state, dispatch] = useReducer(appReducer, initialState);
-    const wsRef = useRef(null);
-    const reconnectTimeoutRef = useRef(null);
-    const pingIntervalRef = useRef(null);
-    const adminLoggedInRef = useRef(false);
+const AppSessionContext = createContext(null);
+const AppDownloadContext = createContext(null);
+
+function AppSessionProvider({ children }) {
+    const [sessionState, sessionDispatch] = useReducer(sessionReducer, sessionInitialState);
     const {
         isLoggedIn: adminLoggedIn,
         loading: adminLoading,
@@ -143,54 +201,135 @@ export function AppProvider({ children }) {
         settingsLoaded: adminSettingsLoaded,
     } = useAdmin();
 
-    // 更新管理员登录状态的ref
-    adminLoggedInRef.current = adminLoggedIn;
-
-    // 检查用户认证状态
-    const checkAuthStatus = async () => {
+    const checkAuthStatus = useCallback(async () => {
         try {
-            dispatch({ type: ActionTypes.SET_LOADING, payload: true });
+            sessionDispatch({ type: SessionActionTypes.SET_LOADING, payload: true });
             const response = await getUserInfo();
 
             if (response.success && response.data) {
-                dispatch({ type: ActionTypes.SET_USER, payload: response.data });
+                sessionDispatch({ type: SessionActionTypes.SET_USER, payload: response.data });
             } else {
-                dispatch({ type: ActionTypes.CLEAR_USER });
+                sessionDispatch({ type: SessionActionTypes.CLEAR_USER });
             }
-        } catch (error) {
-            // 静默处理认证失败，不显示错误提示
-            dispatch({ type: ActionTypes.CLEAR_USER });
+        } catch {
+            sessionDispatch({ type: SessionActionTypes.CLEAR_USER });
         }
-    };
+    }, []);
 
-    // 登出
-    const logout = () => {
-        dispatch({ type: ActionTypes.CLEAR_USER });
-    };
+    const logout = useCallback(() => {
+        sessionDispatch({ type: SessionActionTypes.CLEAR_USER });
+    }, []);
 
-    const setUser = (userData) => {
-        dispatch({ type: ActionTypes.SET_USER, payload: userData });
-    };
+    const setUser = useCallback((userData) => {
+        sessionDispatch({ type: SessionActionTypes.SET_USER, payload: userData });
+    }, []);
 
-    const refreshUser = () => {
+    const refreshUser = useCallback(() => {
         checkAuthStatus();
-    };
+    }, [checkAuthStatus]);
 
-    const setSettings = (nextSettings) => {
-        dispatch({ type: ActionTypes.SET_SETTINGS, payload: nextSettings });
-    };
+    const setSettings = useCallback((nextSettings) => {
+        sessionDispatch({ type: SessionActionTypes.SET_SETTINGS, payload: nextSettings });
+    }, []);
 
-    // Ws 连接函数
-    const connectWebSocket = () => {
+    useEffect(() => {
+        if (!adminSettingsLoaded) {
+            return;
+        }
+
+        if (adminSettings) {
+            sessionDispatch({ type: SessionActionTypes.SET_SETTINGS, payload: adminSettings });
+        } else {
+            sessionDispatch({ type: SessionActionTypes.SET_SETTINGS, payload: {} });
+        }
+    }, [adminSettings, adminSettingsLoaded]);
+
+    useEffect(() => {
+        if (!adminLoading && adminLoggedIn) {
+            checkAuthStatus();
+        }
+    }, [adminLoggedIn, adminLoading, checkAuthStatus]);
+
+    useEffect(() => {
+        if (!adminLoading && !adminLoggedIn) {
+            sessionDispatch({ type: SessionActionTypes.CLEAR_USER });
+        }
+    }, [adminLoggedIn, adminLoading]);
+
+    const sessionValue = useMemo(() => ({
+        ...sessionState,
+        logout,
+        setUser,
+        refreshUser,
+        checkAuthStatus,
+        setSettings,
+    }), [sessionState, logout, setUser, refreshUser, checkAuthStatus, setSettings]);
+
+    return (
+        <AppSessionContext.Provider value={sessionValue}>
+            {children}
+        </AppSessionContext.Provider>
+    );
+}
+
+export function AppDownloadProvider({ children }) {
+    const [downloadState, downloadDispatch] = useReducer(downloadReducer, downloadInitialState);
+    const wsRef = useRef(null);
+    const reconnectTimeoutRef = useRef(null);
+    const pingIntervalRef = useRef(null);
+    const adminLoggedInRef = useRef(false);
+    const {
+        isLoggedIn: adminLoggedIn,
+        loading: adminLoading,
+    } = useAdmin();
+
+    adminLoggedInRef.current = adminLoggedIn;
+
+    const stopPing = useCallback(() => {
+        if (pingIntervalRef.current) {
+            clearInterval(pingIntervalRef.current);
+            pingIntervalRef.current = null;
+        }
+    }, []);
+
+    const disconnectWebSocket = useCallback(() => {
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
+        if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+            reconnectTimeoutRef.current = null;
+        }
+
+        stopPing();
+        downloadDispatch({ type: DownloadActionTypes.SET_WS_CONNECTED, payload: false });
+        downloadDispatch({ type: DownloadActionTypes.SET_WS_RECONNECTING, payload: false });
+        downloadDispatch({ type: DownloadActionTypes.RESET_DOWNLOAD_DATA_SYNC });
+    }, [stopPing]);
+
+    const startPing = useCallback(() => {
+        stopPing();
+
+        pingIntervalRef.current = setInterval(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: 'ping' }));
+            }
+        }, 30000);
+    }, [stopPing]);
+
+    const connectWebSocket = useCallback(() => {
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             return;
         }
+
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const HOST = window.location.hostname;
         const PORT =
-            import.meta.env.MODE === 'production' ?
-                window.location.port :
-                import.meta.env.VITE_WEBSOCKET_PORT;
+            import.meta.env.MODE === 'production'
+                ? window.location.port
+                : import.meta.env.VITE_WEBSOCKET_PORT;
         const wsUrl = `${wsProtocol}//${HOST}:${PORT}/download-task`;
         console.log('连接WebSocket:', wsUrl);
 
@@ -199,7 +338,7 @@ export function AppProvider({ children }) {
 
             wsRef.current.onopen = () => {
                 console.log('WebSocket连接成功');
-                dispatch({ type: ActionTypes.SET_WS_CONNECTED, payload: true });
+                downloadDispatch({ type: DownloadActionTypes.SET_WS_CONNECTED, payload: true });
 
                 if (reconnectTimeoutRef.current) {
                     clearTimeout(reconnectTimeoutRef.current);
@@ -214,29 +353,29 @@ export function AppProvider({ children }) {
                     const message = JSON.parse(event.data);
 
                     switch (message.type) {
-                        case 'task-list':
+                        case 'task-list': {
                             const taskData = message.data;
                             if (taskData.success) {
-                                // console.log('任务列表:', taskData.data);
-                                dispatch({ type: ActionTypes.SET_TASK_LIST, payload: taskData.data });
+                                downloadDispatch({
+                                    type: DownloadActionTypes.SET_TASK_LIST,
+                                    payload: taskData.data,
+                                });
                             }
                             break;
+                        }
 
-                        case 'watch':
+                        case 'watch': {
                             const fileData = message.data;
                             if (fileData.success) {
-                                dispatch({ type: ActionTypes.SET_FILE_LIST, payload: fileData.data });
+                                downloadDispatch({
+                                    type: DownloadActionTypes.SET_FILE_LIST,
+                                    payload: fileData.data,
+                                });
                             }
                             break;
-
-                        case 'task-completed':
-                            const completedData = JSON.parse(message.data);
-                            // console.log('任务完成:', completedData);
-                            // 任务完成后会通过task-list更新状态
-                            break;
+                        }
 
                         case 'pong':
-                            // 不需要处理
                             break;
 
                         case 'system':
@@ -253,21 +392,19 @@ export function AppProvider({ children }) {
 
             wsRef.current.onclose = () => {
                 console.log('WebSocket连接关闭');
-                dispatch({ type: ActionTypes.SET_WS_CONNECTED, payload: false });
-                dispatch({ type: ActionTypes.RESET_DOWNLOAD_DATA_SYNC });
+                downloadDispatch({ type: DownloadActionTypes.SET_WS_CONNECTED, payload: false });
+                downloadDispatch({ type: DownloadActionTypes.RESET_DOWNLOAD_DATA_SYNC });
                 stopPing();
 
-                // 只有在管理员仍然登录时才尝试重连
                 if (!reconnectTimeoutRef.current && adminLoggedInRef.current) {
-                    dispatch({ type: ActionTypes.SET_WS_RECONNECTING, payload: true });
+                    downloadDispatch({ type: DownloadActionTypes.SET_WS_RECONNECTING, payload: true });
                     reconnectTimeoutRef.current = setTimeout(() => {
-                        // 重连前再次检查管理员登录状态
                         if (adminLoggedInRef.current) {
                             console.log('尝试重连WebSocket...');
                             connectWebSocket();
                         } else {
                             console.log('管理员已退出登录，取消WebSocket重连');
-                            dispatch({ type: ActionTypes.SET_WS_RECONNECTING, payload: false });
+                            downloadDispatch({ type: DownloadActionTypes.SET_WS_RECONNECTING, payload: false });
                         }
                     }, 5000);
                 }
@@ -276,104 +413,68 @@ export function AppProvider({ children }) {
             wsRef.current.onerror = (error) => {
                 console.error('WebSocket错误:', error);
             };
-
         } catch (error) {
             console.error('创建WebSocket连接失败:', error);
         }
-    };
-
-    // 断开WebSocket连接
-    const disconnectWebSocket = () => {
-        if (wsRef.current) {
-            wsRef.current.close();
-            wsRef.current = null;
-        }
-
-        if (reconnectTimeoutRef.current) {
-            clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = null;
-        }
-
-        stopPing();
-        dispatch({ type: ActionTypes.SET_WS_CONNECTED, payload: false });
-        dispatch({ type: ActionTypes.SET_WS_RECONNECTING, payload: false });
-        dispatch({ type: ActionTypes.RESET_DOWNLOAD_DATA_SYNC });
-    };
-
-    const startPing = () => {
-        stopPing();
-
-        pingIntervalRef.current = setInterval(() => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({ type: 'ping' }));
-            }
-        }, 30000);
-    };
-
-    const stopPing = () => {
-        if (pingIntervalRef.current) {
-            clearInterval(pingIntervalRef.current);
-            pingIntervalRef.current = null;
-        }
-    };
-
-    // 复用 AdminContext 已拉取的 settings，避免重复请求 /v1/admin/status
-    useEffect(() => {
-        if (!adminSettingsLoaded) {
-            return;
-        }
-
-        if (adminSettings) {
-            dispatch({ type: ActionTypes.SET_SETTINGS, payload: adminSettings });
-        } else {
-            dispatch({ type: ActionTypes.SET_SETTINGS, payload: {} });
-        }
-    }, [adminSettings, adminSettingsLoaded]);
+    }, [startPing, stopPing]);
 
     useEffect(() => {
-        // 只有在管理员已登录且不在加载状态时才执行
-        if (!adminLoading && adminLoggedIn) {
-            checkAuthStatus();
+        if (adminLoading) {
+            return undefined;
+        }
+
+        if (adminLoggedIn) {
             connectWebSocket();
+            return () => {
+                disconnectWebSocket();
+            };
         }
 
-        return () => {
-            disconnectWebSocket();
-        };
-    }, [adminLoggedIn, adminLoading]);
+        disconnectWebSocket();
+        return undefined;
+    }, [adminLoggedIn, adminLoading, connectWebSocket, disconnectWebSocket]);
 
-    // 当管理员登出时，清理用户状态和Ws连接
-    useEffect(() => {
-        if (!adminLoading && !adminLoggedIn) {
-            // 清理用户的状态
-            dispatch({ type: ActionTypes.CLEAR_USER });
-            // 断开连接
-            disconnectWebSocket();
-        }
-    }, [adminLoggedIn, adminLoading]);
-
-    const value = {
-        ...state,
-        logout,
-        setUser,
-        refreshUser,
-        checkAuthStatus,
-        setSettings,
+    const downloadValue = useMemo(() => ({
+        ...downloadState,
         connectWebSocket,
-        disconnectWebSocket
-    };
+        disconnectWebSocket,
+    }), [downloadState, connectWebSocket, disconnectWebSocket]);
 
     return (
-        <AppContext.Provider value={value}>
+        <AppDownloadContext.Provider value={downloadValue}>
             {children}
-        </AppContext.Provider>
+        </AppDownloadContext.Provider>
     );
 }
 
-export function useApp() {
-    const context = useContext(AppContext);
+// 仅提供 session 层；WS / 下载数据由 AppDownloadProvider 按需包裹主应用 shell
+export function AppProvider({ children }) {
+    return (
+        <AppSessionProvider>
+            {children}
+        </AppSessionProvider>
+    );
+}
+
+export function useAppSession() {
+    const context = useContext(AppSessionContext);
     if (!context) {
-        throw new Error('useApp必须在AppProvider内部使用');
+        throw new Error('useAppSession 必须在 AppProvider 内部使用');
     }
     return context;
+}
+
+export function useAppDownload() {
+    const context = useContext(AppDownloadContext);
+    if (!context) {
+        throw new Error('useAppDownload 必须在 AppDownloadProvider 内部使用');
+    }
+    return context;
+}
+
+export function useApp() {
+    return {
+        ...useAppSession(),
+        ...useAppDownload(),
+    };
 }

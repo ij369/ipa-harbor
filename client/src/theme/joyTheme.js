@@ -12,6 +12,11 @@ function getCheckedTrackHoverColor(theme, color) {
 }
 
 export const joyTheme = extendTheme({
+    zIndex: {
+        tooltip: 1350,
+        popup: 1380,
+        modal: 1400,
+    },
     components: {
         JoySwitch: {
             styleOverrides: {

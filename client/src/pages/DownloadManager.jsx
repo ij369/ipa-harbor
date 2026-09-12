@@ -5,9 +5,10 @@ import { Box, Typography, Chip, Stack, CircularProgress, Sheet, Badge, IconButto
 import { VirtuosoGrid } from 'react-virtuoso';
 import { useSearchParams } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession, useAppDownload } from '../contexts/AppContext';
 import IpaIcon from '../components/IpaIcon';
 import IpaDetailDrawer from '../components/IpaDetailDrawer';
+import { useAppDetailDialog } from '../hooks/useAppDetailDialog';
 import {
     Check,
     Schedule,
@@ -159,7 +160,8 @@ export default function DownloadManager() {
         () => buildGridLayoutFromIconSize(gridIconSize),
         [gridIconSize],
     );
-    const { taskList, fileList, downloadDataReady, user } = useApp();
+    const { user } = useAppSession();
+    const { taskList, fileList, downloadDataReady } = useAppDownload();
     const iconRegion = user?.region;
     const [searchParams, setSearchParams] = useSearchParams();
     const detailParam = searchParams.get(DETAIL_QUERY_KEY);
@@ -169,6 +171,7 @@ export default function DownloadManager() {
     const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
     const [selectedDetailItem, setSelectedDetailItem] = useState(null);
     const detailRestoreAttemptedRef = useRef(null);
+    const { openByAppId: openAppDetailById, dialog: appDetailDialog } = useAppDetailDialog({ syncQuery: true });
 
     const clearDetailParam = useCallback(() => {
         setSearchParams((prev) => {
@@ -189,6 +192,11 @@ export default function DownloadManager() {
     const handleDetailExitComplete = useCallback(() => {
         setSelectedDetailItem(null);
     }, []);
+
+    const handleViewAppDetail = useCallback(async (appId) => {
+        closeDetailDrawer();
+        await openAppDetailById(appId, { suppressQueryWrite: true });
+    }, [closeDetailDrawer, openAppDetailById]);
 
     const openDetailDrawer = useCallback((item) => {
         setSelectedDetailItem(item);
@@ -440,52 +448,50 @@ export default function DownloadManager() {
             minHeight: 0,
             overflow: 'hidden',
             py: 3,
-        }}>
+        }} className="app-shell-page-content">
             <Stack
-                onClick={() => { setSelectedFilter('all'); }}
                 direction="row"
                 gap={2}
-                sx={{ mb: 3, flexWrap: 'wrap', cursor: 'pointer', alignItems: 'center', flexShrink: 0 }}
+                sx={{ flexWrap: 'wrap', alignItems: 'center', flexShrink: 0 }}
                 justifyContent="space-between"
             >
-                <Stack direction="row" gap={2} sx={{ alignItems: 'center' }}>
-                    <Typography level="h2">
-                        {t('ui.downloadManagerTitle')}
-                    </Typography>
-                    {allItems.length}
-                </Stack>
-                {!isCompact && (
-                    <NewDownloadButton onClick={openNewDownload} />
-                )}
+                <Typography
+                    level="h2"
+                    className="app-shell-page-title"
+                    sx={{ mb: 3, flexShrink: 0, cursor: 'pointer' }}
+                    onClick={() => { setSelectedFilter('all'); }}
+                >
+                    {t('ui.downloadManagerTitle')}
+                </Typography>
+                <NewDownloadButton compact={isCompact} onClick={openNewDownload} />
             </Stack>
 
-            <Suspense fallback={<CircularProgress />}>
+            <Suspense fallback={null}>
                 <NewDownloadDialog
                     isOpen={newDownloadDialogOpen}
                     onClose={() => setNewDownloadDialogOpen(false)}
                 />
             </Suspense>
 
-            {isCompact ? (
-                <Stack
-                    direction="row"
-                    justifyContent="space-between"
-                    alignItems="center"
-                    gap={1}
-                    sx={{ mb: 3, flexShrink: 0 }}
-                >
-                    <Stack direction="row" gap={1} flexWrap="wrap" sx={{ flex: 1, minWidth: 0 }}>
-                        {filterChips}
-                    </Stack>
-                    <NewDownloadButton compact onClick={openNewDownload} />
-                </Stack>
-            ) : (
-                <Stack direction="row" gap={2} sx={{ mb: 3, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}>
-                    {filterChips}
-                </Stack>
-            )}
+            <Stack
+                direction="row"
+                gap={isCompact ? 1 : 2}
+                sx={{ mb: 2, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}
+            >
+                {filterChips}
+            </Stack>
 
-            {filteredItems.length > 0 ? (
+            {!downloadDataReady ? (
+                <Box sx={{
+                    flex: 1,
+                    minHeight: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}>
+                    <CircularProgress />
+                </Box>
+            ) : filteredItems.length > 0 ? (
                 <Sheet
                     variant="outlined"
                     sx={{
@@ -537,7 +543,10 @@ export default function DownloadManager() {
                 open={detailDrawerOpen}
                 onClose={closeDetailDrawer}
                 onExitComplete={handleDetailExitComplete}
+                onViewAppDetail={handleViewAppDetail}
             />
+
+            {appDetailDialog}
 
             {fileList.totalSize > 0 && (
                 <Box

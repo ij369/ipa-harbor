@@ -7,14 +7,16 @@ import {
     Stack,
     CircularProgress,
     Avatar,
-    Button
+    Button,
+    Skeleton,
+    Table,
 } from '@mui/joy';
 import { Refresh } from '@mui/icons-material';
 import { TableVirtuoso } from 'react-virtuoso';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import Swal from 'sweetalert2';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import {
     wideColSx,
     COL_WIDTH,
@@ -25,28 +27,77 @@ import {
     monoFontSx,
     monoCellStyle,
 } from '../styles/tableColumns';
-import { listPurchases, getAppDetails, getAppIconUrl, isRateLimitError, resolveApiMessage, resolveClientErrorMessage } from '../utils/api';
-import Dialog from '../components/Dialog';
-import AppDetail, { toAppDetailPreview } from '../components/AppDetail';
+import { listPurchases, getAppIconUrl, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
+import { useAppDetailDialog } from '../hooks/useAppDetailDialog';
 
 const PAGE_SIZE = 50;
+const SKELETON_ROW_COUNT = 10;
 
-export default function Purchases() {
+const purchasesTableSx = {
+    '& thead th:first-of-type, & tbody td:first-of-type': {
+        pl: 1.5,
+    },
+};
+
+function PurchasesTableSkeleton() {
+    const { t } = useTranslation();
+
+    return (
+        <Sheet variant="outlined" sx={{ flex: 1, minHeight: 0, borderRadius: 'md', overflow: 'auto' }}>
+            <Table stickyHeader component="table" sx={purchasesTableSx}>
+                <thead>
+                    <tr>
+                        <th style={{ minWidth: COL_WIDTH.nameMin }}>
+                            {t('ui.appName_label')}
+                        </th>
+                        <th style={{ ...headerColStyle(COL_WIDTH.appId), ...monoCellStyle }}>
+                            {t('ui.appId')}
+                        </th>
+                        <Box component="th" sx={{ ...wideColSx, ...monoFontSx }}>
+                            {t('ui.bundleId')}
+                        </Box>
+                        <Box component="th" sx={{ ...headerColStyle(COL_WIDTH.version), ...wideColSx, ...monoFontSx }}>
+                            {t('ui.appVersion')}
+                        </Box>
+                    </tr>
+                </thead>
+                <tbody>
+                    {Array.from({ length: SKELETON_ROW_COUNT }, (_, index) => (
+                        <tr key={index}>
+                            <td>
+                                <Stack direction="row" spacing={2} alignItems="center">
+                                    <Skeleton variant="rectangular" sx={appIconSx} />
+                                    <Skeleton variant="text" level="body-md" sx={{ flex: 1, maxWidth: 160 }} />
+                                </Stack>
+                            </td>
+                            <td>
+                                <Skeleton variant="text" level="body-sm" sx={{ width: 72, ...monoFontSx }} />
+                            </td>
+                            <Box component="td" sx={{ ...wideColSx, ...monoFontSx }}>
+                                <Skeleton variant="text" level="body-sm" sx={{ width: '80%', maxWidth: 220 }} />
+                            </Box>
+                            <Box component="td" sx={wideColSx}>
+                                <Skeleton variant="rectangular" height={24} sx={{ width: 56, borderRadius: 'sm' }} />
+                            </Box>
+                        </tr>
+                    ))}
+                </tbody>
+            </Table>
+        </Sheet>
+    );
+}
+
+function Purchases() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { isAuthenticated, user } = useApp();
+    const { isAuthenticated, user } = useAppSession();
+    const appDetail = useAppDetailDialog({ syncQuery: true });
     const [apps, setApps] = useState([]);
     const [totalCount, setTotalCount] = useState(0);
     const [page, setPage] = useState(1);
     const [loading, setLoading] = useState(false);
     const [loadingMore, setLoadingMore] = useState(false);
     const [initialLoaded, setInitialLoaded] = useState(false);
-
-    const [showDetailDialog, setShowDetailDialog] = useState(false);
-    const [appDetails, setAppDetails] = useState([]);
-    const [currentDetailIndex, setCurrentDetailIndex] = useState(0);
-    const [detailLoading, setDetailLoading] = useState(false);
-    const [detailPreview, setDetailPreview] = useState(null);
 
     const loadingRef = useRef(false);
 
@@ -105,37 +156,7 @@ export default function Purchases() {
     }, [fetchPage, hasMore, page]);
 
     const handleRowClick = async (clickedApp) => {
-        setDetailPreview(toAppDetailPreview(clickedApp));
-        setDetailLoading(true);
-        setShowDetailDialog(true);
-
-        try {
-            const response = await getAppDetails([clickedApp.id]);
-
-            if (response.success && response.data) {
-                setAppDetails(response.data);
-                setCurrentDetailIndex(0);
-            } else {
-                const detailsError = new Error(resolveApiMessage(response) || t('ui.getDetailsFailed'));
-                detailsError.errorMessageCode = response.errorMessageCode;
-                detailsError.errorCode = response.errorCode;
-                detailsError.backendMessage = response.message;
-                detailsError.backendError = response.error;
-                throw detailsError;
-            }
-        } catch (error) {
-            if (isRateLimitError(error)) return;
-            console.error('获取应用详情失败:', error.message);
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.getDetailsFailed'),
-                text: resolveClientErrorMessage(error),
-                confirmButtonText: t('ui.confirm')
-            });
-            setShowDetailDialog(false);
-        } finally {
-            setDetailLoading(false);
-        }
+        await appDetail.openByListApp(clickedApp, [clickedApp.id]);
     };
 
     const handleRefresh = () => {
@@ -150,15 +171,6 @@ export default function Purchases() {
             onClick: () => handleRowClick(app),
         };
     }), [apps]);
-
-    const handleCloseDetail = () => {
-        setShowDetailDialog(false);
-        setAppDetails([]);
-        setCurrentDetailIndex(0);
-        setDetailPreview(null);
-    };
-
-    const detailApp = appDetails[currentDetailIndex] ?? detailPreview;
 
     if (!isAuthenticated) {
         return (
@@ -180,9 +192,9 @@ export default function Purchases() {
             minHeight: 0,
             overflow: 'hidden',
             py: 3,
-        }}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3, flexShrink: 0 }}>
-                <Typography level="h2">
+        }} className="app-shell-page-content">
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ flexShrink: 0 }}>
+                <Typography level="h2" className="app-shell-page-title" sx={{ mb: 3, flexShrink: 0 }}>
                     {t('ui.purchasedAppsTitle')}
                 </Typography>
                 {totalCount > 0 && (
@@ -192,10 +204,8 @@ export default function Purchases() {
                 )}
             </Stack>
 
-            {loading && !initialLoaded ? (
-                <Box sx={{ display: 'flex', justifyContent: 'center', py: 8 }}>
-                    <CircularProgress />
-                </Box>
+            {loading && !loadingMore ? (
+                <PurchasesTableSkeleton />
             ) : apps.length > 0 ? (
                 <Sheet variant="outlined" sx={{ flex: 1, minHeight: 0, borderRadius: 'md', overflow: 'hidden', position: 'relative' }}>
                     <Box sx={{ position: 'absolute', inset: 0 }}>
@@ -272,25 +282,17 @@ export default function Purchases() {
                     <Button
                         variant="soft"
                         onClick={handleRefresh}
-                        loading={loading}
-                        startDecorator={!loading && <Refresh />}
+                        disabled={loading}
+                        startDecorator={<Refresh />}
                     >
                         {t('ui.refresh')}
                     </Button>
                 </Box>
             ) : null}
 
-            <Dialog
-                isOpen={showDetailDialog}
-                onClose={handleCloseDetail}
-                title={`${detailApp?.trackId ? `ID: ${detailApp.trackId}` : ''}${detailApp?.trackName ? ` - ${detailApp.trackName}` : ''}`}
-                size="large"
-            >
-                <AppDetail
-                    app={detailApp}
-                    loading={detailLoading}
-                />
-            </Dialog>
+            {appDetail.dialog}
         </Box>
     );
 }
+
+export default React.memo(Purchases);

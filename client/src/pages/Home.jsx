@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
     Box,
     Stack,
@@ -13,14 +13,14 @@ import {
 } from '@mui/joy';
 import { TableVirtuoso } from 'react-virtuoso';
 import { Search, Download, Public } from '@mui/icons-material';
-import { searchApps, getAppDetails, getAppIconUrl, isRateLimitError, resolveApiMessage, resolveClientErrorMessage } from '../utils/api';
-import Dialog from '../components/Dialog';
-import AppDetail, { toAppDetailPreview, toAppDetailPreviewFromId } from '../components/AppDetail';
+import { searchApps, getAppIconUrl, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import RegionSelector from '../components/RegionSelector';
 import Swal from 'sweetalert2';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
+import { useAppDetailDialog } from '../hooks/useAppDetailDialog';
+import { useJoyUp } from '../hooks/useJoyMedia';
 import {
     wideColSx,
     COL_WIDTH,
@@ -32,20 +32,15 @@ import {
     monoCellStyle,
 } from '../styles/tableColumns';
 
-export default function Home() {
+function Home() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const [searchParams, setSearchParams] = useSearchParams();
-    const { user, setUser } = useApp();
-    const openAppIdHandledRef = useRef(null);
+    const { user, setUser } = useAppSession();
+    const appDetail = useAppDetailDialog({ syncQuery: true });
+    const aboveSm = useJoyUp('sm');
     const [keyword, setKeyword] = useState('');
     const [loading, setLoading] = useState(false);
     const [searchResults, setSearchResults] = useState(null);
-    const [showDetailDialog, setShowDetailDialog] = useState(false);
-    const [appDetails, setAppDetails] = useState([]);
-    const [currentDetailIndex, setCurrentDetailIndex] = useState(0);
-    const [detailLoading, setDetailLoading] = useState(false);
-    const [detailPreview, setDetailPreview] = useState(null);
     const [regionDialogOpen, setRegionDialogOpen] = useState(false);
 
     /**
@@ -80,27 +75,10 @@ export default function Home() {
                 const appId = extractAppId(keyword);
 
                 if (appId) {
-                    // 直接打开详情页
-                    setDetailPreview(toAppDetailPreviewFromId(appId));
-                    setDetailLoading(true);
-                    setShowDetailDialog(true);
-
-                    const response = await getAppDetails([appId]);
-
-                    if (response.success && response.data && response.data.length > 0) {
-                        setAppDetails(response.data);
-                        setCurrentDetailIndex(0);
-                        setSearchResults(null);
-                    } else {
-                        Swal.fire({
-                            icon: 'error',
-                            title: t('ui.getDetailsFailed'),
-                            text: resolveApiMessage(response) || t('ui.getDetailsFailed'),
-                            confirmButtonText: t('ui.confirm')
-                        });
-                        setShowDetailDialog(false);
-                    }
-                    setDetailLoading(false);
+                    await appDetail.openByAppId(appId, {
+                        onSuccess: () => setSearchResults(null),
+                    });
+                    setLoading(false);
                     return;
                 }
             }
@@ -123,16 +101,17 @@ export default function Home() {
                     navigate('/apple-id');
                 }
             });
-            setShowDetailDialog(false);
         } finally {
             setLoading(false);
         }
     };
 
-    const handleKeyPress = (e) => {
-        if (e.key === 'Enter') {
-            handleSearch();
+    const handleSearchKeyDown = (e) => {
+        if (e.key !== 'Enter') {
+            return;
         }
+        e.preventDefault();
+        handleSearch();
     };
 
     const formatPrice = (price) => {
@@ -142,116 +121,9 @@ export default function Home() {
     const handleRowClick = async (clickedApp) => {
         if (!searchResults?.data?.apps) return;
 
-        setDetailPreview(toAppDetailPreview(clickedApp));
-        setDetailLoading(true);
-        setShowDetailDialog(true);
-
-        try {
-            const allIds = searchResults.data.apps.map(app => app.id);
-
-            const response = await getAppDetails(allIds);
-
-            if (response.success && response.data) {
-                setAppDetails(response.data);
-
-                const clickedIndex = response.data.findIndex(detail => detail.trackId === clickedApp.id);
-                setCurrentDetailIndex(clickedIndex >= 0 ? clickedIndex : 0);
-            }
-        } catch (error) {
-            if (isRateLimitError(error)) return;
-            console.error('获取应用详情失败:', error.message);
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.getDetailsFailed'),// 获取详情失败
-                text: resolveClientErrorMessage(error),
-                confirmButtonText: t('ui.confirm')
-            });
-            setShowDetailDialog(false);
-        } finally {
-            setDetailLoading(false);
-        }
+        const allIds = searchResults.data.apps.map((app) => app.id);
+        await appDetail.openByListApp(clickedApp, allIds);
     };
-
-    const handlePrevious = () => {
-        if (currentDetailIndex > 0) {
-            setCurrentDetailIndex(currentDetailIndex - 1);
-        }
-    };
-
-    const handleNext = () => {
-        if (currentDetailIndex < appDetails.length - 1) {
-            setCurrentDetailIndex(currentDetailIndex + 1);
-        }
-    };
-
-    const handleCloseDetail = () => {
-        setShowDetailDialog(false);
-        setAppDetails([]);
-        setCurrentDetailIndex(0);
-        setDetailPreview(null);
-    };
-
-    const openAppDetailById = useCallback(async (appId) => {
-        if (!appId) {
-            return;
-        }
-
-        setDetailPreview(toAppDetailPreviewFromId(appId));
-        setDetailLoading(true);
-        setShowDetailDialog(true);
-
-        try {
-            const response = await getAppDetails([appId]);
-
-            if (response.success && response.data?.length > 0) {
-                setAppDetails(response.data);
-                setCurrentDetailIndex(0);
-                setSearchResults(null);
-            } else {
-                Swal.fire({
-                    icon: 'error',
-                    title: t('ui.getDetailsFailed'),
-                    text: resolveApiMessage(response) || t('ui.getDetailsFailed'),
-                    confirmButtonText: t('ui.confirm'),
-                });
-                setShowDetailDialog(false);
-            }
-        } catch (error) {
-            if (isRateLimitError(error)) return;
-            console.error('获取应用详情失败:', error.message);
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.getDetailsFailed'),
-                text: resolveClientErrorMessage(error),
-                confirmButtonText: t('ui.confirm'),
-            });
-            setShowDetailDialog(false);
-        } finally {
-            setDetailLoading(false);
-        }
-    }, [t]);
-
-    useEffect(() => {
-        const openAppId = searchParams.get('openAppId');
-        if (!openAppId) {
-            openAppIdHandledRef.current = null;
-            return;
-        }
-        if (openAppIdHandledRef.current === openAppId) {
-            return;
-        }
-        openAppIdHandledRef.current = openAppId;
-
-        openAppDetailById(openAppId);
-        setSearchParams((prev) => {
-            const next = new URLSearchParams(prev);
-            next.delete('openAppId');
-            return next;
-        }, { replace: true });
-    }, [searchParams, openAppDetailById, setSearchParams]);
-
-    const detailApp = appDetails[currentDetailIndex] ?? detailPreview;
-
 
     const searchAppsList = searchResults?.data?.apps || [];
 
@@ -272,20 +144,23 @@ export default function Home() {
             minHeight: 0,
             overflow: 'hidden',
             py: 3,
-        }}>
-            <Typography level="h2" sx={{ mb: 3, flexShrink: 0 }}>
+        }} className="app-shell-page-content">
+            <Typography level="h2" className="app-shell-page-title" sx={{ mb: 3, flexShrink: 0 }}>
                 {/* 应用搜索 */}
                 {t('ui.appSearch')}
             </Typography>
 
             <Stack direction="row" spacing={2} sx={{ mb: searchResults ? 2 : 4, flexShrink: 0 }}>
                 <Input
+                    type="search"
+                    name="appSearch"
+                    autoComplete="off"
                     placeholder={t('ui.searchPlaceholder')}
                     value={keyword}
                     onChange={(e) => setKeyword(e.target.value)}
-                    onKeyPress={handleKeyPress}
                     disabled={loading}
                     sx={{ flex: 1 }}
+                    slotProps={{ input: { onKeyDown: handleSearchKeyDown, enterKeyHint: 'search' } }}
                     startDecorator={<Search />}
                     endDecorator={
                         <IconButton
@@ -328,7 +203,7 @@ export default function Home() {
                     onClick={handleSearch}
                     loading={loading}
                     disabled={loading || !keyword.trim()}
-                    startDecorator={!loading && <Search />}
+                    startDecorator={!loading && aboveSm ? <Search /> : undefined}
                 >
                     {/*  {loading ? '搜索中...' : '搜索'} */}
                     {loading ? t('ui.searching') : t('ui.search')}
@@ -429,21 +304,7 @@ export default function Home() {
                 </Box>
             )}
 
-            <Dialog
-                isOpen={showDetailDialog}
-                onClose={handleCloseDetail}
-                title={`${detailApp?.trackId ? `ID: ${detailApp.trackId}` : ''}${detailApp?.trackName ? ` - ${detailApp.trackName}` : ''}`}
-                size="large"
-                onPrevious={handlePrevious}
-                onNext={handleNext}
-                hasPrevious={currentDetailIndex > 0}
-                hasNext={currentDetailIndex < appDetails.length - 1}
-            >
-                <AppDetail
-                    app={detailApp}
-                    loading={detailLoading}
-                />
-            </Dialog>
+            {appDetail.dialog}
 
             <RegionSelector
                 open={regionDialogOpen}
@@ -460,3 +321,5 @@ export default function Home() {
         </Box>
     );
 }
+
+export default React.memo(Home);

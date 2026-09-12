@@ -12,7 +12,7 @@ import {
 import { AnimatePresence, motion } from 'motion/react';
 import { useLocation } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import { revokeAuth, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import LanguageSwitcher from './LanguageSwitcher';
 import RegionSelector from './RegionSelector';
@@ -85,7 +85,7 @@ const footerMotion = {
 /**
  * 移动端全屏导航
  */
-export default function MobileNavMenu({
+function MobileNavMenu({
     open,
     onClose,
     navItems,
@@ -95,7 +95,7 @@ export default function MobileNavMenu({
 }) {
     const { t } = useTranslation();
     const location = useLocation();
-    const { user, logout, setUser } = useApp();
+    const { user, logout, setUser } = useAppSession();
     const [regionDialogOpen, setRegionDialogOpen] = useState(false);
 
     useEffect(() => {
@@ -166,26 +166,19 @@ export default function MobileNavMenu({
                         sx={{
                             position: 'fixed',
                             inset: 0,
-                            zIndex: 1200,
                             display: 'flex',
                             flexDirection: 'column',
                         }}
                     >
-                        {/* 背景遮罩 */}
+                        {/* 背景遮罩：实心，从 Header 底边以下开始，避免毛玻璃顶栏发灰 */}
                         <Box
                             component={motion.div}
+                            className="app-shell-nav-backdrop"
                             variants={backdropMotion}
                             initial="initial"
                             animate="animate"
                             exit="exit"
                             onClick={onClose}
-                            sx={{
-                                position: 'absolute',
-                                inset: 0,
-                                bgcolor: 'rgba(0, 0, 0, 0.18)',
-                                backdropFilter: 'blur(8px)',
-                                WebkitBackdropFilter: 'blur(8px)',
-                            }}
                         />
 
                         {/* 菜单内容 */}
@@ -383,3 +376,5 @@ export default function MobileNavMenu({
         document.body,
     );
 }
+
+export default React.memo(MobileNavMenu);

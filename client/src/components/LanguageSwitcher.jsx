@@ -49,7 +49,7 @@ export default function LanguageSwitcher({
                 size={size}
                 slotProps={{
                     listbox: {
-                        sx: { zIndex: 1400 },
+                        sx: { zIndex: 'var(--z-popover)' },
                     },
                 }}
                 sx={{

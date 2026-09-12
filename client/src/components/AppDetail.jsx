@@ -22,13 +22,19 @@ import {
     Link,
     Tooltip
 } from '@mui/joy';
-import { Star, Download, Category, Person, History, AccountBalanceWallet, Delete, Refresh, InstallMobile, LabelImportantOutline } from '@mui/icons-material';
+import { Star, Download, Category, Person, History, AccountBalanceWallet, LabelImportantOutline } from '@mui/icons-material';
 import FindReplaceIcon from '@mui/icons-material/FindReplace';
 import { tabClasses } from '@mui/joy/Tab';
-import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, openManifestInstall, openPackageDownload, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
+import { getAppVersions, refreshAppVersionMetadata, purchaseApp, downloadApp, deleteTask, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 import { isOtaSecureContext, useOtaInstallPreference } from '../utils/otaInstallPreference';
 import { useLoadAppScreenshotsPreference } from '../utils/appScreenshotsPreference';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
+import {
+    AppDetailLatestDownloadControls,
+    AppDetailLatestVersionMeta,
+    AppDetailVersionDownloadButton,
+    AppDetailVersionTitle,
+} from './AppDetailDownloadControls';
 import Swal from 'sweetalert2';
 import { getAppIconUrl } from '../utils/api';
 import { useNavigate } from 'react-router-dom';
@@ -88,7 +94,7 @@ export function toAppDetailPreviewFromId(appId) {
     return { trackId: appId };
 }
 
-export default function AppDetail({ app, loading = false }) {
+function AppDetail({ app, loading = false }) {
     const { t, i18n } = useTranslation();
 
     const buildVersionDisplayName = (bundleVersion, fallbackIndex) => {
@@ -115,7 +121,7 @@ export default function AppDetail({ app, loading = false }) {
     const currentTrackIdRef = useRef(null);
     const [scrollParent, setScrollParent] = useState(null);
 
-    const { taskList, user, fileList, settings } = useApp();
+    const { user, settings } = useAppSession();
     const [otaInstallEnabled] = useOtaInstallPreference();
     const [loadAppScreenshotsEnabled] = useLoadAppScreenshotsPreference();
     const showVersionMetadataRefresh = settings.showVersionMetadataRefresh === true;
@@ -689,67 +695,6 @@ export default function AppDetail({ app, loading = false }) {
         }
     };
 
-    const resolveVersionId = (versionId) => {
-        if (versionId !== 'latest') {
-            return String(versionId);
-        }
-
-        return storeLatestVersionId;
-    };
-
-    const findStorageFileName = (versionId) => {
-        const appId = String(app.trackId);
-        const resolvedId = resolveVersionId(versionId);
-
-        if (!resolvedId) {
-            return `${appId}_latest.ipa`;
-        }
-
-        const completedTasks = taskList.completed || [];
-        const matchedTask = completedTasks.find((task) => (
-            String(task.appId) === appId
-            && (task.versionId === resolvedId || String(task.actualVersionId) === resolvedId)
-        ));
-
-        if (matchedTask?.fileName) {
-            return matchedTask.fileName;
-        }
-
-        return `${appId}_${resolvedId}.ipa`;
-    };
-
-    const handlePackageDownload = async (versionId) => {
-        try {
-            await openPackageDownload(findStorageFileName(versionId));
-        } catch (error) {
-            Swal.fire({
-                icon: 'error',
-                title: resolveClientErrorMessage(error, t('ui.downloadFailed')),
-            });
-        }
-    };
-
-    const canShowInstall = (versionId) => {
-        const baseName = findStorageFileName(versionId).replace(/\.ipa$/i, '');
-        return baseName.includes('_');
-    };
-
-    const handleManifestInstall = async (versionId) => {
-        const baseName = findStorageFileName(versionId).replace(/\.ipa$/i, '');
-        if (!baseName.includes('_')) {
-            return;
-        }
-
-        try {
-            await openManifestInstall(baseName);
-        } catch (error) {
-            Swal.fire({
-                icon: 'error',
-                title: resolveClientErrorMessage(error, t('ui.downloadFailed')),
-            });
-        }
-    };
-
     // 删除任务
     const handleDeleteTask = async (taskId, fileName) => {
         const result = await Swal.fire({
@@ -788,504 +733,8 @@ export default function AppDetail({ app, loading = false }) {
         }
     };
 
-    const getLocalFileForVersion = (versionId) => {
-        if (!app?.trackId || !versionId) return null;
-        const appId = String(app.trackId);
-        const resolvedId = resolveVersionId(versionId) || versionId;
-
-        return fileList.files?.find((item) => (
-            item.name === `${appId}_${resolvedId}.ipa`
-            || (String(item.itemId) === appId && String(item.softwareVersionExternalIdentifier) === String(resolvedId))
-        )) ?? null;
-    };
-
-    // 获取当前应用的 latest 版本（App Store 真正最新 build 且已下载到本地）
-    const getLatestTaskInfo = () => {
-        if (!app?.trackId) return null;
-        const appId = String(app.trackId);
-        const fromSummary = taskList?.summary?.[appId]?.latest;
-
-        if (fromSummary && fromSummary.status !== 'completed') {
-            const task = [...(taskList.running || []), ...(taskList.pending || []), ...(taskList.failed || [])]
-                .find((item) => item.id === fromSummary.taskId);
-
-            return {
-                ...fromSummary,
-                fileName: task?.fileName,
-            };
-        }
-
-        if (!storeLatestVersionId) {
-            return null;
-        }
-
-        const file = getLocalFileForVersion(storeLatestVersionId);
-        if (file) {
-            return { status: 'completed', taskId: null, percentage: 100, fileName: file.name };
-        }
-
-        return null;
-    };
-
-    const getVersionTaskInfo = (versionId) => {
-        if (!app?.trackId) return null;
-        const appId = String(app.trackId);
-        const fromTask = taskList?.summary?.[appId]?.[versionId];
-        if (fromTask) return fromTask;
-
-        const file = getLocalFileForVersion(versionId);
-        return file ? { status: 'completed', taskId: null, percentage: 100, fileName: file.name } : null;
-    };
-
-    const latestLocalFile = storeLatestVersionId
-        ? getLocalFileForVersion(storeLatestVersionId)
-        : null;
-
-    const renderDownloadSection = () => {
-        const taskInfo = getLatestTaskInfo();
-
-        if (!taskInfo) {
-            return (
-                <Button
-                    startDecorator={<Download />}
-                    size="sm"
-                    fullWidth
-                    loading={downloadingVersions.has('latest')}
-                    onClick={() => handleDownload('latest', app.bundleId)}
-                >
-                    {/* 下载最新版 */}
-                    {t('ui.downloadLatest')}
-                </Button>
-            );
-        }
-
-        switch (taskInfo.status) {
-            case 'running':
-                return (
-                    <>
-                        <Button fullWidth>
-                            {/* 下载中... {taskInfo.percentage}% */}
-                            {t('ui.downloading')} {taskInfo.percentage}%
-                        </Button>
-                        <Stack direction="row" gap={1} justifyContent="center">
-                            <IconButton
-                                size="sm"
-                                variant="outlined"
-                                color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                <Delete />
-                            </IconButton>
-                        </Stack>
-                    </>
-                );
-
-            case 'pending':
-                return (
-                    <>
-                        <Box sx={{ flex: 1 }}>
-                            {/* <Button fullWidth loading>等待下载...</Button> */}
-                            <Button fullWidth loading>{t('ui.waitingDownload')}</Button>
-                        </Box>
-                        <Stack direction="row" gap={1} justifyContent="center">
-                            <IconButton
-                                size="sm"
-                                variant="outlined"
-                                color="danger"
-                                disabled={true}
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                <Delete />
-                            </IconButton>
-                        </Stack>
-                    </>
-                );
-
-            case 'completed': {
-                const showInstall = showOtaInstall && canShowInstall('latest');
-
-                return (
-                    <>
-                        <Stack
-                            gap={1}
-                            sx={{
-                                width: '100%',
-                                flex: 1,
-                                display: { xs: 'flex', sm: 'none' },
-                            }}
-                        >
-                            <Stack direction="row" gap={1} justifyContent="space-between" alignItems="center">
-                                {showInstall ? (
-                                    <Button
-                                        fullWidth
-                                        size="sm"
-                                        color="success"
-                                        startDecorator={<InstallMobile />}
-                                        sx={{ flex: 1, minWidth: 0 }}
-                                        onClick={() => handleManifestInstall('latest')}
-                                    >
-                                        {t('ui.install')}
-                                    </Button>
-                                ) : null}
-                                <Button
-                                    fullWidth
-                                    size="sm"
-                                    startDecorator={<Download />}
-                                    sx={{ flex: 1, minWidth: 0 }}
-                                    onClick={() => handlePackageDownload('latest')}
-                                >
-                                    {t('ui.downloadIPA')}
-                                </Button>
-                            </Stack>
-                            <Stack direction="row" gap={1} justifyContent="space-between" alignItems="center">
-                                <IconButton
-                                    size="sm"
-                                    variant="outlined"
-                                    color="danger"
-                                    onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                                >
-                                    <Delete />
-                                </IconButton>
-                                <Button
-                                    size="sm"
-                                    variant="outlined"
-                                    color="primary"
-                                    startDecorator={<Refresh />}
-                                    onClick={() => handleDownload('latest', app.bundleId)}
-                                >
-                                    {t('ui.redownloadLatest')}
-                                </Button>
-                            </Stack>
-                        </Stack>
-                        <Stack
-                            direction="row"
-                            gap={1}
-                            alignItems="center"
-                            sx={{
-                                flex: 1,
-                                width: '100%',
-                                display: { xs: 'none', sm: 'flex' },
-                            }}
-                        >
-                            {showInstall ? (
-                                <Button
-                                    fullWidth
-                                    size="sm"
-                                    color="success"
-                                    startDecorator={<InstallMobile />}
-                                    sx={{ flex: 1, minWidth: 0 }}
-                                    onClick={() => handleManifestInstall('latest')}
-                                >
-                                    {t('ui.install')}
-                                </Button>
-                            ) : null}
-                            <Button
-                                fullWidth
-                                size="sm"
-                                startDecorator={<Download />}
-                                sx={{ flex: 1, minWidth: 0 }}
-                                onClick={() => handlePackageDownload('latest')}
-                            >
-                                {t('ui.downloadIPA')}
-                            </Button>
-                            <Button
-                                size="sm"
-                                variant="outlined"
-                                color="primary"
-                                startDecorator={<Refresh />}
-                                onClick={() => handleDownload('latest', app.bundleId)}
-                            >
-                                {t('ui.redownloadLatest')}
-                            </Button>
-                            <IconButton
-                                size="sm"
-                                variant="outlined"
-                                color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                <Delete />
-                            </IconButton>
-                        </Stack>
-                    </>
-                );
-            }
-
-            case 'failed':
-                return (
-                    <>
-                        <Box sx={{ flex: 1 }}>
-                            {/* <Button fullWidth variant='soft' color='danger'>{taskInfo.status === 'failed' ? '下载失败' : '已取消'}</Button> */}
-                            <Button fullWidth variant='soft' color='danger'>{taskInfo.status === 'failed' ? t('ui.downloadFailed') : t('ui.cancelled')}</Button>
-                        </Box>
-                        <Stack direction="row" gap={1} justifyContent="center">
-                            <IconButton
-                                size="sm"
-                                variant="outlined"
-                                color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                <Delete />
-                            </IconButton>
-                        </Stack>
-                    </>
-                );
-
-            default:
-                return (
-                    <Button
-                        startDecorator={<Download />}
-                        size="sm"
-                        fullWidth
-                        loading={downloadingVersions.has('latest')}
-                        onClick={() => handleDownload('latest', app.bundleId)}
-                    >
-                        {/* 下载最新版 */}
-                        {t('ui.downloadLatest')}
-                    </Button>
-                );
-        }
-    };
-
-    // 历史版本的下载钮
-    const renderVersionDownloadButton = (version) => {
-        const taskInfo = getVersionTaskInfo(version.versionId);
-        const isDownloading = downloadingVersions.has(version.versionId);
-
-        if (!taskInfo && !isDownloading) {
-            return (
-                <Button
-                    size="sm"
-                    variant="outlined"
-                    startDecorator={<Download />}
-                    onClick={() => handleDownload(version.versionId, app.bundleId)}
-                >
-                    {t('ui.download')}
-                </Button>
-            );
-        }
-
-        if (isDownloading && !taskInfo) {
-            // 正在创建任务
-            return (
-                <Button
-                    size="sm"
-                    variant="outlined"
-                    loading
-                    disabled
-                >
-                    {t('ui.creating')}
-                </Button>
-            );
-        }
-
-        // 有任务状态
-        if (taskInfo) {
-            switch (taskInfo.status) {
-                case 'running':
-                    return (
-                        <Box sx={{
-                            position: 'relative',
-                            width: 80,
-                            height: 32,
-                            borderRadius: 'sm',
-                            overflow: 'hidden',
-                            border: '1px solid',
-                            borderColor: 'primary.300'
-                        }}>
-                            <Box
-                                sx={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    height: '100%',
-                                    width: `${taskInfo.percentage}%`,
-                                    bgcolor: 'primary.100',
-                                    transition: 'width 0.3s ease'
-                                }}
-                            />
-                            <Button
-                                size="sm"
-                                variant="plain"
-                                sx={{
-                                    position: 'relative',
-                                    zIndex: 1,
-                                    width: '100%',
-                                    height: '100%',
-                                    minHeight: 'auto',
-                                    fontSize: 'xs',
-                                    fontWeight: 'md'
-                                }}
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                {taskInfo.percentage}%
-                            </Button>
-                        </Box>
-                    );
-
-                case 'pending':
-                    return (
-                        <Box sx={{
-                            position: 'relative',
-                            width: 80,
-                            height: 32,
-                            borderRadius: 'sm',
-                            overflow: 'hidden',
-                            border: '1px solid',
-                            borderColor: 'neutral.300'
-                        }}>
-                            <Box
-                                sx={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    height: '100%',
-                                    width: '100%',
-                                    bgcolor: 'neutral.50'
-                                }}
-                            />
-                            <Button
-                                size="sm"
-                                variant="plain"
-                                sx={{
-                                    position: 'relative',
-                                    zIndex: 1,
-                                    width: '100%',
-                                    height: '100%',
-                                    minHeight: 'auto',
-                                    fontSize: 'xs'
-                                }}
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                {t('ui.waiting')}
-                            </Button>
-
-                        </Box>
-                    );
-
-                case 'completed':
-                    return (
-                        <Stack direction="row" gap={1} justifyContent="center">
-                            <IconButton
-                                size="sm"
-                                variant="plain"
-                                color="danger"
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                <Delete />
-                            </IconButton>
-                            {showOtaInstall && canShowInstall(version.versionId) && (
-                                <Tooltip variant="outlined" color="primary" arrow size="sm" title={t('ui.installOtaHint')}>
-                                    <Button
-                                        size="sm"
-                                        color="success"
-                                        startDecorator={<InstallMobile />}
-                                        onClick={() => handleManifestInstall(version.versionId)}
-                                    >
-                                        {t('ui.install')}
-                                    </Button>
-                                </Tooltip>
-                            )}
-                            <Button
-                                size="sm"
-                                startDecorator={<Download />}
-                                onClick={() => handlePackageDownload(version.versionId)}
-                            >
-                                {t('ui.downloadIPA')}
-                            </Button>
-                        </Stack>
-                    );
-
-                case 'failed':
-                    return (
-                        <Box sx={{
-                            position: 'relative',
-                            width: 80,
-                            height: 32,
-                            borderRadius: 'sm',
-                            overflow: 'hidden',
-                            border: '1px solid',
-                            borderColor: 'danger.300'
-                        }}>
-                            <Box
-                                sx={{
-                                    position: 'absolute',
-                                    top: 0,
-                                    left: 0,
-                                    height: '100%',
-                                    width: '100%',
-                                    bgcolor: 'danger.100'
-                                }}
-                            />
-                            <Button
-                                size="sm"
-                                variant="plain"
-                                color="danger"
-                                sx={{
-                                    position: 'relative',
-                                    zIndex: 1,
-                                    width: '100%',
-                                    height: '100%',
-                                    minHeight: 'auto',
-                                    fontSize: 'xs'
-                                }}
-                            >
-                                {t('ui.failed')}
-                            </Button>
-                            <IconButton
-                                size="sm"
-                                variant="plain"
-                                color="danger"
-                                sx={{
-                                    position: 'absolute',
-                                    right: 2,
-                                    top: '50%',
-                                    transform: 'translateY(-50%)',
-                                    zIndex: 2,
-                                    minHeight: 'auto',
-                                    width: 20,
-                                    height: 20
-                                }}
-                                onClick={() => handleDeleteTask(taskInfo.taskId, taskInfo.fileName)}
-                            >
-                                <Delete sx={{ fontSize: 12 }} />
-                            </IconButton>
-                        </Box>
-                    );
-
-                default:
-                    return (
-                        <Button
-                            size="sm"
-                            variant="outlined"
-                            startDecorator={<Download />}
-                            onClick={() => handleDownload(version.versionId, app.bundleId)}
-                        >
-                            {t('ui.download')}
-                        </Button>
-                    );
-            }
-        }
-
-        return (
-            <Button
-                size="sm"
-                variant="outlined"
-                startDecorator={<Download />}
-                onClick={() => handleDownload(version.versionId, app.bundleId)}
-            >
-                {t('ui.download')}
-            </Button>
-        );
-    };
-
     const renderHistoricalVersionItem = (version, index) => {
-        const localFile = getLocalFileForVersion(version.versionId);
-        const shortVersion = localFile?.bundleShortVersionString;
-        const displayName = shortVersion && shortVersion !== '未知'
-            ? t('ui.versionNamed', { version: shortVersion })
-            : version.displayName;
         const releaseDate = version.releaseDate;
-        const versionActions = renderVersionDownloadButton(version);
 
         const isFirst = index === 0;
         const isLast = index === versions.length - 1;
@@ -1334,9 +783,13 @@ export default function AppDetail({ app, loading = false }) {
                         }}
                     >
                         <Stack gap={0.25}>
-                            <Typography level="title-sm" color={version.isLatest ? 'success' : 'neutral'}>
-                                {displayName}
-                            </Typography>
+                            <AppDetailVersionTitle
+                                version={version}
+                                app={app}
+                                storeLatestVersionId={storeLatestVersionId}
+                                fallbackDisplayName={version.displayName}
+                                t={t}
+                            />
                             <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
                                 {releaseDate ? formatDate(releaseDate) : t('ui.releaseDateUnknown')}
                             </Typography>
@@ -1370,7 +823,15 @@ export default function AppDetail({ app, loading = false }) {
                         pl: { xs: 2, sm: 0 },
                     }}
                 >
-                    {versionActions}
+                    <AppDetailVersionDownloadButton
+                        version={version}
+                        app={app}
+                        storeLatestVersionId={storeLatestVersionId}
+                        isDownloading={downloadingVersions.has(version.versionId)}
+                        showOtaInstall={showOtaInstall}
+                        onDownload={handleDownload}
+                        onDeleteTask={handleDeleteTask}
+                    />
                 </Box>
             </ListItem>
         );
@@ -1567,7 +1028,14 @@ export default function AppDetail({ app, loading = false }) {
                 alignItems={{ xs: 'stretch', sm: 'center' }}
                 sx={{ width: '100%' }}
             >
-                {renderDownloadSection()}
+                <AppDetailLatestDownloadControls
+                    app={app}
+                    storeLatestVersionId={storeLatestVersionId}
+                    downloadingLatest={downloadingVersions.has('latest')}
+                    showOtaInstall={showOtaInstall}
+                    onDownload={handleDownload}
+                    onDeleteTask={handleDeleteTask}
+                />
             </Stack>
             <Divider sx={{ my: 2 }} />
 
@@ -1610,14 +1078,12 @@ export default function AppDetail({ app, loading = false }) {
                         <Sheet variant="outlined" sx={{ p: 2, borderRadius: 'md' }}>
                             <Typography level="title-sm" sx={{ mb: 1 }}>{t('ui.versionInfo')}</Typography>
                             <Stack gap={1}>
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">{t('ui.currentVersion')}:</Typography>
-                                    <Typography level="body-sm" fontWeight="md">{latestLocalFile?.bundleShortVersionString || app.version}</Typography>
-                                </Stack>
-                                <Stack direction="row" justifyContent="space-between">
-                                    <Typography level="body-sm">{t('ui.fileSize')}:</Typography>
-                                    <Typography level="body-sm">{formatFileSize(latestLocalFile?.size ?? app.fileSizeBytes)}</Typography>
-                                </Stack>
+                                <AppDetailLatestVersionMeta
+                                    app={app}
+                                    storeLatestVersionId={storeLatestVersionId}
+                                    formatFileSize={formatFileSize}
+                                    t={t}
+                                />
                                 <Stack direction="row" justifyContent="space-between">
                                     <Typography level="body-sm">{t('ui.updateTime')}:</Typography>
                                     <Typography level="body-sm">{formatDate(app.currentVersionReleaseDate)}</Typography>
@@ -1762,3 +1228,5 @@ export default function AppDetail({ app, loading = false }) {
         </Box>
     );
 }
+
+export default React.memo(AppDetail);

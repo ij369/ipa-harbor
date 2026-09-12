@@ -12,7 +12,7 @@ import {
     Divider
 } from '@mui/joy';
 import { useNavigate } from 'react-router-dom';
-import { useApp } from '../contexts/AppContext';
+import { useAppSession } from '../contexts/AppContext';
 import { revokeAuth, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
 
 import Swal from 'sweetalert2';
@@ -21,10 +21,10 @@ import PublicIcon from '@mui/icons-material/Public';
 import { useTranslation } from 'react-i18next';
 import RegionSelector from './RegionSelector';
 
-export default function UserStatus() {
+function UserStatus() {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { user, isAuthenticated, loading, logout, setUser } = useApp();
+    const { user, isAuthenticated, loading, logout, setUser } = useAppSession();
     const [regionDialogOpen, setRegionDialogOpen] = useState(false);
 
     const handleLogout = async () => {
@@ -164,3 +164,5 @@ export default function UserStatus() {
         </Dropdown>
     );
 }
+
+export default React.memo(UserStatus);

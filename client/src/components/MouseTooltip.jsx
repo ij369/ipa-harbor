@@ -85,7 +85,7 @@ export default function MouseTooltip({ title, children, disabled = false }) {
                         position: 'fixed',
                         left: position.x,
                         top: position.y,
-                        zIndex: 1300,
+                        zIndex: 'var(--z-tooltip)',
                         pointerEvents: 'none',
                         opacity: ready ? 1 : 0,
                         maxWidth: 300,
