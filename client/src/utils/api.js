@@ -115,6 +115,7 @@ export async function apiRequest(endpoint, options = {}) {
             if (data.error) {
                 error.backendError = data.error;
             }
+            error.httpStatus = response.status;
 
             throw error;
         }
@@ -428,6 +429,69 @@ export async function adminChangePassword(payload) {
     return apiRequest('/v1/admin/change-password', {
         method: 'POST',
         body: JSON.stringify(payload),
+    });
+}
+
+/**
+ * Passkey 登录 options
+ */
+export async function passkeyLoginOptions() {
+    return apiRequest('/v1/admin/passkey/login/options', {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+}
+
+/**
+ * Passkey 登录 verify
+ */
+export async function passkeyLoginVerify(challengeId, credential) {
+    return apiRequest('/v1/admin/passkey/login/verify', {
+        method: 'POST',
+        body: JSON.stringify({ challengeId, credential }),
+    });
+}
+
+/**
+ * Passkey 注册 options（需已登录）
+ */
+export async function passkeyRegisterOptions() {
+    return apiRequest('/v1/admin/passkey/register/options', {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+}
+
+/**
+ * Passkey 注册 verify
+ */
+export async function passkeyRegisterVerify(challengeId, credential, nickname) {
+    return apiRequest('/v1/admin/passkey/register/verify', {
+        method: 'POST',
+        body: JSON.stringify({ challengeId, credential, nickname }),
+    });
+}
+
+/**
+ * 获取当前用户 Passkey 列表
+ */
+export async function listPasskeys() {
+    return apiRequest('/v1/admin/passkeys');
+}
+
+/**
+ * 删除 Passkey
+ */
+export async function updatePasskeyNickname(id, nickname) {
+    return apiRequest(`/v1/admin/passkeys/${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ nickname }),
+    });
+}
+
+export async function deletePasskey(id) {
+    return apiRequest(`/v1/admin/passkeys/${encodeURIComponent(id)}`, {
+        method: 'DELETE',
     });
 }
 

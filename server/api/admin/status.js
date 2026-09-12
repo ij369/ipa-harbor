@@ -6,6 +6,7 @@ const {
     isSetupCompleted,
     syncSetupMarkerWithUsers,
 } = require('../../utils/adminBootstrap');
+const { isWebAuthnConfigured } = require('../../utils/passkeyService');
 
 /**
  * 获取管理员登录状态
@@ -18,6 +19,7 @@ async function statusHandler(req, res) {
         const settings = await readAppSettings(req.user?.id);
         const isInitialized = isSetupCompleted();
         const setupRequiresInitPin = true;
+        const passkeyEnabled = isWebAuthnConfigured();
 
         if (req.user) {
             return sendSuccess(res, {
@@ -25,6 +27,7 @@ async function statusHandler(req, res) {
                 data: {
                     version,
                     settings,
+                    passkeyEnabled,
                     isInitialized: true,
                     isLoggedIn: true,
                     setupRequiresInitPin,
@@ -44,6 +47,7 @@ async function statusHandler(req, res) {
             data: {
                 version,
                 settings,
+                passkeyEnabled,
                 isInitialized,
                 isLoggedIn: false,
                 setupRequiresInitPin,

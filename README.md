@@ -152,6 +152,19 @@ If you deploy on public network, you must have `ALLOWED_DOMAINS` and set `ALLOW_
 -e ALLOWED_DOMAINS=your-domain.com,another-domain.com \
 ```
 
+### Admin Passkeys (optional)
+
+To enable this feature, configure at least the following environment variables:
+| Variable | Description |
+| --- | --- |
+| `WEBAUTHN_RP_ID` | Relying Party ID — site domain **without port**, e.g. `example.com` |
+| `WEBAUTHN_ALLOWED_ORIGINS` | Comma-separated browser Origins allowed for WebAuthn, e.g. `https://example.com,http://localhost:5173`. **Must match the address bar exactly** (include port when not default). |
+
+**Keep Origin and CORS in sync:** The URL users actually visit must appear in both `ALLOWED_DOMAINS` (CORS) and `WEBAUTHN_ALLOWED_ORIGINS`. If they differ, the app may load but Passkey login/register will fail.
+
+See `server/docker-compose.example.yml`.
+
+
 ## Note
 
 It is recommended to use a single container with a single Apple ID login, as each container has an independent MAC address. The ID should ideally use the same region as the container host IP.
@@ -444,6 +457,19 @@ server {
 ```
 -e ALLOWED_DOMAINS=your-domain.com,another-domain.com \
 ```
+
+### 管理员通行密钥（可选）
+
+如果需要启用这个功能，至少配置以下环境变量：
+| 变量 | 说明 |
+| --- | --- |
+| `WEBAUTHN_RP_ID` | Relying Party ID，填站点域名**不含端口**，如 `example.com` |
+| `WEBAUTHN_ALLOWED_ORIGINS` | 允许 WebAuthn 的浏览器 Origin 列表，半角逗号分隔，如 `https://example.com,http://localhost:5173`。**须与地址栏完全一致**（非常规端口时要带端口）。 |
+
+**Origin 与 CORS 请保持一致：** 用户实际访问的地址，既要出现在 `ALLOWED_DOMAINS`（CORS）里，也要出现在 `WEBAUTHN_ALLOWED_ORIGINS` 里。两者不一致时，页面可能能打开，但通行密钥登录/注册会失败。
+
+详见 `server/docker-compose.example.zh.yml`。
+
 
 ## 注意
 

@@ -19,6 +19,7 @@ const { authenticateToken } = require('./middleware/auth');
 const { sendError } = require('./utils/apiResponse');
 const { NODE_ENV, KEYCHAIN_PASSPHRASE } = require('./config/keychain');
 const { bootstrapAdminStartup, syncSetupMarkerWithUsers } = require('./utils/adminBootstrap');
+const passkeyService = require('./utils/passkeyService');
 
 process.stdout.write('\x1Bc');
 console.clear();
@@ -110,7 +111,7 @@ app.use(cors({
             : callback(new Error('Not allowed by CORS'), false);
     },
     credentials: true,
-    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
 
@@ -233,6 +234,12 @@ async function startHttpServer() {
         await database.init();
         await syncSetupMarkerWithUsers(database);
         await migrateExistingJsonSidecars();
+        await passkeyService.runChallengeCleanupOnStartup();
+        if (passkeyService.isWebAuthnConfigured()) {
+            passkeyService.warmupAaguidRegistry().catch((error) => {
+                console.warn('AAGUID 注册表预加载失败:', error.message);
+            });
+        }
     } catch (error) {
         console.error('服务启动初始化失败:', error);
         process.exit(1);
@@ -282,6 +289,8 @@ function startCronTasks() {
             console.error('广播文件列表失败:', error);
         }
     });
+
+    passkeyService.startChallengeCleanupCron();
 
     // 每2秒广播任务列表 (task-list类型)
     cron.schedule('*/2 * * * * *', () => {

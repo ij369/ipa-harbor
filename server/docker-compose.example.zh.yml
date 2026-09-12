@@ -39,6 +39,14 @@ services:
       # - PACKAGE_TICKET_TTL_MS=86400000
       # 经 nginx、Cloudflare 等反向代理访问时设为 1，限流才按真实客户端 IP；直连勿设
       # - TRUST_PROXY=1
+      # Passkey 配置 (可选)
+      # RP ID 不含端口, 例如：example.com
+      # - WEBAUTHN_RP_ID=example.com
+      # 允许的 Origin 列表，半角逗号分隔；非常规端口时需带端口
+      # - WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3030,https://example.com,https://example.com:8443
+      # 可选：challenge 有效期（毫秒，默认 5 分钟）与清理间隔（分钟，默认 5）
+      # - WEBAUTHN_CHALLENGE_TTL_MS=300000
+      # - WEBAUTHN_CHALLENGE_CLEANUP_INTERVAL_MINUTES=5
     volumes:
       # 持久化 data：IPA、未完成下载(tmp)、管理员数据库、ipatool 配置($HOME/.ipatool)
       - ./data:/app/data

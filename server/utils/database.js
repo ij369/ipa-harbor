@@ -74,6 +74,7 @@ class Database {
 
                         this.ensureSettingsColumn()
                             .then(() => this.ensureAppVersionMetadataTable())
+                            .then(() => this.ensurePasskeyTables())
                             .then(() => {
                                 this.ensureUpdateTrigger(tableExists, resolve, reject);
                             })
@@ -417,6 +418,364 @@ class Database {
                 }
             });
         });
+    }
+
+    /**
+     * Passkey / WebAuthn 相关表
+     */
+    async ensurePasskeyTables() {
+        await this.ensureWebAuthnUserHandleColumn();
+        await this.runSql(`
+            CREATE TABLE IF NOT EXISTS passkeys (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                credential_id TEXT UNIQUE NOT NULL,
+                public_key BLOB NOT NULL,
+                sign_count INTEGER NOT NULL DEFAULT 0,
+                transports TEXT,
+                device_type TEXT,
+                backed_up INTEGER NOT NULL DEFAULT 0,
+                aaguid TEXT,
+                nickname TEXT,
+                created_at INTEGER NOT NULL,
+                last_used_at INTEGER,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `);
+        await this.ensurePasskeyAaguidColumn();
+        await this.runSql('CREATE INDEX IF NOT EXISTS idx_passkeys_user_id ON passkeys(user_id)');
+        await this.runSql('CREATE INDEX IF NOT EXISTS idx_passkeys_credential_id ON passkeys(credential_id)');
+        await this.runSql(`
+            CREATE TABLE IF NOT EXISTS auth_challenges (
+                id TEXT PRIMARY KEY,
+                challenge TEXT NOT NULL,
+                type TEXT NOT NULL CHECK(type IN ('login', 'register')),
+                user_id INTEGER,
+                client_ip TEXT,
+                used INTEGER NOT NULL DEFAULT 0,
+                expires_at INTEGER NOT NULL,
+                created_at INTEGER NOT NULL,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        `);
+        await this.runSql('CREATE INDEX IF NOT EXISTS idx_auth_challenges_ip_type ON auth_challenges(client_ip, type)');
+        await this.runSql('CREATE INDEX IF NOT EXISTS idx_auth_challenges_expires_at ON auth_challenges(expires_at)');
+        await this.runSql(`
+            CREATE TABLE IF NOT EXISTS passkey_security_events (
+                id TEXT PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                credential_id TEXT NOT NULL,
+                event_type TEXT NOT NULL,
+                old_sign_count INTEGER,
+                new_sign_count INTEGER,
+                credential_device_type TEXT,
+                credential_backed_up INTEGER,
+                ip TEXT,
+                user_agent TEXT,
+                created_at INTEGER NOT NULL
+            )
+        `);
+    }
+
+    async ensurePasskeyAaguidColumn() {
+        return new Promise((resolve, reject) => {
+            this.db.all('PRAGMA table_info(passkeys)', (err, columns) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                const hasColumn = columns.some((column) => column.name === 'aaguid');
+                if (hasColumn) {
+                    resolve(false);
+                    return;
+                }
+                this.db.run('ALTER TABLE passkeys ADD COLUMN aaguid TEXT', (alterErr) => {
+                    if (alterErr) {
+                        reject(alterErr);
+                        return;
+                    }
+                    console.log('已为 passkeys 表添加 aaguid 列');
+                    resolve(true);
+                });
+            });
+        });
+    }
+
+    async ensureWebAuthnUserHandleColumn() {
+        return new Promise((resolve, reject) => {
+            this.db.all('PRAGMA table_info(users)', (err, columns) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+                const hasColumn = columns.some((column) => column.name === 'webauthn_user_handle');
+                if (hasColumn) {
+                    resolve(false);
+                    return;
+                }
+                this.db.run('ALTER TABLE users ADD COLUMN webauthn_user_handle TEXT', (alterErr) => {
+                    if (alterErr) {
+                        reject(alterErr);
+                        return;
+                    }
+                    this.db.run(
+                        'CREATE UNIQUE INDEX IF NOT EXISTS idx_users_webauthn_user_handle ON users(webauthn_user_handle) WHERE webauthn_user_handle IS NOT NULL',
+                        (indexErr) => {
+                            if (indexErr) {
+                                reject(indexErr);
+                            } else {
+                                console.log('已为 users 表添加 webauthn_user_handle 列');
+                                resolve(true);
+                            }
+                        }
+                    );
+                });
+            });
+        });
+    }
+
+    runSql(sql, params = []) {
+        return new Promise((resolve, reject) => {
+            this.db.run(sql, params, function onRun(err) {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve({ changes: this.changes, lastID: this.lastID });
+                }
+            });
+        });
+    }
+
+    getSql(sql, params = []) {
+        return new Promise((resolve, reject) => {
+            this.db.get(sql, params, (err, row) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(row);
+                }
+            });
+        });
+    }
+
+    allSql(sql, params = []) {
+        return new Promise((resolve, reject) => {
+            this.db.all(sql, params, (err, rows) => {
+                if (err) {
+                    reject(err);
+                } else {
+                    resolve(rows || []);
+                }
+            });
+        });
+    }
+
+    async getUserWebAuthnHandle(userId) {
+        const row = await this.getSql('SELECT webauthn_user_handle FROM users WHERE id = ?', [userId]);
+        return row?.webauthn_user_handle || null;
+    }
+
+    async setUserWebAuthnHandle(userId, handle) {
+        await this.runSql('UPDATE users SET webauthn_user_handle = ? WHERE id = ?', [handle, userId]);
+    }
+
+    async invalidateLoginChallengesByIp(clientIp) {
+        await this.runSql(
+            'DELETE FROM auth_challenges WHERE type = ? AND client_ip = ? AND used = 0',
+            ['login', clientIp]
+        );
+    }
+
+    async invalidateRegisterChallengesByUserId(userId) {
+        await this.runSql(
+            'DELETE FROM auth_challenges WHERE type = ? AND user_id = ? AND used = 0',
+            ['register', userId]
+        );
+    }
+
+    async createAuthChallenge({ id, challenge, type, userId = null, clientIp, expiresAt, createdAt }) {
+        await this.runSql(
+            `INSERT INTO auth_challenges (id, challenge, type, user_id, client_ip, expires_at, created_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [id, challenge, type, userId, clientIp, expiresAt, createdAt]
+        );
+    }
+
+    /**
+     * 原子消费 challenge（防重放）
+     */
+    async consumeAuthChallengeById(challengeId, nowMs) {
+        return new Promise((resolve, reject) => {
+            this.db.serialize(() => {
+                this.db.run('BEGIN IMMEDIATE TRANSACTION');
+                this.db.get(
+                    `SELECT * FROM auth_challenges
+                     WHERE id = ? AND used = 0 AND expires_at > ?`,
+                    [challengeId, nowMs],
+                    (err, row) => {
+                        if (err) {
+                            this.db.run('ROLLBACK');
+                            reject(err);
+                            return;
+                        }
+                        if (!row) {
+                            this.db.run('ROLLBACK');
+                            resolve(null);
+                            return;
+                        }
+                        this.db.run(
+                            'UPDATE auth_challenges SET used = 1 WHERE id = ? AND used = 0',
+                            [challengeId],
+                            (updateErr) => {
+                                if (updateErr) {
+                                    this.db.run('ROLLBACK');
+                                    reject(updateErr);
+                                    return;
+                                }
+                                this.db.run('COMMIT', (commitErr) => {
+                                    if (commitErr) {
+                                        reject(commitErr);
+                                    } else {
+                                        resolve(row);
+                                    }
+                                });
+                            }
+                        );
+                    }
+                );
+            });
+        });
+    }
+
+    async cleanupExpiredChallenges(nowMs) {
+        const result = await this.runSql(
+            `DELETE FROM auth_challenges
+             WHERE used = 1 OR expires_at <= ?`,
+            [nowMs]
+        );
+        return result.changes || 0;
+    }
+
+    async getPasskeysByUserId(userId) {
+        return this.allSql(
+            `SELECT id, user_id, credential_id, sign_count, transports, device_type, backed_up,
+                    aaguid, nickname, created_at, last_used_at
+             FROM passkeys WHERE user_id = ? ORDER BY created_at DESC`,
+            [userId]
+        );
+    }
+
+    async getPasskeyByCredentialId(credentialId) {
+        return this.getSql('SELECT * FROM passkeys WHERE credential_id = ?', [credentialId]);
+    }
+
+    async getPasskeyById(id) {
+        return this.getSql('SELECT * FROM passkeys WHERE id = ?', [id]);
+    }
+
+    async countPasskeysByUserId(userId) {
+        const row = await this.getSql('SELECT COUNT(*) AS count FROM passkeys WHERE user_id = ?', [userId]);
+        return row?.count || 0;
+    }
+
+    async insertPasskey({
+        id,
+        userId,
+        credentialId,
+        publicKey,
+        signCount,
+        transports,
+        deviceType,
+        backedUp,
+        aaguid,
+        nickname,
+        createdAt,
+        lastUsedAt,
+    }) {
+        await this.runSql(
+            `INSERT INTO passkeys (
+                id, user_id, credential_id, public_key, sign_count, transports,
+                device_type, backed_up, aaguid, nickname, created_at, last_used_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                userId,
+                credentialId,
+                publicKey,
+                signCount,
+                transports ? JSON.stringify(transports) : null,
+                deviceType || null,
+                backedUp ? 1 : 0,
+                aaguid || null,
+                nickname || null,
+                createdAt,
+                lastUsedAt,
+            ]
+        );
+    }
+
+    async updatePasskeySignCount(credentialId, signCount, lastUsedAt) {
+        await this.runSql(
+            'UPDATE passkeys SET sign_count = ?, last_used_at = ? WHERE credential_id = ?',
+            [signCount, lastUsedAt, credentialId]
+        );
+    }
+
+    async touchPasskeyLastUsed(credentialId, lastUsedAt) {
+        await this.runSql(
+            'UPDATE passkeys SET last_used_at = ? WHERE credential_id = ?',
+            [lastUsedAt, credentialId]
+        );
+    }
+
+    async updatePasskeyNickname(id, userId, nickname) {
+        const result = await this.runSql(
+            'UPDATE passkeys SET nickname = ? WHERE id = ? AND user_id = ?',
+            [nickname, id, userId]
+        );
+        return result.changes > 0;
+    }
+
+    async deletePasskey(id, userId) {
+        const result = await this.runSql(
+            'DELETE FROM passkeys WHERE id = ? AND user_id = ?',
+            [id, userId]
+        );
+        return result.changes > 0;
+    }
+
+    async insertPasskeySecurityEvent({
+        id,
+        userId,
+        credentialId,
+        eventType,
+        oldSignCount,
+        newSignCount,
+        credentialDeviceType,
+        credentialBackedUp,
+        ip,
+        userAgent,
+        createdAt,
+    }) {
+        await this.runSql(
+            `INSERT INTO passkey_security_events (
+                id, user_id, credential_id, event_type, old_sign_count, new_sign_count,
+                credential_device_type, credential_backed_up, ip, user_agent, created_at
+             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+                id,
+                userId,
+                credentialId,
+                eventType,
+                oldSignCount,
+                newSignCount,
+                credentialDeviceType || null,
+                credentialBackedUp == null ? null : (credentialBackedUp ? 1 : 0),
+                ip || null,
+                userAgent || null,
+                createdAt,
+            ]
+        );
     }
 
     /**

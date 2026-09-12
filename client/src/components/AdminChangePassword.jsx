@@ -6,7 +6,7 @@ import Button from '@mui/joy/Button';
 import IconButton from '@mui/joy/IconButton';
 import Alert from '@mui/joy/Alert';
 import Tooltip from '@mui/joy/Tooltip';
-import LockReset from '@mui/icons-material/LockReset';
+import VpnKeyIcon from '@mui/icons-material/VpnKey';
 import { useTranslation } from 'react-i18next';
 import Swal from 'sweetalert2';
 import Dialog from './Dialog';
@@ -89,7 +89,7 @@ function AdminChangePassword({
                 sx={sx}
                 {...triggerProps}
             >
-                <LockReset sx={{ fontSize: 18 }} />
+                <VpnKeyIcon sx={{ fontSize: 18 }} />
             </IconButton>
         </Tooltip>
     ) : (
@@ -97,7 +97,7 @@ function AdminChangePassword({
             size={size}
             variant="plain"
             color="neutral"
-            startDecorator={<LockReset sx={{ fontSize: 18 }} />}
+            startDecorator={<VpnKeyIcon sx={{ fontSize: 18 }} />}
             onClick={handleOpen}
             sx={sx}
             {...triggerProps}

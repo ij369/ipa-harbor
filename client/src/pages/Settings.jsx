@@ -32,12 +32,14 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import AdminChangePassword from '../components/AdminChangePassword';
+import PasskeyManager from '../components/PasskeyManager';
+import AddToHomeScreenGuide from '../components/AddToHomeScreenGuide';
 import Dialog from '../components/Dialog';
 import FilenameTemplateEditor from '../components/FilenameTemplateEditor';
 import { useJoyDown } from '../hooks/useJoyMedia';
 import { useAppSession } from '../contexts/AppContext';
 import { useAdmin } from '../contexts/AdminContext';
-import { updateAdminSettings, isRateLimitError, checkAppUpdate, getAdminStatus, revokeAuth, resolveClientErrorMessage } from '../utils/api';
+import { updateAdminSettings, isRateLimitError, checkAppUpdate, revokeAuth, resolveClientErrorMessage } from '../utils/api';
 import {
     cloneTemplate,
     DEFAULT_DOWNLOAD_FILENAME_TEMPLATE,
@@ -160,6 +162,7 @@ function Settings() {
         logout: adminLogout,
         getFormattedExpiresAt,
         isExpiringSoon,
+        appVersion: harborAppVersion,
     } = useAdmin();
     const [language, setLanguage] = useState(normalizeLanguageCode(i18n.language));
     const [logoutLoading, setLogoutLoading] = useState(false);
@@ -233,16 +236,10 @@ function Settings() {
     }, [settings, settingsLoaded]);
 
     useEffect(() => {
-        getAdminStatus()
-            .then((response) => {
-                if (response.success && response.data?.version) {
-                    setAppVersion(response.data.version);
-                }
-            })
-            .catch(() => {
-                // 静默失败，版本区显示占位
-            });
-    }, []);
+        if (harborAppVersion) {
+            setAppVersion(harborAppVersion);
+        }
+    }, [harborAppVersion]);
 
     const markDirty = () => setDirty(true);
 
@@ -603,7 +600,15 @@ function Settings() {
                                                             )}
                                                         </Stack>
                                                     </Stack>
-                                                    <AdminChangePassword sx={{ flexShrink: 0, ml: 'auto' }} />
+                                                    <Stack
+                                                        direction="row"
+                                                        spacing={0.5}
+                                                        alignItems="center"
+                                                        sx={{ flexShrink: 0, ml: 'auto' }}
+                                                    >
+                                                        <PasskeyManager />
+                                                        <AdminChangePassword />
+                                                    </Stack>
                                                 </Stack>
                                             )}
                                             <Button
@@ -972,6 +977,8 @@ function Settings() {
                             />
                         </Stack>
                     </Sheet>
+
+                    <AddToHomeScreenGuide />
                 </Stack>
             </Box>
         </Box>

@@ -3,6 +3,7 @@ const database = require('../../utils/database');
 const { generateToken } = require('../../middleware/auth');
 const dayjs = require('dayjs');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
+const { setAuthTokenCookie, buildAuthSuccessPayload } = require('../../utils/adminAuthCookie');
 
 /**
  * 管理员登录
@@ -49,29 +50,14 @@ async function loginHandler(req, res) {
             username: user.username
         });
 
-        // 设置cookie
-        const isLanAccess = process.env.ALLOW_LAN_ACCESS === 'true';
-        res.cookie('authToken', token, {
-            httpOnly: true,           // 防止XSS攻击
-            secure: process.env.NODE_ENV === 'production' && !isLanAccess, // 局域网访问时不强制HTTPS
-            sameSite: isLanAccess ? 'lax' : 'strict',       // 局域网访问时放宽同站策略
-            maxAge: 2 * 24 * 60 * 60 * 1000 // 2天，单位毫秒
-        });
+        setAuthTokenCookie(res, token);
 
         console.log(`管理员登录成功: ${username} , time: ${dayjs().format('YYYY-MM-DD HH:mm:ss')}`);
 
         return sendSuccess(res, {
             message: '登录成功',
             errorMessageCode: 'ADMIN_LOGIN_SUCCESS',
-            data: {
-                user: {
-                    id: user.id,
-                    username: user.username,
-                    created_at: user.created_at,
-                    updated_at: user.updated_at
-                },
-                expiresAt: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString()
-            }
+            data: buildAuthSuccessPayload(user),
         });
 
     } catch (error) {

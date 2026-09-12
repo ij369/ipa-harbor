@@ -1,5 +1,9 @@
 import i18n from '../i18n';
 
+function hasI18nTranslation(key) {
+    return i18n.t(key) !== key;
+}
+
 /** 解析 API message：优先 errorMessageCode，回退后端中文 message */
 export function resolveApiMessage(data) {
     if (data?.errorMessageCode) {
@@ -48,6 +52,15 @@ export function resolveClientErrorMessage(error) {
 export function buildApiErrorText(data, status) {
     const message = resolveApiMessage(data);
     const detail = resolveApiErrorDetail(data);
+    const messageFromCode = data?.errorMessageCode
+        && hasI18nTranslation(`apiErrorMessages.${data.errorMessageCode}`);
+    const detailFromCode = data?.errorCode
+        && hasI18nTranslation(`apiErrorDetails.${data.errorCode}`);
+
+    // 主文案已本地化时，不拼接未翻译的后端 error 原文（常见于 errorCode === errorMessageCode）
+    if (messageFromCode && detail && !detailFromCode) {
+        return message;
+    }
 
     if (message && detail && message !== detail) {
         return `${message}: ${detail}`;

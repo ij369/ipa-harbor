@@ -1,7 +1,15 @@
 import React, {
     createContext, useCallback, useContext, useEffect, useMemo, useState,
 } from 'react';
-import { getAdminStatus, adminLogin, adminLogout, resolveClientErrorMessage } from '../utils/api';
+import {
+    getAdminStatus,
+    adminLogin,
+    adminLogout,
+    passkeyLoginOptions,
+    passkeyLoginVerify,
+    resolveClientErrorMessage,
+} from '../utils/api';
+import { performPasskeyLogin, resolvePasskeyClientError } from '../utils/passkey';
 import dayjs from 'dayjs';
 
 const AdminContext = createContext();
@@ -24,6 +32,8 @@ export const AdminProvider = ({ children }) => {
         settings: null,
         settingsLoaded: false,
         statusLoaded: false,
+        appVersion: null,
+        passkeyEnabled: false,
         loading: true,
         error: null,
     });
@@ -44,6 +54,8 @@ export const AdminProvider = ({ children }) => {
                 settings: response.data.settings || null,
                 settingsLoaded: true,
                 statusLoaded: true,
+                appVersion: response.data.version || null,
+                passkeyEnabled: Boolean(response.data.passkeyEnabled),
                 loading: false,
                 error: null,
             }));
@@ -90,6 +102,37 @@ export const AdminProvider = ({ children }) => {
         }
     }, []);
 
+    // Passkey verify 完成后更新登录态（按钮登录与 Conditional UI 共用）
+    const completePasskeyLogin = useCallback(async (challengeId, credential) => {
+        const response = await passkeyLoginVerify(challengeId, credential);
+        setAdminState((prev) => ({
+            ...prev,
+            isLoggedIn: true,
+            user: response.data.user,
+            expiresAt: response.data.expiresAt,
+            loading: false,
+            error: null,
+        }));
+        return response;
+    }, []);
+
+    // Passkey 按钮登录（不切换全局 loading，避免登录页背景被 loading 视图替换）
+    const passkeyLogin = useCallback(async () => {
+        try {
+            setAdminState((prev) => ({ ...prev, error: null }));
+            const optionsResponse = await passkeyLoginOptions();
+            const { challengeId, options } = optionsResponse.data;
+            const credential = await performPasskeyLogin(options);
+            return await completePasskeyLogin(challengeId, credential);
+        } catch (error) {
+            setAdminState((prev) => ({
+                ...prev,
+                error: resolvePasskeyClientError(error),
+            }));
+            throw error;
+        }
+    }, [completePasskeyLogin]);
+
     // 管理员退出登录
     const logout = useCallback(async () => {
         try {
@@ -133,6 +176,8 @@ export const AdminProvider = ({ children }) => {
     const value = useMemo(() => ({
         ...adminState,
         login,
+        passkeyLogin,
+        completePasskeyLogin,
         logout,
         checkAdminStatus,
         updateAppSettings,
@@ -141,6 +186,8 @@ export const AdminProvider = ({ children }) => {
     }), [
         adminState,
         login,
+        passkeyLogin,
+        completePasskeyLogin,
         logout,
         checkAdminStatus,
         updateAppSettings,

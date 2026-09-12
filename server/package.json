@@ -1,6 +1,6 @@
 {
     "name": "ipa-harbor-server",
-    "version": "0.1.9",
+    "version": "0.1.10",
     "description": "RESTful API wrapper for ipatool",
     "main": "app.js",
     "scripts": {
@@ -11,6 +11,7 @@
         "health": "curl -f http://localhost:3000/health || exit 1"
     },
     "dependencies": {
+        "@simplewebauthn/server": "^13.3.3",
         "bcrypt": "^6.0.0",
         "bplist-parser": "^0.3.2",
         "chokidar": "^4.0.3",
@@ -21,15 +22,16 @@
         "express": "^4.18.2",
         "express-rate-limit": "^8.1.0",
         "helmet": "^7.1.0",
+        "jose": "^5.9.6",
         "jsonwebtoken": "^9.0.2",
         "morgan": "^1.10.0",
         "node-cron": "^4.2.1",
         "plist": "^3.1.0",
         "sqlite3": "^5.1.7",
         "uuid": "^9.0.1",
+        "webauthx": "^0.1.2",
         "ws": "^8.18.3",
-        "yauzl": "^3.2.0",
-        "jose": "^5.9.6"
+        "yauzl": "^3.2.0"
     },
     "devDependencies": {
         "nodemon": "^3.0.1"

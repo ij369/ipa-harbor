@@ -18,6 +18,8 @@
     "@mantine/core": "^8.3.5",
     "@mui/icons-material": "^7.3.4",
     "@mui/joy": "5.0.0-beta.52",
+    "@mui/material": "^7.3.4",
+    "@simplewebauthn/browser": "^13.3.0",
     "dayjs": "^1.11.18",
     "i18next": "^25.8.0",
     "i18next-browser-languagedetector": "^8.2.0",

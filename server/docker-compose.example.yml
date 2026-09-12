@@ -40,6 +40,14 @@ services:
       # - PACKAGE_TICKET_TTL_MS=86400000
       # Set to 1 when behind nginx, Cloudflare, or other reverse proxy so rate limiting uses the real client IP; omit for direct access
       # - TRUST_PROXY=1
+      # Passkey config (optional)
+      # RP ID must not include port, e.g. example.com
+      # - WEBAUTHN_RP_ID=example.com
+      # Allowed Origins, comma-separated; include the port when not on the default
+      # - WEBAUTHN_ALLOWED_ORIGINS=http://localhost:5173,http://localhost:3030,https://example.com,https://example.com:8443
+      # Optional: challenge TTL in ms (default 5m) and cleanup interval in minutes (default 5)
+      # - WEBAUTHN_CHALLENGE_TTL_MS=300000
+      # - WEBAUTHN_CHALLENGE_CLEANUP_INTERVAL_MINUTES=5
     volumes:
       # Persist data: IPA files, partial downloads (tmp), admin database, and ipatool config ($HOME/.ipatool)
       - ./data:/app/data

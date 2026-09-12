@@ -9,6 +9,7 @@ const logoutHandler = require('./logout');
 const statusHandler = require('./status');
 const checkUpdateHandler = require('./checkUpdate');
 const updateSettingsHandler = require('./settings');
+const { authRouter: passkeyAuthRouter, manageRouter: passkeyManageRouter } = require('./passkey');
 const { authenticateToken, optionalAuth } = require('../../middleware/auth');
 const setupRateLimit = require('../../middleware/setupRateLimit');
 
@@ -20,5 +21,7 @@ router.post('/logout', authenticateToken, logoutHandler); // 管理员退出登�
 router.get('/status', optionalAuth, statusHandler);       // 获取登录状态
 router.get('/check-update', optionalAuth, checkUpdateHandler); // 检查 ipa-harbor 新版本
 router.put('/settings', authenticateToken, updateSettingsHandler); // 更新应用设置
+router.use('/passkey', passkeyAuthRouter);
+router.use('/passkeys', passkeyManageRouter);
 
 module.exports = router;
