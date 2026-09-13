@@ -22,8 +22,7 @@ It can be accessed and used directly from a web browser, supporting App search, 
 
 ## Quick Start
 ### Local Quick Start Command
-+ Suitable for Docker installed locally (e.g., [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/)).  
-  Recommended to run the following command for your first experience.
++ Suitable for Docker installed locally (e.g., [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/)). Try the following on your first run.
 
 ```bash
 docker run -d \
@@ -35,6 +34,16 @@ docker run -d \
   --name ipa-harbor \
   uuphy/ipa-harbor:latest
 ```
+
+
+#### Quick Deploy Script
+Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/), open Terminal, and run:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/quick-deploy.sh | bash
+```
+
+Follow the script prompts to install, upgrade, and more.
 
 > [!WARNING]
 > **The first Apple ID login runs Unicorn/SAP emulation. Ensure the host has ≥1 GB free RAM, or [configure ≥2 GB swap](#linux-vps-memory--swap-first-apple-id-login).**
@@ -362,6 +371,16 @@ docker run -d \
   --name ipa-harbor \
   uuphy/ipa-harbor:latest
 ```
+
+
+#### 一键脚本
+安装 Docker Desktop 或 OrbStack，打开终端执行
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/quick-deploy.zh.sh | bash
+```
+
+按照脚本提示可以进行安装，升级等管理操作
 
 > [!WARNING]
 > **首次 Apple ID 认证需要 Unicorn/SAP 模拟。建议宿主机至少有 ≥1 GB 可用内存，或 [配置 ≥2 GB Swap](#linux-vps首次-apple-id-登录与内存)。**
