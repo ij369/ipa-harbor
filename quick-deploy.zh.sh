@@ -10,14 +10,55 @@ readonly CONTAINER_PORT="${CONTAINER_PORT:-3080}"
 readonly ADMIN_INIT_PIN="${ADMIN_INIT_PIN:-20251024}"
 
 
-pause() {
+promptRead() {
   if [[ -t 0 ]]; then
-    read -r -p "按回车继续… " _
+    read -r "$@"
+    return $?
+  fi
+  if [[ ! -r /dev/tty ]]; then
+    echo "错误: 需要交互式终端。" >&2
+    return 1
+  fi
+
+  local prompt=""
+  local args=()
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -p)
+        prompt=$2
+        shift 2
+        ;;
+      *)
+        args+=("$1")
+        shift
+        ;;
+    esac
+  done
+
+  if [[ -n "$prompt" ]]; then
+    printf '%s' "$prompt" >/dev/tty
+  fi
+  read -r "${args[@]}" </dev/tty
+}
+
+pause() {
+  if isInteractiveTerminal; then
+    promptRead -p "按回车继续… " _ || true
   fi
 }
 
 printDivider() {
   echo "----------------------------------------"
+}
+
+printInitPinLine() {
+  local label="$1"
+  local pin="$2"
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%s%b%s%b\n' "$label" $'\033[1;33;40m' "$pin" $'\033[0m'
+  else
+    printf '%s%s\n' "$label" "$pin"
+  fi
 }
 
 requireDocker() {
@@ -33,6 +74,63 @@ requireDocker() {
 
 isYes() {
   [[ "${1:-}" == "y" || "${1:-}" == "Y" || "${1:-}" == "yes" || "${1:-}" == "YES" ]]
+}
+
+isInteractiveTerminal() {
+  [[ -t 0 ]] && return 0
+  ( : < /dev/tty ) 2>/dev/null
+}
+
+trimInput() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s' "$value"
+}
+
+waitForServiceUrl() {
+  local url="$1"
+  local attempts="${2:-30}"
+  local i=0
+
+  echo "正在等待服务响应…"
+  while [[ $i -lt attempts ]]; do
+    if curl -sS --max-time 2 -o /dev/null "$url" 2>/dev/null; then
+      return 0
+    fi
+    sleep 1
+    i=$((i + 1))
+  done
+
+  echo "提示: 服务尚未就绪，仍将尝试打开浏览器。"
+  return 1
+}
+
+openBrowserUrl() {
+  local url="$1"
+
+  if [[ "$(uname -s)" != "Darwin" ]]; then
+    printf "请手动打开: %s\n" "$url"
+    return 1
+  fi
+
+  waitForServiceUrl "$url" || true
+
+  if [[ -x /usr/bin/open ]]; then
+    if /usr/bin/open "$url"; then
+      printf "已在默认浏览器中打开: %s\n" "$url"
+      return 0
+    fi
+  elif command -v open >/dev/null 2>&1; then
+    if open "$url"; then
+      printf "已在默认浏览器中打开: %s\n" "$url"
+      return 0
+    fi
+  fi
+
+  echo "无法自动打开浏览器，请手动访问:"
+  printf "  %s\n" "$url"
+  return 1
 }
 
 generateKeychainPassphrase() {
@@ -80,11 +178,16 @@ getPrimaryHostPortFromPortArgs() {
 
 maybeOpenBrowser() {
   local url="$1"
-  if [[ "$(uname -s)" == "Darwin" && -t 0 ]]; then
-    read -r -p "是否现在打开浏览器？(y/N) " openBrowser
-    if isYes "$openBrowser"; then
-      open "$url" || true
-    fi
+  local openBrowser=""
+
+  if [[ "$(uname -s)" != "Darwin" ]] || ! isInteractiveTerminal; then
+    return 0
+  fi
+
+  promptRead -p "是否现在打开浏览器？(y/N) " openBrowser || return 0
+  openBrowser="$(trimInput "$openBrowser")"
+  if isYes "$openBrowser"; then
+    openBrowserUrl "$url"
   fi
 }
 
@@ -185,7 +288,7 @@ pickIpaHarborContainer() {
   done
   echo ""
   maxChoice="${#containers[@]}"
-  read -r -p "请选择容器 [1-${maxChoice}]: " choice
+  promptRead -p "请选择容器 [1-${maxChoice}]: " choice
   if [[ "$choice" =~ ^[0-9]+$ ]] && choice -ge 1 && choice -le maxChoice; then
     echo "${containers[$((choice - 1))]}"
     return 0
@@ -341,7 +444,7 @@ actionInstall() {
   if [[ -n "$existingContainer" ]]; then
     printf "注意: 已存在 IPA-Harbor 容器: %s\n" "$existingContainer"
     echo ""
-    read -r -p "是否改为执行升级？(Y/n) " goUpgrade
+    promptRead -p "是否改为执行升级？(Y/n) " goUpgrade
     if [[ -z "$goUpgrade" ]] || isYes "$goUpgrade"; then
       actionUpgrade "$existingContainer"
       return
@@ -371,11 +474,11 @@ actionInstall() {
   echo ""
   printf "访问地址:   %s\n" "$visitUrl"
   echo ""
-  printf "初始化 PIN: %s\n" "$ADMIN_INIT_PIN"
+  printInitPinLine "初始化 PIN: " "$ADMIN_INIT_PIN"
   echo ""
   echo ""
 
-  read -r -p "按回车开始安装，或 Ctrl+C 取消… " _
+  promptRead -p "按回车开始安装，或 Ctrl+C 取消… " _
 
   echo "[1/3] 拉取镜像…"
   docker pull "$IMAGE"
@@ -401,7 +504,7 @@ actionInstall() {
   echo ""
   printf "打开: %s\n" "$visitUrl"
   echo ""
-  printf "初始化 PIN: %s\n" "$ADMIN_INIT_PIN"
+  printInitPinLine "初始化 PIN: " "$ADMIN_INIT_PIN"
   echo ""
   maybeOpenBrowser "$visitUrl"
 }
@@ -442,7 +545,7 @@ actionUpgrade() {
   echo "已下载的 IPA 与配置保存在数据卷中，升级不会清空。"
   echo ""
 
-  read -r -p "按回车开始升级，或 Ctrl+C 取消… " _
+  promptRead -p "按回车开始升级，或 Ctrl+C 取消… " _
 
   echo "[1/4] 从 registry 拉取最新 latest 镜像…"
   pullUpgradeImage "$upgradeImage"
@@ -486,7 +589,7 @@ actionUpgrade() {
     initPin="$(getAdminInitPinFromEnvArgs)"
     printf "请访问: %s\n" "$VISIT_URL"
     echo ""
-    printf "初始化 PIN: %s\n" "$initPin"
+    printInitPinLine "初始化 PIN: " "$initPin"
     echo ""
     maybeOpenBrowser "$VISIT_URL"
   fi
@@ -559,7 +662,7 @@ actionUninstall() {
   fi
 
   echo ""
-  read -r -p "确认卸载？(y/N) " confirmUninstall
+  promptRead -p "确认卸载？(y/N) " confirmUninstall
   if ! isYes "$confirmUninstall"; then
     echo "已取消。"
     return
@@ -568,7 +671,7 @@ actionUninstall() {
   local keepData=true
   if [[ "$hasVolume" == "true" ]]; then
     echo ""
-    read -r -p "$(printf "是否保留已下载的 IPA 与用户数据（数据卷 %s）？(Y/n) " "$DATA_VOLUME")" keepDataAnswer
+    promptRead -p "$(printf "是否保留已下载的 IPA 与用户数据（数据卷 %s）？(Y/n) " "$DATA_VOLUME")" keepDataAnswer
     if [[ "$keepDataAnswer" == "n" || "$keepDataAnswer" == "N" ]]; then
       keepData=false
     fi
@@ -577,7 +680,7 @@ actionUninstall() {
   local deleteImages=false
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    read -r -p "是否删除本机 IPA-Harbor Docker 镜像？(y/N) " deleteImagesAnswer
+    promptRead -p "是否删除本机 IPA-Harbor Docker 镜像？(y/N) " deleteImagesAnswer
     if isYes "$deleteImagesAnswer"; then
       deleteImages=true
     fi
@@ -658,7 +761,7 @@ mainMenu() {
   requireDocker
   while true; do
     showMenu
-    read -r -p "请选择 [0-3]: " choice
+    promptRead -p "请选择 [0-3]: " choice || exit 1
     case "$choice" in
       1)
         actionInstall || true
