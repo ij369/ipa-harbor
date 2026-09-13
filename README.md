@@ -1,15 +1,28 @@
 # IPA-Harbor
-This project is an open-source IPA visualization web management tool built on top of **ipatool**.  
-It supports app search, historical version downloads, and containerized deployment with Docker.
+This project is an open-source IPA web management tool based on [ipatool](https://github.com/majd/ipatool).  
+It can be accessed and used directly from a web browser, supporting App search, downloading previous versions, and IPA installation. A [Docker image](https://hub.docker.com/r/uuphy/ipa-harbor/tags) is also provided for easy deployment.
 
-本项目是一个基于 **ipatool** 的开源 IPA 可视化 Web 管理工具，  
-支持 App 搜索、历史版本下载与 Docker 容器化部署。
+本项目是一个基于 [ipatool](https://github.com/majd/ipatool) 的开源 IPA Web 管理工具。
+通过浏览器即可访问和使用，支持 App 搜索、历史版本下载及安装，并提供 [Docker 镜像](https://hub.docker.com/r/uuphy/ipa-harbor/tags) 方便部署。
 
 [Quick Start](#quick-start) | [快速开始](#快速开始)
 
+> Apple ID: IPA-Harbor is designed for self-hosted use; this project does not provide a public online instance.
+> For security and privacy, we recommend deploying it yourself and using an Apple ID separate from your daily-use account.
+> Do not enter Apple ID credentials on unknown or untrusted third-party instances.
+
+> Official Docker image: [`uuphy/ipa-harbor`](https://hub.docker.com/r/uuphy/ipa-harbor) is the only official Docker image for this project, built and published from this repository's source. For most users, we recommend using the latest tag.
+
+> Apple ID： IPA-Harbor 设计为自托管使用，本项目不提供公共在线实例。
+> 出于安全和隐私考虑，建议自行部署并与日常使用的 Apple ID 分开。
+> 请勿在来源不明或不可信的第三方实例中输入 Apple ID 凭据。
+
+> 官方 Docker 镜像：[`uuphy/ipa-harbor`](https://hub.docker.com/r/uuphy/ipa-harbor) 是本项目唯一官方 Docker 镜像，由本仓库源码构建并发布，对于大多数用户，建议使用 latest 标签。
+
+
 ## Quick Start
 ### Local Quick Start Command
-+ Suitable for Docker installed locally (e.g., Docker Desktop or OrbStack).  
++ Suitable for Docker installed locally (e.g., [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/)).  
   Recommended to run the following command for your first experience.
 
 ```bash
@@ -152,9 +165,13 @@ If you deploy on public network, you must have `ALLOWED_DOMAINS` and set `ALLOW_
 -e ALLOWED_DOMAINS=your-domain.com,another-domain.com \
 ```
 
-### Admin Passkeys (optional)
+### System admin authentication
+
+Passkey (optional) offers a more convenient and secure way to sign in, especially on Apple devices and browsers that support Passkey.
+If Passkey is not configured, you can still sign in with username and password admin authentication.
 
 To enable this feature, configure at least the following environment variables:
+
 | Variable | Description |
 | --- | --- |
 | `WEBAUTHN_RP_ID` | Relying Party ID — site domain **without port**, e.g. `example.com` |
@@ -162,12 +179,34 @@ To enable this feature, configure at least the following environment variables:
 
 **Keep Origin and CORS in sync:** The URL users actually visit must appear in both `ALLOWED_DOMAINS` (CORS) and `WEBAUTHN_ALLOWED_ORIGINS`. If they differ, the app may load but Passkey login/register will fail.
 
-See `server/docker-compose.example.yml`.
+See [`server/docker-compose.example.yml`](https://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml).
+
+
+## IPA Installation
+
+After downloading an IPA, you can install it with other tools.
+
+### How to install downloaded IPAs on iPad / iPhone?
+
+On recent iOS/iPadOS versions, AirDrop is the straightforward option. For older devices, use [Apple Configurator](https://apps.apple.com/app/id1037126344) on Mac, or iTunes 12.6.3 on Windows. Third-party sideloading tools are not recommended.
+
+> iTunes downloads: [ipsw.me/iTunes](https://ipsw.me/iTunes)
+
+IPA-Harbor also supports installing IPAs directly via Safari, but this requires additional deployment conditions:
+
+- Available on **iPhone / iPad / Apple Silicon Mac** only (open the site in Safari on the device).
+- The site must be served over **HTTPS** — the **Install** button is hidden on plain HTTP.
+  - Built-in TLS: `-p 443:3443`, `-e HTTPS_PORT=3443`, `-v ipa_certs:/app/certs` with `server.crt` and `server.key` in the volume (or bind-mount those two files)
+  - Or terminate HTTPS on nginx :443 — see [Public Network Startup](#public-network-startup-command-self-signed-certificate-or-specified-certificate)
+- Toggle in **Settings → Enable OTA install** (off by default on non-Apple devices).
+- IPAs must be downloaded with `--ota-compat` ipatool — thanks to [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) for the `--ota-compat` design ([#540](https://github.com/majd/ipatool/issues/540)); see [ipatool & Docker](#ipatool--docker).
+
+Therefore, if you only use IPA-Harbor to download IPAs, a standard Docker deployment is sufficient; if you need Safari direct install, see the [related configuration guide](#public-network-startup-command-self-signed-certificate-or-specified-certificate).
 
 
 ## Note
 
-It is recommended to use a single container with a single Apple ID login, as each container has an independent MAC address. The ID should ideally use the same region as the container host IP.
+Log in with only one Apple ID per container. Use a separate container for each Apple ID, and try to keep each Apple ID's region aligned with the container's egress IP region.
 
 ### Linux VPS: memory & swap (first Apple ID login)
 
@@ -267,15 +306,6 @@ After upgrading ipatool, **re-download IPAs** for OTA. Verify: `server/bin/ipato
 
 First Apple ID login on a Linux VPS needs extra host memory or swap — see [Note → Linux VPS](#linux-vps-memory--swap-first-apple-id-login).
 
-### OTA install (wireless)
-
-- Available on **iPhone / iPad / Apple Silicon Mac** only (open the site in Safari on the device).
-- The site must be served over **HTTPS** — the **Install** button is hidden on plain HTTP.
-  - Built-in TLS: `-p 443:3443`, `-e HTTPS_PORT=3443`, `-v ipa_certs:/app/certs` with `server.crt` and `server.key` in the volume (or bind-mount those two files)
-  - Or terminate HTTPS on nginx :443 — see [Public Network Startup](#public-network-startup-command-self-signed-certificate-or-specified-certificate)
-- Toggle in **Settings → Enable OTA install** (off by default on non-Apple devices).
-- IPAs must be downloaded with `--ota-compat` ipatool — thanks to [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) for the flag design ([#540](https://github.com/majd/ipatool/issues/540)); see [ipatool & Docker](#ipatool--docker).
-
 ## Acknowledgements
 
 Docker images bundle ipatool from source (`haughtyeyes+ota`). Thanks to:
@@ -289,34 +319,38 @@ Docker images bundle ipatool from source (`haughtyeyes+ota`). Thanks to:
 ## 什么是 IPA
 IPA 文件是苹果 iOS 和 iPadOS 应用的存档文件，你可以理解成安装包，本工具下载的 IPA 都会经过签名，早期的 iTunes 就可以直接下载到一样的档案，如果当作压缩包解压后能看到详尽的元数据。
 
-### 下载后的 ipa 档案如何安装到 iPad/ iPhone？
-比较新版本的系统直接走 Airdrop，如果设备为老系统，Mac 可以 [Apple Configurator](https://apps.apple.com/app/id1037126344), Windows 建议去下载 12.6.3 的 iTunes, 目前不建议任何其他第三方的侧载工具。
+## IPA 安装
 
-> iTunes 可以去 https://ipsw.me/iTunes 找到
+下载 IPA 后，用户可以使用其他工具进行安装。
 
-### 下载后的 ipa 档案如何安装到 Mac？
-如果是安装到 Apple Silicon 的 Mac，直接双击就能安装到 Mac。
+### 下载后的 ipa 档案如何安装到 iPad / iPhone？
 
-### 无线安装（OTA）
+比较新版本的系统直接走 Airdrop，如果设备为老系统，Mac 可以 [Apple Configurator](https://apps.apple.com/app/id1037126344)，Windows 建议去下载 12.6.3 的 iTunes，目前不建议任何其他第三方的侧载工具。
+
+> iTunes 可以去 [ipsw.me/iTunes](https://ipsw.me/iTunes) 找到
+
+IPA-Harbor 也支持通过 Safari 直接安装 IPA，但此功能需要满足额外的部署条件：
 
 - 仅 **iPhone / iPad / Apple 芯片 Mac** 可用，请在设备上用 **Safari** 打开站点。
 - 站点须为 **HTTPS**，HTTP 下不会显示「安装」按钮。
   - 容器内置 HTTPS：`-p 443:3443`、`-e HTTPS_PORT=3443`、`-v ipa_certs:/app/certs`，卷内放置 `server.crt` 与 `server.key`（也可绑定挂载这两个文件）
-  - 亦可用 nginx 监听 443 反代，见[公网环境启动命令](#公网环境启动命令自签证书或者指定证书)
+  - 亦可用 nginx 监听 443 反代，见 [公网环境启动命令](#公网环境启动命令自签证书或者指定证书)
 - 可在 **设置 → 启用 OTA 安装** 中开关（非 Apple 设备上默认关闭）。
 - IPA 须由带 `--ota-compat` 的 ipatool 下载，感谢 [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) 的 `--ota-compat` 方案 ([#540](https://github.com/majd/ipatool/issues/540))；见 [ipatool 与镜像](#ipatool-与镜像)。
+
+因此，如果只是使用 IPA-Harbor 下载 ipa，可以直接使用普通的 Docker 部署方式；如果需要通过 Safari 直接安装，请参考 [相关配置说明](#公网环境启动命令自签证书或者指定证书)。
 
 ## 项目如何开始的
 我以前每次想下一个旧版 ipa 都要抓包，然后 AirDrop 给 iPhone 后面逛帖子时发现 ipatool ，后面拿电脑扣命令，是在是厌烦了，可读的版本号也没有，所以有了想法写这个。
 
 另外，有一个 ipatool.ts 的项目，也非常好。我不想维护 ipatool 核心，镜像默认用子模块 [HaughtyEyes/ipatool](https://github.com/HaughtyEyes/ipatool) + OTA 补丁从源码编译，站在社区修复之上，感谢 [majd/ipatool](https://github.com/majd/ipatool) 及上述贡献者。
 
-目前我自用已经有一年时间，两个地区的 ID 都没被封过，非常建议使用的话拿独立的 Apple ID 独立的容器运行，没有花钱购买应用的 ID，这样能避免损失，具体可以去 App Store 进行切换登录，其实折腾这个的不一定只有一个 ID 吧。
+目前我自用已经有一年时间，两个地区的 ID 都没被封过。Apple ID 与容器使用建议见文首说明及 [注意](#注意)。
 
 
 ## 快速开始
 ### 本机快速启动命令
-+ 适用 Docker 就装在本机的，例如Docker Desktop 或者 OrbStack, 建议首次尝试前执行以下内容进行体验
++ 适用 Docker 就装在本机的，例如 [Docker Desktop](https://www.docker.com/products/docker-desktop/) 或者 [OrbStack](https://orbstack.dev/)，建议首次尝试前执行以下内容进行体验
 
 ```bash
 docker run -d \
@@ -356,7 +390,7 @@ docker run -d \
   uuphy/ipa-harbor:latest
 ```
 
-ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，你也可以直接绑定`/app/certs/server.crt` 和 `/app/certs/server.key` 到指定文件
+ipa_certs 卷内需要放置两个证书文件（`server.crt` 和 `server.key`），你也可以直接绑定 `/app/certs/server.crt` 和 `/app/certs/server.key` 到指定文件。
 然后打开浏览器访问： http://your-domain.com 和 https://your-domain.com 即可访问。
 注意，局域网访问需要 `ALLOW_LAN_ACCESS=true`。
 
@@ -365,13 +399,13 @@ ipa_certs 卷内需要放置两个证书文件 (`server.crt`和`server.key`)，�
 <br />
 
 ### 公网环境启动命令（nginx 反向代理）
-+ 这样简化成直接代理http端口（环境变量PORT）
++ 这样简化成直接代理 http 端口（环境变量 PORT）
 + 经 nginx、Cloudflare 等反代时需加 `-e TRUST_PROXY=1`（下方命令已包含），限流才按真实客户端 IP 计数；直连访问不要设置
 
 假设你拥有一个域名 `example.com`
-使用了 `docker network create my_network` 来创建了一个`my_network`网络
+使用了 `docker network create my_network` 来创建了一个 `my_network` 网络
 并将 nginx 的容器加入到了该 `my_network` 内
-这时，给`ipa-harbor` 设置一个 hostname 为 `ipa_harbor`
+这时，给 `ipa-harbor` 设置一个 hostname 为 `ipa_harbor`
 
 对应的命令为
 ```bash
@@ -430,19 +464,19 @@ server {
 
 `-e ENABLE_MORE_LOGS=true` 会有更详细的日志
 
-`-e KEYCHAIN_PASSPHRASE=X96A49763R`：随机生成密钥，保证 Keychain 安全, 因为 Keychain 内存着 Apple ID 的访问权。
+`-e KEYCHAIN_PASSPHRASE=X96A49763R`：随机生成密钥，保证 Keychain 安全，因为 Keychain 内存着 Apple ID 的访问权。
 
 `-e ADMIN_INIT_PIN=...`：初始化 PIN，用于初始化以及重置管理员密码
 
 `-e ADMIN_RECOVERY_ENABLED=true`（可选）：启用 `/recover`
 
-`-e ALLOW_LAN_ACCESS=true` 允许局域网IP访问，默认开启，如果部署到公网建议设置为`false`
+`-e ALLOW_LAN_ACCESS=true` 允许局域网 IP 访问，默认开启，如果部署到公网建议设置为 `false`
 
-`-e PORT=3080` 指定 http 访问端口，默认3080，可选
+`-e PORT=3080` 指定 http 访问端口，默认 3080，可选
 
-`-e HTTPS_PORT=3443` 指定 https 访问端口，默认3443，可选
+`-e HTTPS_PORT=3443` 指定 https 访问端口，默认 3443，可选
 
-`-e ALLOWED_DOMAINS=your-domain.com,another-domain.com`，在非 loaclhost 的情况下使用域名连接时，需要指定origin，否则无法访问，使用docker的network时并通过其他容器代理访问时，建议加上主机名，使用`,`隔开
+`-e ALLOWED_DOMAINS=your-domain.com,another-domain.com`，在非 localhost 的情况下使用域名连接时，需要指定 origin，否则无法访问，使用 docker 的 network 时并通过其他容器代理访问时，建议加上主机名，使用 `,` 隔开
 
 `-v ipa_data:/app/data`：持久化数据（IPA 文件、数据库等）。
 
@@ -452,28 +486,31 @@ server {
 
 **限流：** `/v1/` API 每 IP 每分钟 100 次。WebSocket 不受影响（不走 `/v1/`）。
 
-如果你部署在公网一定要有`ALLOWED_DOMAINS`, 并`ALLOW_LAN_ACCESS=false`实现前端访问白名单，在浏览器层面会受这个影响禁止访问:
+如果你部署在公网，一定要有 `ALLOWED_DOMAINS`，并 `ALLOW_LAN_ACCESS=false` 实现前端访问白名单，在浏览器层面会受这个影响禁止访问：
 
 ```
 -e ALLOWED_DOMAINS=your-domain.com,another-domain.com \
 ```
 
-### 管理员通行密钥（可选）
+### 系统管理员认证登录
+Passkey (可选) 可以提供更加方便、安全的登录方式，尤其适合支持 Passkey 的 Apple 设备和浏览器。
+如果没有配置 Passkey，仍可使用用户名和密码的管理员认证方式登录。
 
 如果需要启用这个功能，至少配置以下环境变量：
+
 | 变量 | 说明 |
 | --- | --- |
 | `WEBAUTHN_RP_ID` | Relying Party ID，填站点域名**不含端口**，如 `example.com` |
 | `WEBAUTHN_ALLOWED_ORIGINS` | 允许 WebAuthn 的浏览器 Origin 列表，半角逗号分隔，如 `https://example.com,http://localhost:5173`。**须与地址栏完全一致**（非常规端口时要带端口）。 |
 
-**Origin 与 CORS 请保持一致：** 用户实际访问的地址，既要出现在 `ALLOWED_DOMAINS`（CORS）里，也要出现在 `WEBAUTHN_ALLOWED_ORIGINS` 里。两者不一致时，页面可能能打开，但通行密钥登录/注册会失败。
+**Origin 与 CORS 请保持一致：** 用户实际访问的地址，既要出现在 `ALLOWED_DOMAINS`（CORS）里，也要出现在 `WEBAUTHN_ALLOWED_ORIGINS` 里。两者不一致时，页面可能能打开，但 Passkey 登录/注册会失败。
 
-详见 `server/docker-compose.example.zh.yml`。
+详见 [`server/docker-compose.example.zh.yml`](https://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.zh.yml)。
 
 
 ## 注意
 
-建议单容器，登录单个Apple ID，因为单个容器有独立的 MAC 地址，ID 最好使用和容器宿主机 IP 相同的地区。
+建议每个容器仅登录一个 Apple ID。不同 Apple ID 建议使用独立容器，并尽量保持 Apple ID 所在地区与容器出口 IP 所在地区一致。
 
 ### Linux VPS：首次 Apple ID 登录与内存
 
@@ -488,7 +525,7 @@ echo '/swapfile none swap sw 0 0' >> /etc/fstab   # 开机自动挂载
 swapon --show && free -h     # 验证（应看到约 2G /swapfile）
 ```
 
-配好后无需其他操作，按常在 Web 里绑定 Apple ID 即可。首次认证可能较慢（走 swap 时更明显），随后会进入二次验证（邮件或短信），多等一会儿，别重复点。
+配好后无需其他操作，照常在 Web 里绑定 Apple ID 即可。首次认证可能较慢（走 swap 时更明显），随后会进入二次验证（邮件或短信），多等一会儿，别重复点。
 
 ## 目录结构
 ```
@@ -545,7 +582,7 @@ chmod +x build_zh.sh && ./build_zh.sh
 
 **说明**
 
-默认预设 **`haughtyeyes+ota`**（子模块 `ipatool/` + OTA 补丁 → `server/bin/ipatool`）。官方 [releases](https://github.com/majd/ipatool/releases) v2.5.0 不含空响应修复 ([#538](https://github.com/majd/ipatool/issues/538)、[#547](https://github.com/majd/ipatool/issues/547)) 与 OTA ([#540](https://github.com/majd/ipatool/issues/540))，详见[致谢](#致谢)。
+默认预设 **`haughtyeyes+ota`**（子模块 `ipatool/` + OTA 补丁 → `server/bin/ipatool`）。官方 [releases](https://github.com/majd/ipatool/releases) v2.5.0 不含空响应修复 ([#538](https://github.com/majd/ipatool/issues/538)、[#547](https://github.com/majd/ipatool/issues/547)) 与 OTA ([#540](https://github.com/majd/ipatool/issues/540))，详见 [致谢](#致谢)。
 
 | 场景 | 命令 |
 | --- | --- |
@@ -571,7 +608,7 @@ chmod +x build_zh.sh && ./build_zh.sh
 
 升级 ipatool 后，OTA 用 IPA **须重新下载**。验证：`server/bin/ipatool download -h | grep ota-compat`
 
-Linux VPS 首次 Apple ID 登录需宿主机足够内存或 swap，见[注意 → Linux VPS](#linux-vps首次-apple-id-登录与内存)。
+Linux VPS 首次 Apple ID 登录需宿主机足够内存或 swap，见 [注意 → Linux VPS](#linux-vps首次-apple-id-登录与内存)。
 
 ## 致谢
 
