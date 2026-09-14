@@ -9,7 +9,7 @@ import {
     passkeyLoginVerify,
     resolveClientErrorMessage,
 } from '../utils/api';
-import { performPasskeyLogin, resolvePasskeyClientError } from '../utils/passkey';
+import { performPasskeyLogin } from '../utils/passkey';
 import dayjs from 'dayjs';
 
 const AdminContext = createContext();
@@ -37,6 +37,15 @@ export const AdminProvider = ({ children }) => {
         loading: true,
         error: null,
     });
+    const [postSetupFlowActive, setPostSetupFlowActive] = useState(false);
+
+    const beginPostSetupFlow = useCallback(() => {
+        setPostSetupFlowActive(true);
+    }, []);
+
+    const endPostSetupFlow = useCallback(() => {
+        setPostSetupFlowActive(false);
+    }, []);
 
     // 检查管理员状态（同时拉取后端应用设置，避免重复请求 status）
     const checkAdminStatus = useCallback(async () => {
@@ -96,7 +105,6 @@ export const AdminProvider = ({ children }) => {
             setAdminState((prev) => ({
                 ...prev,
                 loading: false,
-                error: resolveClientErrorMessage(error),
             }));
             throw error;
         }
@@ -118,19 +126,11 @@ export const AdminProvider = ({ children }) => {
 
     // Passkey 按钮登录（不切换全局 loading，避免登录页背景被 loading 视图替换）
     const passkeyLogin = useCallback(async () => {
-        try {
-            setAdminState((prev) => ({ ...prev, error: null }));
-            const optionsResponse = await passkeyLoginOptions();
-            const { challengeId, options } = optionsResponse.data;
-            const credential = await performPasskeyLogin(options);
-            return await completePasskeyLogin(challengeId, credential);
-        } catch (error) {
-            setAdminState((prev) => ({
-                ...prev,
-                error: resolvePasskeyClientError(error),
-            }));
-            throw error;
-        }
+        setAdminState((prev) => ({ ...prev, error: null }));
+        const optionsResponse = await passkeyLoginOptions();
+        const { challengeId, options } = optionsResponse.data;
+        const credential = await performPasskeyLogin(options);
+        return await completePasskeyLogin(challengeId, credential);
     }, [completePasskeyLogin]);
 
     // 管理员退出登录
@@ -175,21 +175,27 @@ export const AdminProvider = ({ children }) => {
 
     const value = useMemo(() => ({
         ...adminState,
+        postSetupFlowActive,
         login,
         passkeyLogin,
         completePasskeyLogin,
         logout,
         checkAdminStatus,
+        beginPostSetupFlow,
+        endPostSetupFlow,
         updateAppSettings,
         getFormattedExpiresAt,
         isExpiringSoon,
     }), [
         adminState,
+        postSetupFlowActive,
         login,
         passkeyLogin,
         completePasskeyLogin,
         logout,
         checkAdminStatus,
+        beginPostSetupFlow,
+        endPostSetupFlow,
         updateAppSettings,
         getFormattedExpiresAt,
         isExpiringSoon,

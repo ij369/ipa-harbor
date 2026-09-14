@@ -34,7 +34,7 @@ const AdminLogin = () => {
     const navigate = useNavigate();
     const {
         isLoggedIn, user, login, passkeyLogin, completePasskeyLogin, logout,
-        getFormattedExpiresAt, isExpiringSoon, loading, error,
+        getFormattedExpiresAt, isExpiringSoon, loading,
         statusLoaded, passkeyEnabled,
     } = useAdmin();
 
@@ -295,12 +295,6 @@ const AdminLogin = () => {
                             <Typography level="body-sm" sx={{ mb: 3, textAlign: 'center', color: 'text.secondary' }}>
                                 {t('ui.adminLoginSubtitle')}
                             </Typography>
-                            {error && (
-                                <Alert color="danger" sx={{ mb: 2 }}>
-                                    {error}
-                                </Alert>
-                            )}
-
                             {loginError && (
                                 <Alert color="danger" sx={{ mb: 2 }}>
                                     {loginError}

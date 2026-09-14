@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Box,
@@ -11,15 +11,29 @@ import {
     Button,
     Alert,
     LinearProgress,
-    Stack
+    Stack,
+    Divider
 } from '@mui/joy';
 import { CheckCircle } from '@mui/icons-material';
-import { adminSetup, resolveClientErrorMessage } from '../utils/api';
+import {
+    adminSetup,
+    adminLogin,
+    getAdminStatus,
+    passkeyRegisterOptions,
+    passkeyRegisterVerify,
+    resolveClientErrorMessage,
+} from '../utils/api';
 import { useAdmin } from '../contexts/AdminContext';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
 import RadioButtonCheckedIcon from '@mui/icons-material/RadioButtonChecked';
 import InfoOutlineIcon from '@mui/icons-material/InfoOutline';
+import PasskeyIcon from '../components/PasskeyIcon';
+import {
+    isPasskeySupported,
+    performPasskeyRegister,
+    resolvePasskeyClientError,
+} from '../utils/passkey';
 
 const pageShellSx = {
     width: '100%',
@@ -43,12 +57,19 @@ const pageCardSx = {
     maxWidth: 500,
     my: 'auto',
     flexShrink: 0,
+    // borderRadius: 'md',
 };
 
 const AdminSetup = () => {
     const { t } = useTranslation();
     const navigate = useNavigate();
-    const { checkAdminStatus, setupRequiresInitPin } = useAdmin();
+    const {
+        checkAdminStatus,
+        setupRequiresInitPin,
+        logout,
+        beginPostSetupFlow,
+        endPostSetupFlow,
+    } = useAdmin();
 
     const [formData, setFormData] = useState({
         username: '',
@@ -58,6 +79,37 @@ const AdminSetup = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState(false);
+    const [successPhase, setSuccessPhase] = useState('redirect');
+    const [passkeyLoading, setPasskeyLoading] = useState(false);
+
+    useEffect(() => {
+        if (!success || successPhase !== 'redirect') {
+            return undefined;
+        }
+
+        const timer = setTimeout(async () => {
+            endPostSetupFlow();
+            await checkAdminStatus();
+            navigate('/login');
+        }, 2000);
+
+        return () => clearTimeout(timer);
+    }, [success, successPhase, navigate, endPostSetupFlow, checkAdminStatus]);
+
+    useEffect(() => {
+        if (successPhase !== 'passkey-done') {
+            return undefined;
+        }
+
+        const timer = setTimeout(async () => {
+            endPostSetupFlow();
+            await logout();
+            await checkAdminStatus();
+            navigate('/login');
+        }, 1500);
+
+        return () => clearTimeout(timer);
+    }, [successPhase, navigate, endPostSetupFlow, logout, checkAdminStatus]);
 
     const handleInputChange = (e) => {
         const { name, value } = e.target;
@@ -107,16 +159,49 @@ const AdminSetup = () => {
                 password: formData.password,
                 initPin: formData.initPin || undefined,
             });
-            setSuccess(true);
 
-            setTimeout(async () => {
-                await checkAdminStatus();
-                navigate('/login');
-            }, 2000);
+            const statusResponse = await getAdminStatus();
+            const passkeyAvailable = Boolean(statusResponse.data?.passkeyEnabled)
+                && isPasskeySupported();
+
+            beginPostSetupFlow();
+            setSuccess(true);
+            setSuccessPhase(passkeyAvailable ? 'passkey-offer' : 'redirect');
         } catch (err) {
             setError(resolveClientErrorMessage(err) || t('apiErrorMessages.ADMIN_SETUP_FAILED'));
         } finally {
             setLoading(false);
+        }
+    };
+
+    const handleSkipPasskey = async () => {
+        endPostSetupFlow();
+        await checkAdminStatus();
+        navigate('/login');
+    };
+
+    const handleEnablePasskey = async () => {
+        setPasskeyLoading(true);
+        setError('');
+
+        try {
+            /*
+            * 注册 Passkey 前需先密码登录写入 cookie；若中途打断 Passkey 注册流程，刷新，cookie 仍有效可能自动登录（非缺陷）
+            * 若中途刷新，会自动进入面板页面
+            */
+            await adminLogin(formData.username, formData.password);
+            const optionsResponse = await passkeyRegisterOptions();
+            const { challengeId, options } = optionsResponse.data;
+            const credential = await performPasskeyRegister(options);
+            await passkeyRegisterVerify(challengeId, credential);
+            setSuccessPhase('passkey-done');
+        } catch (err) {
+            const message = resolvePasskeyClientError(err) || resolveClientErrorMessage(err);
+            if (message) {
+                setError(message);
+            }
+        } finally {
+            setPasskeyLoading(false);
         }
     };
 
@@ -129,10 +214,90 @@ const AdminSetup = () => {
                         <Typography level="h3" sx={{ mb: 2, color: 'success.main' }}>
                             {t('ui.setupComplete')}
                         </Typography>
-                        <Typography level="body-md" sx={{ mb: 2 }}>
-                            {t('ui.adminCreatedSuccess')}
+                        <Typography level="body-md" sx={{ mb: 3 }}>
+                            {successPhase === 'passkey-done'
+                                ? t('ui.passkeyRegisterSuccess')
+                                : t('ui.adminCreatedSuccess')}
                         </Typography>
-                        <LinearProgress sx={{ mt: 2 }} />
+
+                        {successPhase === 'passkey-offer' && (
+                            <>
+                                <Divider />
+                                <Box
+                                    sx={{
+                                        mb: 3,
+                                        py: 3,
+                                        px: 1,
+                                        // borderRadius: 'md',
+                                        // bgcolor: 'primary.softBg',
+                                        // border: '1px solid',
+                                        // borderColor: 'primary.outlinedBorder',
+                                    }}
+                                >
+                                    <Stack gap={1.5} alignItems="center">
+                                        <PasskeyIcon sx={{ fontSize: 36, color: 'primary.plainColor' }} />
+                                        <Typography level="title-md" textAlign="center">
+                                            {t('ui.setupPasskeyOfferTitle')}
+                                        </Typography>
+                                        <Typography
+                                            level="body-sm"
+                                            textAlign="center"
+                                            sx={{
+                                                color: 'text.secondary',
+                                                maxWidth: 360,
+                                                lineHeight: 1.65,
+                                            }}
+                                        >
+                                            {t('ui.setupPasskeyOfferDesc')}
+                                        </Typography>
+                                        <Button
+                                            size="lg"
+                                            fullWidth
+                                            loading={passkeyLoading}
+                                            disabled={passkeyLoading}
+                                            onClick={handleEnablePasskey}
+                                        >
+                                            {t('ui.setupEnablePasskey')}
+                                        </Button>
+
+                                        <Button
+                                            size="lg"
+                                            fullWidth
+                                            variant="plain"
+                                            color="neutral"
+                                            disabled={passkeyLoading}
+                                            onClick={handleSkipPasskey}
+                                        >
+                                            {t('ui.setupSkipPasskey')}
+                                        </Button>
+                                    </Stack>
+                                </Box>
+
+                                {error && (
+                                    <Alert color="danger" sx={{ mb: 2, textAlign: 'left' }}>
+                                        {error}
+                                    </Alert>
+                                )}
+                            </>
+                        )}
+
+                        {successPhase === 'redirect' && (
+                            <>
+                                <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                                    {t('ui.setupRedirectingToLogin')}
+                                </Typography>
+                                <LinearProgress sx={{ mt: 2 }} />
+                            </>
+                        )}
+
+                        {successPhase === 'passkey-done' && (
+                            <>
+                                <Typography level="body-sm" sx={{ color: 'text.tertiary' }}>
+                                    {t('ui.setupRedirectingToLogin')}
+                                </Typography>
+                                <LinearProgress sx={{ mt: 2 }} />
+                            </>
+                        )}
                     </CardContent>
                 </Card>
             </Box>

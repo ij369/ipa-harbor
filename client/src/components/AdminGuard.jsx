@@ -8,7 +8,9 @@ import { useAdmin } from '../contexts/AdminContext';
  * 管理员守卫
  */
 const AdminGuard = ({ children, requireAuth = true, allowSetup = false, allowRecover = false }) => {
-    const { isInitialized, isLoggedIn, loading, statusLoaded, error, checkAdminStatus } = useAdmin();
+    const {
+        isInitialized, isLoggedIn, loading, statusLoaded, error, checkAdminStatus, postSetupFlowActive,
+    } = useAdmin();
     const { pathname } = useLocation();
     const { t } = useTranslation();
 
@@ -59,8 +61,8 @@ const AdminGuard = ({ children, requireAuth = true, allowSetup = false, allowRec
         // 未初始化时访问恢复页，应走设置向导
         { when: !isInitialized && allowRecover, to: '/setup' },
         // 系统已初始化但访问 setup 页面
-        { when: isInitialized && allowSetup && isLoggedIn, to: '/' },
-        { when: isInitialized && allowSetup && !isLoggedIn, to: '/login' },
+        { when: isInitialized && allowSetup && isLoggedIn && !postSetupFlowActive, to: '/' },
+        { when: isInitialized && allowSetup && !isLoggedIn && !postSetupFlowActive, to: '/login' },
         // 已登录访问恢复页
         { when: isInitialized && allowRecover && isLoggedIn, to: '/' },
         // 需要认证但未登录
