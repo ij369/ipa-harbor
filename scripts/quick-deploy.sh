@@ -8,7 +8,9 @@ readonly HOST_PORT="${HOST_PORT:-3388}"
 readonly FALLBACK_HOST_PORT="${FALLBACK_HOST_PORT:-3399}"
 readonly CONTAINER_PORT="${CONTAINER_PORT:-3080}"
 readonly ADMIN_INIT_PIN="${ADMIN_INIT_PIN:-20251024}"
+readonly WEBAUTHN_RP_ID="localhost"
 
+BROWSER_OPEN_CANCELLED=0
 
 promptRead() {
   if [[ -t 0 ]]; then
@@ -47,6 +49,14 @@ pause() {
   fi
 }
 
+pauseAfterAction() {
+  if [[ "$BROWSER_OPEN_CANCELLED" == "1" ]]; then
+    BROWSER_OPEN_CANCELLED=0
+    return 0
+  fi
+  pause
+}
+
 promptAnyKey() {
   local prompt="${1:-Press any key to continue… }"
 
@@ -74,6 +84,30 @@ printDivider() {
   echo "----------------------------------------"
 }
 
+printAppHeader() {
+  echo ""
+  printDivider
+  echo "IPA-Harbor local Docker manager"
+  printDivider
+  echo ""
+}
+
+printInstallProgressHeader() {
+  echo ""
+  printDivider
+  echo "IPA-Harbor installing"
+  printDivider
+  echo ""
+}
+
+printUpgradeProgressHeader() {
+  echo ""
+  printDivider
+  echo "IPA-Harbor upgrading"
+  printDivider
+  echo ""
+}
+
 printInitPinLine() {
   local label="$1"
   local pin="$2"
@@ -81,6 +115,30 @@ printInitPinLine() {
     printf '%s%b%s%b\n' "$label" $'\033[1;33;40m' "$pin" $'\033[0m'
   else
     printf '%s%s\n' "$label" "$pin"
+  fi
+}
+
+printInstallCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "Install complete"
+  else
+    echo "✓ Install complete"
+  fi
+}
+
+printUpgradeCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "Upgrade complete"
+  else
+    echo "✓ Upgrade complete"
+  fi
+}
+
+printUninstallCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "Uninstall complete"
+  else
+    echo "✓ Uninstall complete"
   fi
 }
 
@@ -132,6 +190,17 @@ isInteractiveTerminal() {
   ( : < /dev/tty ) 2>/dev/null
 }
 
+clearScreen() {
+  if ! isInteractiveTerminal; then
+    return 0
+  fi
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  else
+    printf '\033[H\033[2J' >/dev/tty 2>/dev/null || true
+  fi
+}
+
 trimInput() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -170,11 +239,13 @@ openBrowserUrl() {
   if [[ -x /usr/bin/open ]]; then
     if /usr/bin/open "$url"; then
       printf "Opened in your default browser: %s\n" "$url"
+      echo ""
       return 0
     fi
   elif command -v open >/dev/null 2>&1; then
     if open "$url"; then
       printf "Opened in your default browser: %s\n" "$url"
+      echo ""
       return 0
     fi
   fi
@@ -231,15 +302,25 @@ maybeOpenBrowser() {
   local url="$1"
   local openBrowser=""
 
+  BROWSER_OPEN_CANCELLED=0
+
   if [[ "$(uname -s)" != "Darwin" ]] || ! isInteractiveTerminal; then
     return 0
   fi
 
-  promptRead -p "Open in browser now? (y/N) " openBrowser || return 0
-  openBrowser="$(trimInput "$openBrowser")"
-  if isYes "$openBrowser"; then
-    openBrowserUrl "$url"
-  fi
+  printf "Opening browser in 5s… Press N to cancel." >/dev/tty
+  local i
+  for (( i = 0; i < 5; i++ )); do
+    if read -r -n 1 -s -t 1 openBrowser </dev/tty 2>/dev/null; then
+      if [[ "$openBrowser" == "n" || "$openBrowser" == "N" ]]; then
+        echo "" >/dev/tty
+        BROWSER_OPEN_CANCELLED=1
+        return 0
+      fi
+    fi
+  done
+  echo "" >/dev/tty
+  openBrowserUrl "$url"
 }
 
 containerExists() {
@@ -431,6 +512,28 @@ ensureAdminInitPin() {
   echo ""
 }
 
+upsertEnvArg() {
+  local key="$1"
+  local value="$2"
+  local i=0
+  while [[ $i -lt ${#ENV_ARGS[@]} ]]; do
+    if [[ "${ENV_ARGS[$i]}" == "-e" && "${ENV_ARGS[$i+1]}" == "${key}="* ]]; then
+      ENV_ARGS[$((i + 1))]="${key}=${value}"
+      return 0
+    fi
+    i=$((i + 2))
+  done
+  ENV_ARGS+=("-e" "${key}=${value}")
+}
+
+ensureWebAuthnEnv() {
+  local hostPort allowedOrigins
+  hostPort="$(getPrimaryHostPortFromPortArgs)"
+  allowedOrigins="$(visitUrlFromPorts "$hostPort")"
+  upsertEnvArg "WEBAUTHN_RP_ID" "$WEBAUTHN_RP_ID"
+  upsertEnvArg "WEBAUTHN_ALLOWED_ORIGINS" "$allowedOrigins"
+}
+
 getAdminInitPinFromEnvArgs() {
   local i=0 pin=""
   while [[ $i -lt ${#ENV_ARGS[@]} ]]; do
@@ -513,6 +616,7 @@ actionInstall() {
   local keychainPassphrase
   keychainPassphrase="$(generateKeychainPassphrase)"
 
+  clearScreen
   echo ""
   printDivider
   echo "Install IPA-Harbor (local quick setup)"
@@ -531,6 +635,8 @@ actionInstall() {
 
   promptRead -p "Press Enter to install, or Ctrl+C to cancel… " _
 
+  clearScreen
+  printInstallProgressHeader
   echo "[1/3] Pulling image…"
   docker pull "$IMAGE"
 
@@ -541,6 +647,8 @@ actionInstall() {
     -p "${installHostPort}:${CONTAINER_PORT}" \
     -e "KEYCHAIN_PASSPHRASE=${keychainPassphrase}" \
     -e "ADMIN_INIT_PIN=${ADMIN_INIT_PIN}" \
+    -e "WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID}" \
+    -e "WEBAUTHN_ALLOWED_ORIGINS=${visitUrl}" \
     -e "PORT=${CONTAINER_PORT}" \
     -v "${DATA_VOLUME}:/app/data" \
     --name "$CONTAINER_NAME" \
@@ -551,8 +659,9 @@ actionInstall() {
     return 1
   fi
 
-  echo "[3/3] Install complete."
-  echo ""
+  clearScreen
+  printAppHeader
+  printInstallCompleteTitle
   printf "Open: %s\n" "$visitUrl"
   echo ""
   printInitPinLine "Init PIN: " "$ADMIN_INIT_PIN"
@@ -577,10 +686,12 @@ actionUpgrade() {
 
   readContainerConfig "$targetContainer"
   ensureAdminInitPin
+  ensureWebAuthnEnv
 
   local upgradeImage
   upgradeImage="$(resolveUpgradeImage)"
 
+  clearScreen
   echo ""
   printDivider
   echo "Upgrade IPA-Harbor"
@@ -598,6 +709,8 @@ actionUpgrade() {
 
   promptRead -p "Press Enter to upgrade, or Ctrl+C to cancel… " _
 
+  clearScreen
+  printUpgradeProgressHeader
   echo "[1/4] Pulling latest image from registry…"
   pullUpgradeImage "$upgradeImage"
 
@@ -622,11 +735,9 @@ actionUpgrade() {
   fi
 
   echo "[4/4] Done."
-  echo ""
 
   if [[ "$(docker inspect --format '{{.State.Running}}' "$targetContainer")" == "true" ]]; then
     docker rm -f "$backupName" >/dev/null
-    echo "Done: New container is running; backup removed."
   else
     printf "Note: New container is not running; backup kept for rollback: %s\n" "$backupName"
     echo ""
@@ -635,6 +746,9 @@ actionUpgrade() {
     return 1
   fi
 
+  clearScreen
+  printAppHeader
+  printUpgradeCompleteTitle
   if [[ -n "$VISIT_URL" ]]; then
     local initPin
     initPin="$(getAdminInitPinFromEnvArgs)"
@@ -681,6 +795,7 @@ actionUninstall() {
     return
   fi
 
+  clearScreen
   echo ""
   printDivider
   echo "Uninstall IPA-Harbor"
@@ -713,13 +828,14 @@ actionUninstall() {
   fi
 
   echo ""
-  promptRead -p "Confirm uninstall? (y/N) " confirmUninstall
-  if ! isYes "$confirmUninstall"; then
+  promptRead -p "Confirm uninstall? (Y/n) " confirmUninstall
+  if [[ -n "$confirmUninstall" ]] && ! isYes "$confirmUninstall"; then
     echo "Cancelled."
     return
   fi
 
   local keepData=true
+  local uninstallSummary=()
   if [[ "$hasVolume" == "true" ]]; then
     echo ""
     promptRead -p "$(printf "Keep downloaded IPAs and user data (volume %s)? (Y/n) " "$DATA_VOLUME")" keepDataAnswer
@@ -750,17 +866,15 @@ actionUninstall() {
       docker rm -f "$bakName" >/dev/null 2>&1 || true
     done < <(docker ps -a --format '{{.Names}}' | grep -E "^${CONTAINER_NAME}-bak-|^${targetContainer}-bak-" || true)
 
-    echo "Done: Container removed."
+    uninstallSummary+=("Container removed.")
   fi
 
   if [[ "$hasVolume" == "true" ]]; then
     if [[ "$keepData" == "true" ]]; then
-      printf "Done: Data volume %s kept; it will be reused on next install.\n" "$DATA_VOLUME"
-      echo ""
+      uninstallSummary+=("Data volume ${DATA_VOLUME} kept; it will be reused on next install.")
     else
       docker volume rm "${DATA_VOLUME}" >/dev/null 2>&1 || true
-      printf "Done: Data volume %s removed.\n" "$DATA_VOLUME"
-      echo ""
+      uninstallSummary+=("Data volume ${DATA_VOLUME} removed.")
     fi
   fi
 
@@ -773,22 +887,27 @@ actionUninstall() {
       fi
     done <<< "$ipaHarborImages"
     if [[ $removed -gt 0 ]]; then
-      printf "Done: Removed %s IPA-Harbor image(s).\n" "$removed"
-      echo ""
+      uninstallSummary+=("Removed ${removed} IPA-Harbor image(s).")
     else
-      echo "Note: Could not remove images (they may still be in use by another container)."
+      uninstallSummary+=("Note: Could not remove images (they may still be in use by another container).")
     fi
   elif [[ "$hasImages" == "true" ]]; then
-    echo "Done: IPA-Harbor images kept for reuse on next install."
+    uninstallSummary+=("IPA-Harbor images kept for reuse on next install.")
   fi
+
+  clearScreen
+  printAppHeader
+  printUninstallCompleteTitle
+  local line
+  for line in "${uninstallSummary[@]}"; do
+    printf '%s\n' "$line"
+  done
 }
 
 showMenu() {
-  echo ""
-  printDivider
-  echo "IPA-Harbor local Docker manager"
-  printDivider
-  echo "  1. Install (first-time local setup)"
+  clearScreen
+  printAppHeader
+  echo "  1. Install"
   echo "  2. Upgrade (keep data)"
   echo "  3. Uninstall"
   echo "  0. Exit"
@@ -816,11 +935,11 @@ mainMenu() {
     case "$choice" in
       1)
         actionInstall || true
-        pause
+        pauseAfterAction
         ;;
       2)
         actionUpgrade || true
-        pause
+        pauseAfterAction
         ;;
       3)
         actionUninstall || true
