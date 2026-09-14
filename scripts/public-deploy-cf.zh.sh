@@ -14,9 +14,20 @@ readonly DATA_VOLUME="${DATA_VOLUME:-ipa_data_remote}"
 readonly COMPOSE_NETWORK="${COMPOSE_NETWORK:-ipa-harbor-net}"
 readonly COMPOSE_NETWORK_NAME="${COMPOSE_NETWORK_NAME:-ipa-harbor-remote-net}"
 readonly PUBLIC_HTTPS_PORT="${PUBLIC_HTTPS_PORT:-443}"
+readonly DEFAULT_ADMIN_INIT_PIN="20251024"
 readonly COMPOSE_PLUGIN_VERSION="${COMPOSE_PLUGIN_VERSION:-v5.5.1}"
 readonly COMPOSE_PLUGIN_BINARY_PATH="/usr/local/lib/docker/cli-plugins/docker-compose"
 readonly WIZARD_TITLE="IPA Harbor 公网部署向导"
+readonly GITHUB_REPO_URL="https://github.com/ij369/ipa-harbor"
+readonly DOCKER_HUB_URL="https://hub.docker.com/r/uuphy/ipa-harbor"
+readonly AUTHOR_PROJECTS_URL="https://uuphy.com/projects"
+readonly IPA_HARBOR_REPO="${IPA_HARBOR_REPO:-ij369/ipa-harbor}"
+readonly IPA_HARBOR_BRANCH="${IPA_HARBOR_BRANCH:-main}"
+readonly MENU_LOCALE="zh"
+readonly SCRIPT_NAME_EN="public-deploy-cf.sh"
+readonly SCRIPT_NAME_ZH="public-deploy-cf.zh.sh"
+readonly REMOTE_SCRIPT_EN="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/public-deploy-cf.sh"
+readonly REMOTE_SCRIPT_ZH="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/public-deploy-cf.zh.sh"
 readonly CF_TUNNEL_PROBE_HOST="${CF_TUNNEL_PROBE_HOST:-region1.v2.argotunnel.com}"
 readonly CF_TUNNEL_PROBE_PORT="${CF_TUNNEL_PROBE_PORT:-7844}"
 
@@ -78,6 +89,12 @@ promptAnyKey() {
   echo "" >/dev/tty
 }
 
+pause() {
+  if isInteractiveTerminal; then
+    promptRead -p "按回车继续… " _ || true
+  fi
+}
+
 printDivider() {
   echo "----------------------------------------"
 }
@@ -119,6 +136,57 @@ isInteractiveTerminal() {
   ( : < /dev/tty ) 2>/dev/null
 }
 
+clearScreen() {
+  if ! isInteractiveTerminal; then
+    return 0
+  fi
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  else
+    printf '\033[H\033[2J' >/dev/tty 2>/dev/null || true
+  fi
+}
+
+printAppHeader() {
+  echo ""
+  printDivider
+  echo "$WIZARD_TITLE"
+  printDivider
+  echo ""
+}
+
+printInstallProgressHeader() {
+  echo ""
+  printDivider
+  echo "IPA Harbor 部署中"
+  printDivider
+  echo ""
+}
+
+printUpgradeProgressHeader() {
+  echo ""
+  printDivider
+  echo "IPA Harbor 升级中"
+  printDivider
+  echo ""
+}
+
+printUpgradeCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "升级完成"
+  else
+    echo "✓ 升级完成"
+  fi
+}
+
+printUninstallCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "卸载完成"
+  else
+    echo "✓ 卸载完成"
+  fi
+}
+
 trimInput() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -131,7 +199,12 @@ generateKeychainPassphrase() {
 }
 
 generateAdminInitPin() {
-  openssl rand -base64 24 | tr -dc '0-9' | head -c8
+  local pin=""
+  pin="$(openssl rand -base64 24 | tr -dc '0-9' | head -c8)"
+  if [[ -z "$pin" || "$pin" =~ ^0+$ ]]; then
+    pin="$DEFAULT_ADMIN_INIT_PIN"
+  fi
+  printf '%s\n' "$pin"
 }
 
 isLinux() {
@@ -833,10 +906,9 @@ printSuccess() {
   local publicUrl="$2"
   local adminInitPin="$3"
 
-  echo ""
-  printDivider
+  clearScreen
+  printAppHeader
   printDeployCompleteTitle
-  printDivider
   echo ""
   showCloudflareAfterScriptGuide "$publicHost" "$publicUrl" "$adminInitPin"
   promptAnyKey "按任意键返回菜单… " || true
@@ -903,6 +975,7 @@ actionInstall() {
   adminInitPin="$(generateAdminInitPin)"
   keychainPassphrase="$(generateKeychainPassphrase)"
 
+  clearScreen
   echo ""
   printDivider
   echo "部署预览"
@@ -918,6 +991,8 @@ actionInstall() {
 
   promptRead -p "按回车开始生成配置并启动，或 Ctrl+C 取消… " _ || return 1
 
+  clearScreen
+  printInstallProgressHeader
   mkdir -p "$DEPLOY_DIR"
   writeEnvFile "$tunnelToken" "$publicHost" "$PUBLIC_HTTPS_PORT" "$allowedDomains" "$rpId" "$publicUrl" "$adminInitPin" "$keychainPassphrase"
   writeComposeFile
@@ -981,6 +1056,7 @@ actionUpgrade() {
     return 1
   fi
 
+  clearScreen
   echo ""
   printDivider
   echo "${WIZARD_TITLE} — 升级"
@@ -990,12 +1066,14 @@ actionUpgrade() {
 
   promptRead -p "按回车开始升级，或 Ctrl+C 取消… " _ || return 1
 
+  clearScreen
+  printUpgradeProgressHeader
   ensureDataVolume || return 1
 
-  echo "Pulling images…"
+  echo "正在拉取镜像…"
   compose pull
 
-  echo "Recreating services…"
+  echo "正在重建服务…"
   compose up -d --remove-orphans
 
   waitForIpaHarbor || true
@@ -1006,10 +1084,17 @@ actionUpgrade() {
   local adminInitPin=""
   adminInitPin="$(grep '^ADMIN_INIT_PIN=' "${DEPLOY_DIR}/${DEPLOY_ENV_FILE}" | cut -d= -f2-)"
 
-  echo ""
-  echo "升级完成。"
-  [[ -n "$publicUrl" ]] && printf "访问地址: %s\n" "$publicUrl"
-  [[ -n "$adminInitPin" ]] && printInitPinLine "初始化 PIN: " "$adminInitPin"
+  clearScreen
+  printAppHeader
+  printUpgradeCompleteTitle
+  if [[ -n "$publicUrl" ]]; then
+    printf "访问地址: %s\n" "$publicUrl"
+  fi
+  if [[ -n "$adminInitPin" ]]; then
+    echo ""
+    printInitPinLine "初始化 PIN: " "$adminInitPin"
+    echo ""
+  fi
 }
 
 actionUninstall() {
@@ -1025,7 +1110,9 @@ actionUninstall() {
   local removeComposeAnswer=""
   local keepData=true
   local removeCompose=false
+  local uninstallSummary=()
 
+  clearScreen
   echo ""
   printDivider
   echo "${WIZARD_TITLE} — 卸载"
@@ -1056,19 +1143,26 @@ actionUninstall() {
   compose down --remove-orphans
 
   if [[ "$keepData" == "true" ]]; then
-    printf "完成: 容器已删除，数据卷 %s 已保留。\n" "$DATA_VOLUME"
+    uninstallSummary+=("容器已删除，数据卷 ${DATA_VOLUME} 已保留。")
   else
     docker volume rm "$DATA_VOLUME" >/dev/null 2>&1 || true
-    printf "完成: 容器与数据卷 %s 已删除。\n" "$DATA_VOLUME"
+    uninstallSummary+=("容器与数据卷 ${DATA_VOLUME} 已删除。")
   fi
 
   if [[ "$removeCompose" == "true" ]]; then
-    echo ""
     uninstallComposePlugin || true
+    uninstallSummary+=("Docker Compose 插件已卸载。")
   fi
 
-  echo ""
-  echo "提示: Cloudflare 控制台中的 Tunnel 需手动删除（如不再使用）。"
+  uninstallSummary+=("提示: Cloudflare 控制台中的 Tunnel 需手动删除（如不再使用）。")
+
+  clearScreen
+  printAppHeader
+  printUninstallCompleteTitle
+  local line
+  for line in "${uninstallSummary[@]}"; do
+    printf '%s\n' "$line"
+  done
 
   if [[ "$removeCompose" == "true" ]]; then
     echo ""
@@ -1077,14 +1171,56 @@ actionUninstall() {
   fi
 }
 
-showMenu() {
+switchLanguage() {
+  local targetName targetRemote
+  if [[ "$MENU_LOCALE" == "zh" ]]; then
+    echo "正在切换为 English…"
+    echo ""
+    targetName="$SCRIPT_NAME_EN"
+    targetRemote="$REMOTE_SCRIPT_EN"
+  else
+    echo "正在切换为简体中文…"
+    echo ""
+    targetName="$SCRIPT_NAME_ZH"
+    targetRemote="$REMOTE_SCRIPT_ZH"
+  fi
+
+  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+    local localScript
+    localScript="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${targetName}"
+    if [[ -f "$localScript" ]]; then
+      exec bash "$localScript"
+    fi
+  fi
+
+  exec bash <(curl -fsSL "$targetRemote")
+}
+
+showAbout() {
+  clearScreen
+  printAppHeader
+  echo "关于"
   echo ""
-  printDivider
-  echo "$WIZARD_TITLE"
-  printDivider
+  echo "GitHub 源码 / 反馈:"
+  printf "  %s\n" "$GITHUB_REPO_URL"
+  echo ""
+  echo "官方 Docker Hub:"
+  printf "  %s\n" "$DOCKER_HUB_URL"
+  echo ""
+  echo "我的其他产品:"
+  printf "  %s\n" "$AUTHOR_PROJECTS_URL"
+  echo ""
+  pause
+}
+
+showMenu() {
+  clearScreen
+  printAppHeader
   echo "  1. 安装"
   echo "  2. 升级（保留数据）"
   echo "  3. 卸载"
+  echo "  4. English"
+  echo "  5. 关于"
   echo "  0. 退出"
   echo ""
 }
@@ -1117,7 +1253,7 @@ mainMenu() {
   ensureDockerRuntime
   while true; do
     showMenu
-    promptRead -p "请选择 [0-3]: " choice || exit 1
+    promptRead -p "请选择 [0-5]: " choice || exit 1
     case "$choice" in
       1)
         actionInstall || true
@@ -1128,12 +1264,18 @@ mainMenu() {
       3)
         actionUninstall || true
         ;;
+      4)
+        switchLanguage
+        ;;
+      5)
+        showAbout
+        ;;
       0)
         echo "正在退出..."
         exit 0
         ;;
       *)
-        echo "无效选项，请输入 0-3。"
+        echo "无效选项，请输入 0-5。"
         ;;
     esac
   done

@@ -9,6 +9,16 @@ readonly FALLBACK_HOST_PORT="${FALLBACK_HOST_PORT:-3399}"
 readonly CONTAINER_PORT="${CONTAINER_PORT:-3080}"
 readonly ADMIN_INIT_PIN="${ADMIN_INIT_PIN:-20251024}"
 readonly WEBAUTHN_RP_ID="localhost"
+readonly GITHUB_REPO_URL="https://github.com/ij369/ipa-harbor"
+readonly DOCKER_HUB_URL="https://hub.docker.com/r/uuphy/ipa-harbor"
+readonly AUTHOR_PROJECTS_URL="https://uuphy.com/projects"
+readonly IPA_HARBOR_REPO="${IPA_HARBOR_REPO:-ij369/ipa-harbor}"
+readonly IPA_HARBOR_BRANCH="${IPA_HARBOR_BRANCH:-main}"
+readonly MENU_LOCALE="en"
+readonly SCRIPT_NAME_EN="quick-deploy.sh"
+readonly SCRIPT_NAME_ZH="quick-deploy.zh.sh"
+readonly REMOTE_SCRIPT_EN="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/quick-deploy.sh"
+readonly REMOTE_SCRIPT_ZH="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/quick-deploy.zh.sh"
 
 BROWSER_OPEN_CANCELLED=0
 
@@ -160,7 +170,71 @@ printDockerNotRunningHint() {
   echo ""
 }
 
-requireDocker() {
+isLinux() {
+  [[ "$(uname -s)" == "Linux" ]]
+}
+
+printDockerOfficialInstallHint() {
+  echo "Copy and run the following to install Docker (root/sudo required):"
+  echo ""
+  echo "  curl -fsSL https://get.docker.com | sh"
+  echo ""
+  echo "Docs: https://docs.docker.com/engine/install/"
+}
+
+promptLinuxDockerInstall() {
+  local installAnswer=""
+
+  echo "Docker is not installed."
+  echo ""
+  if ! isInteractiveTerminal; then
+    echo "Error: interactive terminal required." >&2
+    exit 1
+  fi
+  promptRead -p "Install Docker using the official script? (y/N) " installAnswer || exit 1
+  if ! isYes "$installAnswer"; then
+    echo "Docker is required. Exiting..."
+    exit 0
+  fi
+  echo ""
+  printDockerOfficialInstallHint
+  echo "After installation, start Docker if needed, then run this script again."
+  promptAnyKey "Press any key to exit… " || true
+  exit 0
+}
+
+printLinuxDockerNotRunningHint() {
+  echo "Docker is installed but not accessible."
+  echo ""
+  echo "Try:"
+  echo "  sudo systemctl start docker"
+  echo ""
+  echo "If you just installed Docker, you may also need:"
+  echo '  sudo usermod -aG docker "$USER"'
+  echo "  (then log out and back in, or run: newgrp docker)"
+  echo ""
+}
+
+promptLinuxDockerNotRunning() {
+  printLinuxDockerNotRunningHint
+  if ! isInteractiveTerminal; then
+    echo "Error: interactive terminal required." >&2
+    exit 1
+  fi
+  echo "After fixing the issue, run this script again."
+  promptAnyKey "Press any key to exit… " || true
+  exit 0
+}
+
+ensureDockerCommand() {
+  if command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if isLinux; then
+    promptLinuxDockerInstall
+  fi
+
   while ! command -v docker >/dev/null 2>&1; do
     printDockerNotInstalledHint
     if ! isInteractiveTerminal; then
@@ -170,15 +244,26 @@ requireDocker() {
     promptAnyKey "Press any key to continue… " || exit 1
     echo ""
   done
-  while ! docker info >/dev/null 2>&1; do
-    printDockerNotRunningHint
-    if ! isInteractiveTerminal; then
-      echo "Error: interactive terminal required." >&2
-      exit 1
+}
+
+requireDocker() {
+  ensureDockerCommand
+
+  if ! docker info >/dev/null 2>&1; then
+    if isLinux; then
+      promptLinuxDockerNotRunning
     fi
-    promptAnyKey "Press any key to continue… " || exit 1
-    echo ""
-  done
+
+    while ! docker info >/dev/null 2>&1; do
+      printDockerNotRunningHint
+      if ! isInteractiveTerminal; then
+        echo "Error: interactive terminal required." >&2
+        exit 1
+      fi
+      promptAnyKey "Press any key to continue… " || exit 1
+      echo ""
+    done
+  fi
 }
 
 isYes() {
@@ -904,12 +989,56 @@ actionUninstall() {
   done
 }
 
+switchLanguage() {
+  local targetName targetRemote
+  if [[ "$MENU_LOCALE" == "zh" ]]; then
+    echo "Switching to English…"
+    echo ""
+    targetName="$SCRIPT_NAME_EN"
+    targetRemote="$REMOTE_SCRIPT_EN"
+  else
+    echo "Switching to 简体中文…"
+    echo ""
+    targetName="$SCRIPT_NAME_ZH"
+    targetRemote="$REMOTE_SCRIPT_ZH"
+  fi
+
+  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+    local localScript
+    localScript="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${targetName}"
+    if [[ -f "$localScript" ]]; then
+      exec bash "$localScript"
+    fi
+  fi
+
+  exec bash <(curl -fsSL "$targetRemote")
+}
+
+showAbout() {
+  clearScreen
+  printAppHeader
+  echo "About"
+  echo ""
+  echo "GitHub source / Feedback:"
+  printf "  %s\n" "$GITHUB_REPO_URL"
+  echo ""
+  echo "Official Docker Hub:"
+  printf "  %s\n" "$DOCKER_HUB_URL"
+  echo ""
+  echo "My other projects:"
+  printf "  %s\n" "$AUTHOR_PROJECTS_URL"
+  echo ""
+  pause
+}
+
 showMenu() {
   clearScreen
   printAppHeader
   echo "  1. Install"
   echo "  2. Upgrade (keep data)"
   echo "  3. Uninstall"
+  echo "  4. 简体中文"
+  echo "  5. About"
   echo "  0. Exit"
   echo ""
 }
@@ -931,7 +1060,7 @@ mainMenu() {
   requireDocker
   while true; do
     showMenu
-    promptRead -p "Choose [0-3]: " choice || exit 1
+    promptRead -p "Choose [0-5]: " choice || exit 1
     case "$choice" in
       1)
         actionInstall || true
@@ -945,12 +1074,18 @@ mainMenu() {
         actionUninstall || true
         pause
         ;;
+      4)
+        switchLanguage
+        ;;
+      5)
+        showAbout
+        ;;
       0)
         echo "Goodbye."
         exit 0
         ;;
       *)
-        echo "Invalid choice; enter 0-3."
+        echo "Invalid choice; enter 0-5."
         ;;
     esac
   done

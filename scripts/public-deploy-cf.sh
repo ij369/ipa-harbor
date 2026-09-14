@@ -14,9 +14,20 @@ readonly DATA_VOLUME="${DATA_VOLUME:-ipa_data_remote}"
 readonly COMPOSE_NETWORK="${COMPOSE_NETWORK:-ipa-harbor-net}"
 readonly COMPOSE_NETWORK_NAME="${COMPOSE_NETWORK_NAME:-ipa-harbor-remote-net}"
 readonly PUBLIC_HTTPS_PORT="${PUBLIC_HTTPS_PORT:-443}"
+readonly DEFAULT_ADMIN_INIT_PIN="20251024"
 readonly COMPOSE_PLUGIN_VERSION="${COMPOSE_PLUGIN_VERSION:-v5.5.1}"
 readonly COMPOSE_PLUGIN_BINARY_PATH="/usr/local/lib/docker/cli-plugins/docker-compose"
 readonly WIZARD_TITLE="IPA Harbor Public Deploy Wizard"
+readonly GITHUB_REPO_URL="https://github.com/ij369/ipa-harbor"
+readonly DOCKER_HUB_URL="https://hub.docker.com/r/uuphy/ipa-harbor"
+readonly AUTHOR_PROJECTS_URL="https://uuphy.com/projects"
+readonly IPA_HARBOR_REPO="${IPA_HARBOR_REPO:-ij369/ipa-harbor}"
+readonly IPA_HARBOR_BRANCH="${IPA_HARBOR_BRANCH:-main}"
+readonly MENU_LOCALE="en"
+readonly SCRIPT_NAME_EN="public-deploy-cf.sh"
+readonly SCRIPT_NAME_ZH="public-deploy-cf.zh.sh"
+readonly REMOTE_SCRIPT_EN="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/public-deploy-cf.sh"
+readonly REMOTE_SCRIPT_ZH="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/public-deploy-cf.zh.sh"
 readonly CF_TUNNEL_PROBE_HOST="${CF_TUNNEL_PROBE_HOST:-region1.v2.argotunnel.com}"
 readonly CF_TUNNEL_PROBE_PORT="${CF_TUNNEL_PROBE_PORT:-7844}"
 
@@ -78,6 +89,12 @@ promptAnyKey() {
   echo "" >/dev/tty
 }
 
+pause() {
+  if isInteractiveTerminal; then
+    promptRead -p "Press Enter to continue… " _ || true
+  fi
+}
+
 printDivider() {
   echo "----------------------------------------"
 }
@@ -119,6 +136,57 @@ isInteractiveTerminal() {
   ( : < /dev/tty ) 2>/dev/null
 }
 
+clearScreen() {
+  if ! isInteractiveTerminal; then
+    return 0
+  fi
+  if command -v clear >/dev/null 2>&1; then
+    clear
+  else
+    printf '\033[H\033[2J' >/dev/tty 2>/dev/null || true
+  fi
+}
+
+printAppHeader() {
+  echo ""
+  printDivider
+  echo "$WIZARD_TITLE"
+  printDivider
+  echo ""
+}
+
+printInstallProgressHeader() {
+  echo ""
+  printDivider
+  echo "IPA Harbor deploying"
+  printDivider
+  echo ""
+}
+
+printUpgradeProgressHeader() {
+  echo ""
+  printDivider
+  echo "IPA Harbor upgrading"
+  printDivider
+  echo ""
+}
+
+printUpgradeCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "Upgrade complete"
+  else
+    echo "✓ Upgrade complete"
+  fi
+}
+
+printUninstallCompleteTitle() {
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "Uninstall complete"
+  else
+    echo "✓ Uninstall complete"
+  fi
+}
+
 trimInput() {
   local value="$1"
   value="${value#"${value%%[![:space:]]*}"}"
@@ -131,7 +199,12 @@ generateKeychainPassphrase() {
 }
 
 generateAdminInitPin() {
-  openssl rand -base64 24 | tr -dc '0-9' | head -c8
+  local pin=""
+  pin="$(openssl rand -base64 24 | tr -dc '0-9' | head -c8)"
+  if [[ -z "$pin" || "$pin" =~ ^0+$ ]]; then
+    pin="$DEFAULT_ADMIN_INIT_PIN"
+  fi
+  printf '%s\n' "$pin"
 }
 
 isLinux() {
@@ -833,10 +906,9 @@ printSuccess() {
   local publicUrl="$2"
   local adminInitPin="$3"
 
-  echo ""
-  printDivider
+  clearScreen
+  printAppHeader
   printDeployCompleteTitle
-  printDivider
   echo ""
   showCloudflareAfterScriptGuide "$publicHost" "$publicUrl" "$adminInitPin"
   promptAnyKey "Press any key to return to menu… " || true
@@ -903,6 +975,7 @@ actionInstall() {
   adminInitPin="$(generateAdminInitPin)"
   keychainPassphrase="$(generateKeychainPassphrase)"
 
+  clearScreen
   echo ""
   printDivider
   echo "Deploy preview"
@@ -918,6 +991,8 @@ actionInstall() {
 
   promptRead -p "Press Enter to generate config and start, or Ctrl+C to cancel… " _ || return 1
 
+  clearScreen
+  printInstallProgressHeader
   mkdir -p "$DEPLOY_DIR"
   writeEnvFile "$tunnelToken" "$publicHost" "$PUBLIC_HTTPS_PORT" "$allowedDomains" "$rpId" "$publicUrl" "$adminInitPin" "$keychainPassphrase"
   writeComposeFile
@@ -981,6 +1056,7 @@ actionUpgrade() {
     return 1
   fi
 
+  clearScreen
   echo ""
   printDivider
   echo "${WIZARD_TITLE} — Upgrade"
@@ -990,6 +1066,8 @@ actionUpgrade() {
 
   promptRead -p "Press Enter to upgrade, or Ctrl+C to cancel… " _ || return 1
 
+  clearScreen
+  printUpgradeProgressHeader
   ensureDataVolume || return 1
 
   echo "Pulling images…"
@@ -1006,10 +1084,17 @@ actionUpgrade() {
   local adminInitPin=""
   adminInitPin="$(grep '^ADMIN_INIT_PIN=' "${DEPLOY_DIR}/${DEPLOY_ENV_FILE}" | cut -d= -f2-)"
 
-  echo ""
-  echo "Upgrade complete."
-  [[ -n "$publicUrl" ]] && printf "Public URL: %s\n" "$publicUrl"
-  [[ -n "$adminInitPin" ]] && printInitPinLine "Init PIN: " "$adminInitPin"
+  clearScreen
+  printAppHeader
+  printUpgradeCompleteTitle
+  if [[ -n "$publicUrl" ]]; then
+    printf "Public URL: %s\n" "$publicUrl"
+  fi
+  if [[ -n "$adminInitPin" ]]; then
+    echo ""
+    printInitPinLine "Init PIN: " "$adminInitPin"
+    echo ""
+  fi
 }
 
 actionUninstall() {
@@ -1025,7 +1110,9 @@ actionUninstall() {
   local removeComposeAnswer=""
   local keepData=true
   local removeCompose=false
+  local uninstallSummary=()
 
+  clearScreen
   echo ""
   printDivider
   echo "${WIZARD_TITLE} — Uninstall"
@@ -1056,19 +1143,26 @@ actionUninstall() {
   compose down --remove-orphans
 
   if [[ "$keepData" == "true" ]]; then
-    printf "Done: containers removed, data volume %s kept.\n" "$DATA_VOLUME"
+    uninstallSummary+=("Containers removed, data volume ${DATA_VOLUME} kept.")
   else
     docker volume rm "$DATA_VOLUME" >/dev/null 2>&1 || true
-    printf "Done: containers and data volume %s removed.\n" "$DATA_VOLUME"
+    uninstallSummary+=("Containers and data volume ${DATA_VOLUME} removed.")
   fi
 
   if [[ "$removeCompose" == "true" ]]; then
-    echo ""
     uninstallComposePlugin || true
+    uninstallSummary+=("Docker Compose plugin removed.")
   fi
 
-  echo ""
-  echo "Note: delete the Tunnel in Cloudflare dashboard manually if you no longer need it."
+  uninstallSummary+=("Note: delete the Tunnel in Cloudflare dashboard manually if you no longer need it.")
+
+  clearScreen
+  printAppHeader
+  printUninstallCompleteTitle
+  local line
+  for line in "${uninstallSummary[@]}"; do
+    printf '%s\n' "$line"
+  done
 
   if [[ "$removeCompose" == "true" ]]; then
     echo ""
@@ -1077,14 +1171,56 @@ actionUninstall() {
   fi
 }
 
-showMenu() {
+switchLanguage() {
+  local targetName targetRemote
+  if [[ "$MENU_LOCALE" == "zh" ]]; then
+    echo "Switching to English…"
+    echo ""
+    targetName="$SCRIPT_NAME_EN"
+    targetRemote="$REMOTE_SCRIPT_EN"
+  else
+    echo "Switching to 简体中文…"
+    echo ""
+    targetName="$SCRIPT_NAME_ZH"
+    targetRemote="$REMOTE_SCRIPT_ZH"
+  fi
+
+  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+    local localScript
+    localScript="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${targetName}"
+    if [[ -f "$localScript" ]]; then
+      exec bash "$localScript"
+    fi
+  fi
+
+  exec bash <(curl -fsSL "$targetRemote")
+}
+
+showAbout() {
+  clearScreen
+  printAppHeader
+  echo "About"
   echo ""
-  printDivider
-  echo "$WIZARD_TITLE"
-  printDivider
+  echo "GitHub source / Feedback:"
+  printf "  %s\n" "$GITHUB_REPO_URL"
+  echo ""
+  echo "Official Docker Hub:"
+  printf "  %s\n" "$DOCKER_HUB_URL"
+  echo ""
+  echo "My other projects:"
+  printf "  %s\n" "$AUTHOR_PROJECTS_URL"
+  echo ""
+  pause
+}
+
+showMenu() {
+  clearScreen
+  printAppHeader
   echo "  1. Install"
   echo "  2. Upgrade (keep data)"
   echo "  3. Uninstall"
+  echo "  4. 简体中文"
+  echo "  5. About"
   echo "  0. Exit"
   echo ""
 }
@@ -1117,7 +1253,7 @@ mainMenu() {
   ensureDockerRuntime
   while true; do
     showMenu
-    promptRead -p "Choose [0-3]: " choice || exit 1
+    promptRead -p "Choose [0-5]: " choice || exit 1
     case "$choice" in
       1)
         actionInstall || true
@@ -1128,12 +1264,18 @@ mainMenu() {
       3)
         actionUninstall || true
         ;;
+      4)
+        switchLanguage
+        ;;
+      5)
+        showAbout
+        ;;
       0)
         echo "Exiting..."
         exit 0
         ;;
       *)
-        echo "Invalid choice. Enter 0-3."
+        echo "Invalid choice. Enter 0-5."
         ;;
     esac
   done

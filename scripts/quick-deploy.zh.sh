@@ -9,6 +9,16 @@ readonly FALLBACK_HOST_PORT="${FALLBACK_HOST_PORT:-3399}"
 readonly CONTAINER_PORT="${CONTAINER_PORT:-3080}"
 readonly ADMIN_INIT_PIN="${ADMIN_INIT_PIN:-20251024}"
 readonly WEBAUTHN_RP_ID="localhost"
+readonly GITHUB_REPO_URL="https://github.com/ij369/ipa-harbor"
+readonly DOCKER_HUB_URL="https://hub.docker.com/r/uuphy/ipa-harbor"
+readonly AUTHOR_PROJECTS_URL="https://uuphy.com/projects"
+readonly IPA_HARBOR_REPO="${IPA_HARBOR_REPO:-ij369/ipa-harbor}"
+readonly IPA_HARBOR_BRANCH="${IPA_HARBOR_BRANCH:-main}"
+readonly MENU_LOCALE="zh"
+readonly SCRIPT_NAME_EN="quick-deploy.sh"
+readonly SCRIPT_NAME_ZH="quick-deploy.zh.sh"
+readonly REMOTE_SCRIPT_EN="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/quick-deploy.sh"
+readonly REMOTE_SCRIPT_ZH="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/quick-deploy.zh.sh"
 
 BROWSER_OPEN_CANCELLED=0
 
@@ -160,7 +170,71 @@ printDockerNotRunningHint() {
   echo ""
 }
 
-requireDocker() {
+isLinux() {
+  [[ "$(uname -s)" == "Linux" ]]
+}
+
+printDockerOfficialInstallHint() {
+  echo "请复制以下命令安装 Docker（需要 root/sudo）："
+  echo ""
+  echo "  curl -fsSL https://get.docker.com | sh"
+  echo ""
+  echo "文档: https://docs.docker.com/engine/install/"
+}
+
+promptLinuxDockerInstall() {
+  local installAnswer=""
+
+  echo "Docker 未安装。"
+  echo ""
+  if ! isInteractiveTerminal; then
+    echo "错误: 需要交互式终端。" >&2
+    exit 1
+  fi
+  promptRead -p "是否使用官方一键脚本安装 Docker？(y/N) " installAnswer || exit 1
+  if ! isYes "$installAnswer"; then
+    echo "需要 Docker 才能继续，正在退出…"
+    exit 0
+  fi
+  echo ""
+  printDockerOfficialInstallHint
+  echo "安装完成后，如需要请启动 Docker 服务，然后重新运行本脚本。"
+  promptAnyKey "按任意键退出… " || true
+  exit 0
+}
+
+printLinuxDockerNotRunningHint() {
+  echo "Docker 已安装但当前无法连接。"
+  echo ""
+  echo "可尝试："
+  echo "  sudo systemctl start docker"
+  echo ""
+  echo "若刚安装 Docker，可能还需要："
+  echo '  sudo usermod -aG docker "$USER"'
+  echo "  （然后重新登录，或执行：newgrp docker）"
+  echo ""
+}
+
+promptLinuxDockerNotRunning() {
+  printLinuxDockerNotRunningHint
+  if ! isInteractiveTerminal; then
+    echo "错误: 需要交互式终端。" >&2
+    exit 1
+  fi
+  echo "处理完成后，请重新运行本脚本。"
+  promptAnyKey "按任意键退出… " || true
+  exit 0
+}
+
+ensureDockerCommand() {
+  if command -v docker >/dev/null 2>&1; then
+    return 0
+  fi
+
+  if isLinux; then
+    promptLinuxDockerInstall
+  fi
+
   while ! command -v docker >/dev/null 2>&1; do
     printDockerNotInstalledHint
     if ! isInteractiveTerminal; then
@@ -170,15 +244,26 @@ requireDocker() {
     promptAnyKey "按任意键继续… " || exit 1
     echo ""
   done
-  while ! docker info >/dev/null 2>&1; do
-    printDockerNotRunningHint
-    if ! isInteractiveTerminal; then
-      echo "错误: 需要交互式终端。" >&2
-      exit 1
+}
+
+requireDocker() {
+  ensureDockerCommand
+
+  if ! docker info >/dev/null 2>&1; then
+    if isLinux; then
+      promptLinuxDockerNotRunning
     fi
-    promptAnyKey "按任意键继续… " || exit 1
-    echo ""
-  done
+
+    while ! docker info >/dev/null 2>&1; do
+      printDockerNotRunningHint
+      if ! isInteractiveTerminal; then
+        echo "错误: 需要交互式终端。" >&2
+        exit 1
+      fi
+      promptAnyKey "按任意键继续… " || exit 1
+      echo ""
+    done
+  fi
 }
 
 isYes() {
@@ -904,12 +989,56 @@ actionUninstall() {
   done
 }
 
+switchLanguage() {
+  local targetName targetRemote
+  if [[ "$MENU_LOCALE" == "zh" ]]; then
+    echo "正在切换为 English…"
+    echo ""
+    targetName="$SCRIPT_NAME_EN"
+    targetRemote="$REMOTE_SCRIPT_EN"
+  else
+    echo "正在切换为简体中文…"
+    echo ""
+    targetName="$SCRIPT_NAME_ZH"
+    targetRemote="$REMOTE_SCRIPT_ZH"
+  fi
+
+  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
+    local localScript
+    localScript="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${targetName}"
+    if [[ -f "$localScript" ]]; then
+      exec bash "$localScript"
+    fi
+  fi
+
+  exec bash <(curl -fsSL "$targetRemote")
+}
+
+showAbout() {
+  clearScreen
+  printAppHeader
+  echo "关于"
+  echo ""
+  echo "GitHub 源码 / 反馈:"
+  printf "  %s\n" "$GITHUB_REPO_URL"
+  echo ""
+  echo "官方 Docker Hub:"
+  printf "  %s\n" "$DOCKER_HUB_URL"
+  echo ""
+  echo "我的其他产品:"
+  printf "  %s\n" "$AUTHOR_PROJECTS_URL"
+  echo ""
+  pause
+}
+
 showMenu() {
   clearScreen
   printAppHeader
   echo "  1. 安装"
   echo "  2. 升级（保留数据）"
   echo "  3. 卸载"
+  echo "  4. English"
+  echo "  5. 关于"
   echo "  0. 退出"
   echo ""
 }
@@ -931,7 +1060,7 @@ mainMenu() {
   requireDocker
   while true; do
     showMenu
-    promptRead -p "请选择 [0-3]: " choice || exit 1
+    promptRead -p "请选择 [0-5]: " choice || exit 1
     case "$choice" in
       1)
         actionInstall || true
@@ -945,12 +1074,18 @@ mainMenu() {
         actionUninstall || true
         pause
         ;;
+      4)
+        switchLanguage
+        ;;
+      5)
+        showAbout
+        ;;
       0)
         echo "再见。"
         exit 0
         ;;
       *)
-        echo "无效选项，请输入 0-3。"
+        echo "无效选项，请输入 0-5。"
         ;;
     esac
   done
