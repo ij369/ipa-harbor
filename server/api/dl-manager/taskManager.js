@@ -159,7 +159,7 @@ class TaskManager {
             'download',
             '-b', task.bundleId, // 下载时最好先购买，所以用到bundleId而不用appId
             '--purchase',
-            '--ota-compat', // ipatool 默认 raw ZIP 复制，见 majd/ipatool#433/#540
+            // v2.6.0+ 已经修复了包无法 OTA 安装的问题，默认用 data descriptor，无需 --ota-compat（见 majd/ipatool#540）
             '--keychain-passphrase', KEYCHAIN_PASSPHRASE
         ];
 

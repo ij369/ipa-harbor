@@ -16,7 +16,7 @@ promptRead() {
     return $?
   fi
   if [[ ! -r /dev/tty ]]; then
-    echo "错误: 需要交互式终端。" >&2
+    echo "Error: interactive input required." >&2
     return 1
   fi
 
@@ -43,8 +43,31 @@ promptRead() {
 
 pause() {
   if isInteractiveTerminal; then
-    promptRead -p "按回车继续… " _ || true
+    promptRead -p "Press Enter to continue… " _ || true
   fi
+}
+
+promptAnyKey() {
+  local prompt="${1:-Press any key to continue… }"
+
+  if ! isInteractiveTerminal; then
+    return 0
+  fi
+
+  if [[ -t 0 ]]; then
+    printf '%s' "$prompt"
+    read -n 1 -r _
+    echo ""
+    return 0
+  fi
+
+  if [[ ! -r /dev/tty ]]; then
+    return 1
+  fi
+
+  printf '%s' "$prompt" >/dev/tty
+  read -n 1 -r _ </dev/tty
+  echo "" >/dev/tty
 }
 
 printDivider() {
@@ -61,15 +84,43 @@ printInitPinLine() {
   fi
 }
 
+printDockerNotInstalledHint() {
+  echo "Docker is not installed."
+  echo ""
+  echo "Please install one of:"
+  echo "  • OrbStack"
+  echo "    https://orbstack.dev/download"
+  echo "  • Docker Desktop"
+  echo "    https://www.docker.com/products/docker-desktop/"
+  echo ""
+}
+
+printDockerNotRunningHint() {
+  echo "Docker is not running."
+  echo ""
+  echo "Please start Docker Desktop or OrbStack, then continue."
+  echo ""
+}
+
 requireDocker() {
-  if ! command -v docker >/dev/null 2>&1; then
-    echo "错误: 未检测到 Docker，请先安装并启动 Docker Desktop / OrbStack。"
-    exit 1
-  fi
-  if ! docker info >/dev/null 2>&1; then
-    echo "错误: Docker 未运行，请先启动 Docker Desktop / OrbStack。"
-    exit 1
-  fi
+  while ! command -v docker >/dev/null 2>&1; do
+    printDockerNotInstalledHint
+    if ! isInteractiveTerminal; then
+      echo "Error: interactive terminal required." >&2
+      exit 1
+    fi
+    promptAnyKey "Press any key to continue… " || exit 1
+    echo ""
+  done
+  while ! docker info >/dev/null 2>&1; do
+    printDockerNotRunningHint
+    if ! isInteractiveTerminal; then
+      echo "Error: interactive terminal required." >&2
+      exit 1
+    fi
+    promptAnyKey "Press any key to continue… " || exit 1
+    echo ""
+  done
 }
 
 isYes() {
@@ -93,7 +144,7 @@ waitForServiceUrl() {
   local attempts="${2:-30}"
   local i=0
 
-  echo "正在等待服务响应…"
+  echo "Waiting for service to respond…"
   while [[ $i -lt attempts ]]; do
     if curl -sS --max-time 2 -o /dev/null "$url" 2>/dev/null; then
       return 0
@@ -102,7 +153,7 @@ waitForServiceUrl() {
     i=$((i + 1))
   done
 
-  echo "提示: 服务尚未就绪，仍将尝试打开浏览器。"
+  echo "Note: Service is not responding yet; opening browser anyway."
   return 1
 }
 
@@ -110,7 +161,7 @@ openBrowserUrl() {
   local url="$1"
 
   if [[ "$(uname -s)" != "Darwin" ]]; then
-    printf "请手动打开: %s\n" "$url"
+    printf "Please open manually: %s\n" "$url"
     return 1
   fi
 
@@ -118,17 +169,17 @@ openBrowserUrl() {
 
   if [[ -x /usr/bin/open ]]; then
     if /usr/bin/open "$url"; then
-      printf "已在默认浏览器中打开: %s\n" "$url"
+      printf "Opened in your default browser: %s\n" "$url"
       return 0
     fi
   elif command -v open >/dev/null 2>&1; then
     if open "$url"; then
-      printf "已在默认浏览器中打开: %s\n" "$url"
+      printf "Opened in your default browser: %s\n" "$url"
       return 0
     fi
   fi
 
-  echo "无法自动打开浏览器，请手动访问:"
+  echo "Could not open browser automatically. Please open:"
   printf "  %s\n" "$url"
   return 1
 }
@@ -158,10 +209,10 @@ explainContainerStartFailure() {
   local errMsg="$1"
   local hostPort="$2"
   if [[ "$errMsg" == *"port is already allocated"* || "$errMsg" == *"Bind for"* ]]; then
-    printf "错误: 端口 %s 已被占用，容器无法绑定。\n" "$hostPort"
-    echo "   请关闭占用该端口的程序后重试。"
+    printf "Error: Port %s is already in use; cannot bind the container.\n" "$hostPort"
+    echo "   Stop the program using that port and try again."
   else
-    echo "错误: 容器启动失败。"
+    echo "Error: Failed to start the container."
     while IFS= read -r line; do
       [[ -n "$line" ]] && echo "   $line"
     done <<< "$errMsg"
@@ -184,7 +235,7 @@ maybeOpenBrowser() {
     return 0
   fi
 
-  promptRead -p "是否现在打开浏览器？(y/N) " openBrowser || return 0
+  promptRead -p "Open in browser now? (y/N) " openBrowser || return 0
   openBrowser="$(trimInput "$openBrowser")"
   if isYes "$openBrowser"; then
     openBrowserUrl "$url"
@@ -219,7 +270,7 @@ resolveInstallHostPort() {
   fi
 
   if [[ "$preferred" == "$fallback" ]]; then
-    printf "错误: 端口 %s 已被占用，无法安装。\n" "$preferred" >&2
+    printf "Error: Port %s is already in use; cannot install.\n" "$preferred" >&2
     return 1
   fi
 
@@ -228,7 +279,7 @@ resolveInstallHostPort() {
     return 0
   fi
 
-  printf "错误: 端口 %s 与 %s 均已被占用，无法安装。\n" "$preferred" "$fallback" >&2
+  printf "Error: Ports %s and %s are both in use; cannot install.\n" "$preferred" "$fallback" >&2
   return 1
 }
 
@@ -277,23 +328,23 @@ pickIpaHarborContainer() {
   fi
 
   echo ""
-  echo "发现多个 IPA-Harbor 容器:"
+  echo "Multiple IPA-Harbor containers found:"
   i=1
   for name in "${containers[@]}"; do
-    status="已停止"
-    [[ "$(docker inspect --format '{{.State.Running}}' "$name" 2>/dev/null || true)" == "true" ]] && status="运行中"
+    status="stopped"
+    [[ "$(docker inspect --format '{{.State.Running}}' "$name" 2>/dev/null || true)" == "true" ]] && status="running"
     img="$(docker inspect --format '{{.Config.Image}}' "$name" 2>/dev/null || true)"
     printf "  %d. %s  (%s, %s)\n" "$i" "$name" "$img" "$status"
     i=$((i + 1))
   done
   echo ""
   maxChoice="${#containers[@]}"
-  promptRead -p "请选择容器 [1-${maxChoice}]: " choice
+  promptRead -p "Choose container [1-${maxChoice}]: " choice
   if [[ "$choice" =~ ^[0-9]+$ ]] && choice -ge 1 && choice -le maxChoice; then
     echo "${containers[$((choice - 1))]}"
     return 0
   fi
-  echo "无效选项。" >&2
+  echo "Invalid choice." >&2
   return 1
 }
 
@@ -376,7 +427,7 @@ ensureAdminInitPin() {
   done
 
   ENV_ARGS+=("-e" "ADMIN_INIT_PIN=${ADMIN_INIT_PIN}")
-  printf "提示: 旧容器未设置 ADMIN_INIT_PIN，升级时将自动补上: %s\n" "$ADMIN_INIT_PIN"
+  printf "Note: ADMIN_INIT_PIN was missing on the old container; adding %s for upgrade.\n" "$ADMIN_INIT_PIN"
   echo ""
 }
 
@@ -442,14 +493,14 @@ actionInstall() {
   fi
 
   if [[ -n "$existingContainer" ]]; then
-    printf "注意: 已存在 IPA-Harbor 容器: %s\n" "$existingContainer"
+    printf "Note: IPA-Harbor container already exists: %s\n" "$existingContainer"
     echo ""
-    promptRead -p "是否改为执行升级？(Y/n) " goUpgrade
+    promptRead -p "Upgrade instead? (Y/n) " goUpgrade
     if [[ -z "$goUpgrade" ]] || isYes "$goUpgrade"; then
       actionUpgrade "$existingContainer"
       return
     fi
-    echo "已取消。如需重装请先卸载（选项 3）。"
+    echo "Cancelled. Uninstall first (option 3) to reinstall."
     return
   fi
 
@@ -464,26 +515,26 @@ actionInstall() {
 
   echo ""
   printDivider
-  echo "即将安装 IPA-Harbor（本机快速部署）"
+  echo "Install IPA-Harbor (local quick setup)"
   printDivider
-  printf "镜像:       %s\n" "$IMAGE"
+  printf "Image:       %s\n" "$IMAGE"
   echo ""
-  printf "容器名:     %s\n" "$CONTAINER_NAME"
+  printf "Container:   %s\n" "$CONTAINER_NAME"
   echo ""
-  printf "数据卷:     %s\n" "$DATA_VOLUME"
+  printf "Data volume: %s\n" "$DATA_VOLUME"
   echo ""
-  printf "访问地址:   %s\n" "$visitUrl"
+  printf "URL:         %s\n" "$visitUrl"
   echo ""
-  printInitPinLine "初始化 PIN: " "$ADMIN_INIT_PIN"
+  printInitPinLine "Init PIN:    " "$ADMIN_INIT_PIN"
   echo ""
   echo ""
 
-  promptRead -p "按回车开始安装，或 Ctrl+C 取消… " _
+  promptRead -p "Press Enter to install, or Ctrl+C to cancel… " _
 
-  echo "[1/3] 拉取镜像…"
+  echo "[1/3] Pulling image…"
   docker pull "$IMAGE"
 
-  echo "[2/3] 创建数据卷并启动容器…"
+  echo "[2/3] Creating data volume and starting container…"
   docker volume create "$DATA_VOLUME" >/dev/null 2>&1 || true
   local runOutput=""
   if ! runOutput=$(docker run -d \
@@ -500,11 +551,11 @@ actionInstall() {
     return 1
   fi
 
-  echo "[3/3] 安装完成。"
+  echo "[3/3] Install complete."
   echo ""
-  printf "打开: %s\n" "$visitUrl"
+  printf "Open: %s\n" "$visitUrl"
   echo ""
-  printInitPinLine "初始化 PIN: " "$ADMIN_INIT_PIN"
+  printInitPinLine "Init PIN: " "$ADMIN_INIT_PIN"
   echo ""
   maybeOpenBrowser "$visitUrl"
 }
@@ -519,8 +570,8 @@ actionUpgrade() {
     fi
   fi
   if [[ -z "$targetContainer" ]]; then
-    echo "错误: 未找到可升级的容器。"
-    echo "   请先选择「1. 安装」，或确认本机是否有 uuphy/ipa-harbor 镜像的容器。"
+    echo "Error: No container found to upgrade."
+    echo "   Choose install (1) first, or check for a uuphy/ipa-harbor container."
     return 1
   fi
 
@@ -532,54 +583,54 @@ actionUpgrade() {
 
   echo ""
   printDivider
-  echo "IPA-Harbor 升级"
+  echo "Upgrade IPA-Harbor"
   printDivider
-  printf "容器:     %s\n" "$targetContainer"
+  printf "Container:     %s\n" "$targetContainer"
   echo ""
-  printf "当前镜像: %s\n" "$OLD_IMAGE"
+  printf "Current image: %s\n" "$OLD_IMAGE"
   echo ""
-  printf "新镜像:   %s\n" "$upgradeImage"
+  printf "New image:     %s\n" "$upgradeImage"
   echo ""
-  [[ -n "$VISIT_URL" ]] && printf "访问地址:   %s\n" "$VISIT_URL" && echo ""
+  [[ -n "$VISIT_URL" ]] && printf "URL:         %s\n" "$VISIT_URL" && echo ""
   echo ""
-  echo "已下载的 IPA 与配置保存在数据卷中，升级不会清空。"
+  echo "Downloaded IPAs and settings are stored in the data volume; upgrade will not erase them."
   echo ""
 
-  promptRead -p "按回车开始升级，或 Ctrl+C 取消… " _
+  promptRead -p "Press Enter to upgrade, or Ctrl+C to cancel… " _
 
-  echo "[1/4] 从 registry 拉取最新 latest 镜像…"
+  echo "[1/4] Pulling latest image from registry…"
   pullUpgradeImage "$upgradeImage"
 
   local backupName="${targetContainer}-bak-$(date +%Y%m%d%H%M%S)"
 
-  echo "[2/4] 停止旧容器…"
+  echo "[2/4] Stopping old container…"
   if [[ "$(docker inspect --format '{{.State.Running}}' "$targetContainer")" == "true" ]]; then
     docker stop "$targetContainer" >/dev/null
   fi
   docker rename "$targetContainer" "$backupName"
 
-  echo "[3/4] 启动新容器…"
+  echo "[3/4] Starting new container…"
   if ! runContainerFromConfig "$targetContainer" "$upgradeImage" "true"; then
     echo ""
-    echo "正在回滚至升级前状态…"
+    echo "Rolling back to pre-upgrade state…"
     docker rm -f "$targetContainer" >/dev/null 2>&1 || true
     docker rename "$backupName" "$targetContainer" >/dev/null 2>&1 || true
     docker start "$targetContainer" >/dev/null 2>&1 || true
-    printf "已回滚（容器: %s）。\n" "$targetContainer"
+    printf "Rolled back (container: %s).\n" "$targetContainer"
     echo ""
     return 1
   fi
 
-  echo "[4/4] 完成。"
+  echo "[4/4] Done."
   echo ""
 
   if [[ "$(docker inspect --format '{{.State.Running}}' "$targetContainer")" == "true" ]]; then
     docker rm -f "$backupName" >/dev/null
-    echo "完成: 新容器已启动，旧容器备份已自动删除。"
+    echo "Done: New container is running; backup removed."
   else
-    printf "注意: 新容器未正常运行，已保留备份以便回滚: %s\n" "$backupName"
+    printf "Note: New container is not running; backup kept for rollback: %s\n" "$backupName"
     echo ""
-    printf "    回滚: docker rm -f %s && docker rename %s %s && docker start %s\n" "$targetContainer" "$backupName" "$targetContainer" "$targetContainer"
+    printf "    Rollback: docker rm -f %s && docker rename %s %s && docker start %s\n" "$targetContainer" "$backupName" "$targetContainer" "$targetContainer"
     echo ""
     return 1
   fi
@@ -587,9 +638,9 @@ actionUpgrade() {
   if [[ -n "$VISIT_URL" ]]; then
     local initPin
     initPin="$(getAdminInitPinFromEnvArgs)"
-    printf "请访问: %s\n" "$VISIT_URL"
+    printf "Visit: %s\n" "$VISIT_URL"
     echo ""
-    printInitPinLine "初始化 PIN: " "$initPin"
+    printInitPinLine "Init PIN: " "$initPin"
     echo ""
     maybeOpenBrowser "$VISIT_URL"
   fi
@@ -626,52 +677,52 @@ actionUninstall() {
   fi
 
   if [[ "$hasContainer" == "false" && "$hasVolume" == "false" && "$hasImages" == "false" ]]; then
-    echo "未找到 IPA-Harbor 容器、数据卷或镜像，无需卸载。"
+    echo "No IPA-Harbor container, data volume, or image found; nothing to uninstall."
     return
   fi
 
   echo ""
   printDivider
-  echo "IPA-Harbor 卸载"
+  echo "Uninstall IPA-Harbor"
   printDivider
 
   if [[ "$hasContainer" == "true" ]]; then
     [[ -z "$targetContainer" ]] && targetContainer="$CONTAINER_NAME"
-    printf "将删除容器: %s\n" "$targetContainer"
+    printf "Will remove container: %s\n" "$targetContainer"
     echo ""
     local backupContainers
     backupContainers="$(docker ps -a --format '{{.Names}}' | grep -E "^${CONTAINER_NAME}-bak-|^${targetContainer}-bak-" || true)"
     if [[ -n "$backupContainers" ]]; then
-      echo "同时删除备份容器:"
+      echo "Will also remove backup containers:"
       echo "$backupContainers" | sed 's/^/  - /'
     fi
   fi
 
   if [[ "$hasVolume" == "true" ]]; then
     echo ""
-    printf "数据卷 %s 内存有:\n" "$DATA_VOLUME"
+    printf "Data volume %s contains:\n" "$DATA_VOLUME"
     echo ""
-    echo "  - 已下载的 IPA 文件"
-    echo "  - 管理员账户、Apple ID 绑定等用户数据"
+    echo "  - Downloaded IPA files"
+    echo "  - Admin accounts, Apple ID bindings, and other user data"
   fi
 
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    echo "本机 IPA-Harbor Docker 镜像:"
+    echo "Local IPA-Harbor Docker images:"
     echo "$ipaHarborImages" | sed 's/^/  - /'
   fi
 
   echo ""
-  promptRead -p "确认卸载？(y/N) " confirmUninstall
+  promptRead -p "Confirm uninstall? (y/N) " confirmUninstall
   if ! isYes "$confirmUninstall"; then
-    echo "已取消。"
+    echo "Cancelled."
     return
   fi
 
   local keepData=true
   if [[ "$hasVolume" == "true" ]]; then
     echo ""
-    promptRead -p "$(printf "是否保留已下载的 IPA 与用户数据（数据卷 %s）？(Y/n) " "$DATA_VOLUME")" keepDataAnswer
+    promptRead -p "$(printf "Keep downloaded IPAs and user data (volume %s)? (Y/n) " "$DATA_VOLUME")" keepDataAnswer
     if [[ "$keepDataAnswer" == "n" || "$keepDataAnswer" == "N" ]]; then
       keepData=false
     fi
@@ -680,7 +731,7 @@ actionUninstall() {
   local deleteImages=false
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    promptRead -p "是否删除本机 IPA-Harbor Docker 镜像？(y/N) " deleteImagesAnswer
+    promptRead -p "Delete local IPA-Harbor Docker images? (y/N) " deleteImagesAnswer
     if isYes "$deleteImagesAnswer"; then
       deleteImages=true
     fi
@@ -699,16 +750,16 @@ actionUninstall() {
       docker rm -f "$bakName" >/dev/null 2>&1 || true
     done < <(docker ps -a --format '{{.Names}}' | grep -E "^${CONTAINER_NAME}-bak-|^${targetContainer}-bak-" || true)
 
-    echo "完成: 容器已删除。"
+    echo "Done: Container removed."
   fi
 
   if [[ "$hasVolume" == "true" ]]; then
     if [[ "$keepData" == "true" ]]; then
-      printf "完成: 数据卷 %s 已保留，下次安装时会自动复用。\n" "$DATA_VOLUME"
+      printf "Done: Data volume %s kept; it will be reused on next install.\n" "$DATA_VOLUME"
       echo ""
     else
       docker volume rm "${DATA_VOLUME}" >/dev/null 2>&1 || true
-      printf "完成: 数据卷 %s 已删除。\n" "$DATA_VOLUME"
+      printf "Done: Data volume %s removed.\n" "$DATA_VOLUME"
       echo ""
     fi
   fi
@@ -722,38 +773,38 @@ actionUninstall() {
       fi
     done <<< "$ipaHarborImages"
     if [[ $removed -gt 0 ]]; then
-      printf "完成: 已删除 %s 个 IPA-Harbor 镜像。\n" "$removed"
+      printf "Done: Removed %s IPA-Harbor image(s).\n" "$removed"
       echo ""
     else
-      echo "注意: 未能删除镜像（可能仍被其他容器占用）。"
+      echo "Note: Could not remove images (they may still be in use by another container)."
     fi
   elif [[ "$hasImages" == "true" ]]; then
-    echo "完成: IPA-Harbor 镜像已保留，下次安装可复用。"
+    echo "Done: IPA-Harbor images kept for reuse on next install."
   fi
 }
 
 showMenu() {
   echo ""
   printDivider
-  echo "IPA-Harbor 本地 Docker 管理"
+  echo "IPA-Harbor local Docker manager"
   printDivider
-  echo "  1. 安装（首次本机部署）"
-  echo "  2. 升级（保留数据）"
-  echo "  3. 卸载"
-  echo "  0. 退出"
+  echo "  1. Install (first-time local setup)"
+  echo "  2. Upgrade (keep data)"
+  echo "  3. Uninstall"
+  echo "  0. Exit"
   echo ""
 }
 
 usage() {
   cat <<EOF
-用法:
-  bash quick-deploy.zh.sh              交互菜单
-  bash quick-deploy.zh.sh install      直接安装
-  bash quick-deploy.zh.sh upgrade      直接升级
-  bash quick-deploy.zh.sh uninstall    直接卸载
+Usage:
+  bash quick-deploy.sh              interactive menu
+  bash quick-deploy.sh install      install directly
+  bash quick-deploy.sh upgrade      upgrade directly
+  bash quick-deploy.sh uninstall    uninstall directly
 
-远程一条命令（推荐）:
-  curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/quick-deploy.zh.sh | bash
+One-liner (recommended):
+  curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.sh | bash
 EOF
 }
 
@@ -761,7 +812,7 @@ mainMenu() {
   requireDocker
   while true; do
     showMenu
-    promptRead -p "请选择 [0-3]: " choice || exit 1
+    promptRead -p "Choose [0-3]: " choice || exit 1
     case "$choice" in
       1)
         actionInstall || true
@@ -776,11 +827,11 @@ mainMenu() {
         pause
         ;;
       0)
-        echo "再见。"
+        echo "Goodbye."
         exit 0
         ;;
       *)
-        echo "无效选项，请输入 0-3。"
+        echo "Invalid choice; enter 0-3."
         ;;
     esac
   done
@@ -803,7 +854,7 @@ case "${1:-}" in
     mainMenu
     ;;
   *)
-    printf "未知命令: %s\n" "$1" >&2
+    printf "Unknown command: %s\n" "$1" >&2
     echo "" >&2
     usage >&2
     exit 1

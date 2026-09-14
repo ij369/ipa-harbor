@@ -454,7 +454,7 @@
         "APP_LIST_PURCHASES_ERROR": "Error while loading purchased apps",
         "APP_LIST_PURCHASES_FAILED": "Failed to load purchased apps",
         "APP_LIST_PURCHASES_SUCCESS": "Purchased apps loaded",
-        "APP_LIST_PURCHASES_UNSUPPORTED": "This ipatool build does not support list-purchases",
+        "APP_LIST_PURCHASES_UNSUPPORTED": "This ipatool build does not support list-purchases. Upgrade to v2.6.0+ (run ./scripts/dl_latest.sh or download a macOS binary from GitHub releases to server/bin/ipatool)",
         "APP_PURCHASE_ALREADY_OWNED": "This app is already owned",
         "APP_PURCHASE_BUNDLE_ID_REQUIRED": "Bundle ID is required",
         "APP_PURCHASE_ERROR": "Error during purchase/claim",

@@ -10,3 +10,4 @@ server/static/
 server/.cache/
 server/data/*.json
 server/data/.ipatool/*
+ipatool/

@@ -5,7 +5,7 @@ It can be accessed and used directly from a web browser, supporting App search, 
 本项目是一个基于 [ipatool](https://github.com/majd/ipatool) 的开源 IPA Web 管理工具。
 通过浏览器即可访问和使用，支持 App 搜索、历史版本下载及安装，并提供 [Docker 镜像](https://hub.docker.com/r/uuphy/ipa-harbor/tags) 方便部署。
 
-[Quick Start](#quick-start) | [快速开始](#快速开始)
+[Quick Start](#quick-start) | [Script Deployment](#script-deployment) | [快速开始](#快速开始) | [脚本部署](#脚本部署)
 
 > Apple ID: IPA-Harbor is designed for self-hosted use; this project does not provide a public online instance.
 > For security and privacy, we recommend deploying it yourself and using an Apple ID separate from your daily-use account.
@@ -35,18 +35,8 @@ docker run -d \
   uuphy/ipa-harbor:latest
 ```
 
-
-#### Quick Deploy Script
-Install [Docker Desktop](https://www.docker.com/products/docker-desktop/) or [OrbStack](https://orbstack.dev/), open Terminal, and run:
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/quick-deploy.sh | bash
-```
-
-Follow the script prompts to install, upgrade, and more.
-
 > [!WARNING]
-> **The first Apple ID login runs Unicorn/SAP emulation. Ensure the host has ≥1 GB free RAM, or [configure ≥2 GB swap](#linux-vps-memory--swap-first-apple-id-login).**
+> **The first Apple ID login runs Unicorn/SAP emulation. Ensure the host has ≥1 GB free RAM, or [configure ≥2 GB swap](#linux-host-memory--swap-first-apple-id-login).**
 
 Then open your browser and visit: http://localhost:3388
 
@@ -139,6 +129,27 @@ Then open your browser and visit: http://example.com to access. Similarly, you c
 
 On first visit, go to `/setup` and use the `ADMIN_INIT_PIN` from the command above.
 
+### Script Deployment
+
+No need to manually enter complex commands — open a terminal, run the script below, and press Enter; the wizard will guide you through install, upgrade, and uninstall.
+
+#### Local (Docker Desktop / OrbStack)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.sh | bash
+```
+
+#### Linux server + Cloudflare Tunnel
+
+Self-hosted public deployment on a machine running Docker.
+
+Prerequisites: a Cloudflare-managed domain and a host running Docker (VPS, cloud VM, dedicated host, NAS, Raspberry Pi, etc.).
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/public-deploy-cf.sh | bash
+```
+
+On a low-memory host, [configure swap](#linux-host-memory--swap-first-apple-id-login) before the first Apple ID login.
 
 ### Parameter Description
 
@@ -208,7 +219,7 @@ IPA-Harbor also supports installing IPAs directly via Safari, but this requires 
   - Built-in TLS: `-p 443:3443`, `-e HTTPS_PORT=3443`, `-v ipa_certs:/app/certs` with `server.crt` and `server.key` in the volume (or bind-mount those two files)
   - Or terminate HTTPS on nginx :443 — see [Public Network Startup](#public-network-startup-command-self-signed-certificate-or-specified-certificate)
 - Toggle in **Settings → Enable OTA install** (off by default on non-Apple devices).
-- IPAs must be downloaded with `--ota-compat` ipatool — thanks to [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) for the `--ota-compat` design ([#540](https://github.com/majd/ipatool/issues/540)); see [ipatool & Docker](#ipatool--docker).
+- OTA IPAs must be downloaded with **ipatool v2.6.0+**; see [ipatool & Docker](#ipatool--docker).
 
 Therefore, if you only use IPA-Harbor to download IPAs, a standard Docker deployment is sufficient; if you need Safari direct install, see the [related configuration guide](#public-network-startup-command-self-signed-certificate-or-specified-certificate).
 
@@ -217,9 +228,9 @@ Therefore, if you only use IPA-Harbor to download IPAs, a standard Docker deploy
 
 Log in with only one Apple ID per container. Use a separate container for each Apple ID, and try to keep each Apple ID's region aligned with the container's egress IP region.
 
-### Linux VPS: memory & swap (first Apple ID login)
+### Linux host: memory & swap (first Apple ID login)
 
-Configure on the **host** (not inside the container). For ~1GB VPS, add 2GB swap:
+If host RAM is below 1GB (1GB not included), add 2GB swap:
 
 ```bash
 fallocate -l 2G /swapfile    # create 2GB file
@@ -235,32 +246,31 @@ No further host setup needed — bind Apple ID in the web UI as usual. The first
 ## Directory Structure
 ```
 ipa-harbor/
-├── ipatool/                         - git submodule (HaughtyEyes ipatool source)
 ├── server/
 │   ├── api/                         - REST / WebSocket API
 │   ├── app.js
 │   ├── bin/
 │   │   ├── ipatool                  - dev binary (local macOS or extracted)
 │   │   └── ipatool-*-linux-*.tar.gz - Linux packages for Docker build
-│   ├── patches/
-│   │   └── ipatool-haughtyeyes-ota-compat.patch
 │   ├── certs/                       - HTTPS: server.crt, server.key
 │   ├── data/                        - IPA files, users.db, .ipatool config
 │   ├── Dockerfile
 │   ├── docker-compose.example.yml
 │   └── static/                      - built frontend (production)
 ├── client/                          - Vite + React frontend source
+├── scripts/
+│   ├── quick-deploy.sh              - local Docker install wizard (English)
+│   ├── public-deploy-cf.sh          - Linux server + Cloudflare Tunnel self-hosted deploy
+│   ├── dl_latest.sh                 - fetch official ipatool release
+│   ├── build_ipatool.sh             - compile ipatool from official latest main
+│   └── legacy/                      - deprecated pre-v2.6.0 ipatool source build
 ├── build.sh                         - build Docker image
-├── build_ipatool.sh                 - compile ipatool from source
-├── build_zh.sh                      - build Docker image (Chinese UI)
-├── build_ipatool_zh.sh              - compile ipatool (Chinese UI)
-└── dl_latest.sh                     - fetch official ipatool release
+└── build_zh.sh                      - build Docker image (Chinese UI)
 ```
 ### Development
 
 ```bash
-git clone --recurse-submodules https://github.com/ij369/ipa-harbor.git
-# or: git submodule update --init ipatool
+git clone https://github.com/ij369/ipa-harbor.git
 ```
 
 #### Backend
@@ -278,50 +288,15 @@ Dev server: `localhost:5173`. For LAN access, set backend env `allowLAN` (see pa
 #### ipatool & Docker
 
 ```bash
-# Compile ipatool (default haughtyeyes+ota)
-chmod +x build_ipatool.sh && ./build_ipatool.sh
-
-# Build Docker image (prompts to refresh ipatool; choose n if already built)
-chmod +x build.sh && ./build.sh
+# Fetch official ipatool Linux packages (v2.6.0+)
+chmod +x scripts/dl_latest.sh && ./scripts/dl_latest.sh
 ```
-
-**Details**
-
-Default preset **`haughtyeyes+ota`** (submodule `ipatool/` + OTA patch → `server/bin/ipatool`). Official [releases](https://github.com/majd/ipatool/releases) v2.5.0 lack empty-response fixes ([#538](https://github.com/majd/ipatool/issues/538), [#547](https://github.com/majd/ipatool/issues/547)) and OTA support ([#540](https://github.com/majd/ipatool/issues/540)). See [Acknowledgements](#acknowledgements).
-
-| Scenario | Command |
-| --- | --- |
-| Official release only (no fixes) | `./dl_latest.sh` then `./build.sh --no-fetch` |
-
-`build_ipatool.sh` with no args shows an interactive menu (Enter = option 1):
-
-| Flag | Description |
-| --- | --- |
-| `--choice N` | Non-interactive: `1` Linux (arm64+amd64) + macOS, `2` macOS only, `3` Linux arm64, `4` Linux amd64 |
-| `--arch ARCH` | Linux only: `amd64` \| `arm64` \| `all` (skips menu with `--darwin`) |
-| `--darwin` | Also build local macOS binary → `server/bin/ipatool` |
-| `--source NAME` | `official` \| `haughtyeyes` \| `ota` \| `haughtyeyes+ota` (default) |
-| `--repo URL` / `--ref REF` | Custom source (overrides `--source`) |
-| `-h, --help` | Full help |
-
-```bash
-./build_ipatool.sh --choice 1                   # Linux packages + macOS dev binary
-./build_ipatool.sh --darwin                     # macOS dev binary only
-./build_ipatool.sh --arch arm64                 # Linux arm64 package only
-./build_ipatool.sh --source haughtyeyes+ota --arch all --darwin
-```
-
-After upgrading ipatool, **re-download IPAs** for OTA. Verify: `server/bin/ipatool download -h | grep ota-compat`
-
-First Apple ID login on a Linux VPS needs extra host memory or swap — see [Note → Linux VPS](#linux-vps-memory--swap-first-apple-id-login).
 
 ## Acknowledgements
 
-Docker images bundle ipatool from source (`haughtyeyes+ota`). Thanks to:
-
-- [majd/ipatool](https://github.com/majd/ipatool/) — base CLI (MIT License)
-- [HaughtyEyes/ipatool](https://github.com/HaughtyEyes/ipatool/tree/fix-empty-volume-store-response) — empty App Store response fixes ([#538](https://github.com/majd/ipatool/issues/538), [#547](https://github.com/majd/ipatool/issues/547))
-- [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) — `--ota-compat` design for OTA install ([#540](https://github.com/majd/ipatool/issues/540), [#469](https://github.com/majd/ipatool/pull/469))
+- [majd/ipatool](https://github.com/majd/ipatool/) — CLI (MIT License)
+- [HaughtyEyes/ipatool](https://github.com/HaughtyEyes/ipatool) — early App Store empty-response fixes (upstream in v2.6.0)
+- [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool) — early OTA `--ota-compat` design (superseded by official v2.6.0)
 
 ---
 
@@ -345,14 +320,14 @@ IPA-Harbor 也支持通过 Safari 直接安装 IPA，但此功能需要满足额
   - 容器内置 HTTPS：`-p 443:3443`、`-e HTTPS_PORT=3443`、`-v ipa_certs:/app/certs`，卷内放置 `server.crt` 与 `server.key`（也可绑定挂载这两个文件）
   - 亦可用 nginx 监听 443 反代，见 [公网环境启动命令](#公网环境启动命令自签证书或者指定证书)
 - 可在 **设置 → 启用 OTA 安装** 中开关（非 Apple 设备上默认关闭）。
-- IPA 须由带 `--ota-compat` 的 ipatool 下载，感谢 [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) 的 `--ota-compat` 方案 ([#540](https://github.com/majd/ipatool/issues/540))；见 [ipatool 与镜像](#ipatool-与镜像)。
+- OTA 用 IPA 须由 **ipatool v2.6.0+** 下载；见 [ipatool 与镜像](#ipatool-与镜像)。
 
 因此，如果只是使用 IPA-Harbor 下载 ipa，可以直接使用普通的 Docker 部署方式；如果需要通过 Safari 直接安装，请参考 [相关配置说明](#公网环境启动命令自签证书或者指定证书)。
 
 ## 项目如何开始的
 我以前每次想下一个旧版 ipa 都要抓包，然后 AirDrop 给 iPhone 后面逛帖子时发现 ipatool ，后面拿电脑扣命令，是在是厌烦了，可读的版本号也没有，所以有了想法写这个。
 
-另外，有一个 ipatool.ts 的项目，也非常好。我不想维护 ipatool 核心，镜像默认用子模块 [HaughtyEyes/ipatool](https://github.com/HaughtyEyes/ipatool) + OTA 补丁从源码编译，站在社区修复之上，感谢 [majd/ipatool](https://github.com/majd/ipatool) 及上述贡献者。
+另外，有一个 ipatool.ts 的项目，也非常好。我不想维护 ipatool 核心，镜像默认通过 `scripts/dl_latest.sh` 使用官方 [majd/ipatool](https://github.com/majd/ipatool) release；v2.6.0 之前曾依赖社区 fork 与补丁，见 [scripts/legacy/README.md](scripts/legacy/README.md)。
 
 目前我自用已经有一年时间，两个地区的 ID 都没被封过。Apple ID 与容器使用建议见文首说明及 [注意](#注意)。
 
@@ -372,18 +347,8 @@ docker run -d \
   uuphy/ipa-harbor:latest
 ```
 
-
-#### 一键脚本
-安装 Docker Desktop 或 OrbStack，打开终端执行
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/quick-deploy.zh.sh | bash
-```
-
-按照脚本提示可以进行安装，升级等管理操作
-
 > [!WARNING]
-> **首次 Apple ID 认证需要 Unicorn/SAP 模拟。建议宿主机至少有 ≥1 GB 可用内存，或 [配置 ≥2 GB Swap](#linux-vps首次-apple-id-登录与内存)。**
+> **首次 Apple ID 认证需要 Unicorn/SAP 模拟。建议宿主机至少有 ≥1 GB 可用内存，或 [配置 ≥2 GB Swap](#linux-宿主机首次-apple-id-登录与内存)。**
 
 然后打开浏览器访问： http://localhost:3388
 
@@ -476,6 +441,27 @@ server {
 
 首次访问请打开 `/setup`，使用上文命令中的 `ADMIN_INIT_PIN`。
 
+### 脚本部署
+
+无需手动输入各种复杂命令，打开终端输入下面的脚本并回车，脚本会一路引导你快速安装，升级，卸载。
+
+#### 本机（Docker Desktop / OrbStack）
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.zh.sh | bash
+```
+
+#### Linux 主机 + Cloudflare Tunnel
+
+在运行 Docker 的机器上自托管公网部署。
+
+前提：Cloudflare 域名，以及一台运行 Docker 的主机（VPS、云虚拟机、独立主机、NAS、树莓派等均可）。
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/public-deploy-cf.zh.sh | bash
+```
+
+低内存主机首次绑定 Apple ID 前建议 [配置 Swap](#linux-宿主机首次-apple-id-登录与内存)。
 
 ### 参数说明
 
@@ -531,9 +517,9 @@ Passkey (可选) 可以提供更加方便、安全的登录方式，尤其适合
 
 建议每个容器仅登录一个 Apple ID。不同 Apple ID 建议使用独立容器，并尽量保持 Apple ID 所在地区与容器出口 IP 所在地区一致。
 
-### Linux VPS：首次 Apple ID 登录与内存
+### Linux 宿主机：首次 Apple ID 登录与内存
 
-在**宿主机**配置（非容器内）。约 1GB 内存的 VPS 建议加 2GB swap：
+不足 1GB（不含 1GB）内存时，建议加 2GB swap：
 
 ```bash
 fallocate -l 2G /swapfile    # 创建 2GB 文件
@@ -549,32 +535,31 @@ swapon --show && free -h     # 验证（应看到约 2G /swapfile）
 ## 目录结构
 ```
 ipa-harbor/
-├── ipatool/                         - git 子模块（HaughtyEyes ipatool 源码）
 ├── server/
 │   ├── api/                         - REST / WebSocket API
 │   ├── app.js
 │   ├── bin/
 │   │   ├── ipatool                  - 开发用二进制（本机 macOS 或解压产物）
 │   │   └── ipatool-*-linux-*.tar.gz - 构建 Docker 镜像用的 Linux 包
-│   ├── patches/
-│   │   └── ipatool-haughtyeyes-ota-compat.patch
 │   ├── certs/                       - HTTPS 证书：server.crt、server.key
 │   ├── data/                        - IPA、users.db、.ipatool 配置
 │   ├── Dockerfile
 │   ├── docker-compose.example.yml
 │   └── static/                      - 构建后的前端（生产环境）
 ├── client/                          - Vite + React 前端源码
+├── scripts/
+│   ├── quick-deploy.zh.sh           - 本机 Docker 安装向导
+│   ├── public-deploy-cf.zh.sh       - Linux 主机 + Cloudflare Tunnel 自托管公网部署
+│   ├── dl_latest.sh                 - 下载官方 ipatool release
+│   ├── build_ipatool.sh             - 从官方最新 main 源码编译 ipatool
+│   └── legacy/                      - 已废弃的 v2.6.0 前 ipatool 源码编译
 ├── build_zh.sh                      - 构建 Docker 镜像
-├── build_ipatool_zh.sh              - 从源码编译 ipatool
-├── build.sh                         - 构建 Docker 镜像（英文）
-├── build_ipatool.sh                 - 从源码编译 ipatool（英文）
-└── dl_latest.sh                     - 下载官方 ipatool release
+└── build.sh                         - 构建 Docker 镜像（英文）
 ```
 ### 开发
 
 ```bash
-git clone --recurse-submodules https://github.com/ij369/ipa-harbor.git
-# 或：git submodule update --init ipatool
+git clone https://github.com/ij369/ipa-harbor.git
 ```
 
 #### 后端
@@ -592,48 +577,13 @@ cd client && pnpm i && pnpm dev
 #### ipatool 与镜像
 
 ```bash
-# 编译 ipatool（默认 haughtyeyes+ota）
-chmod +x build_ipatool_zh.sh && ./build_ipatool_zh.sh
-
-# 构建 Docker 镜像（会询问是否更新 ipatool，已编译可选 n）
-chmod +x build_zh.sh && ./build_zh.sh
+# 拉取官方 ipatool Linux 包（v2.6.0+）
+chmod +x scripts/dl_latest.sh && ./scripts/dl_latest.sh
 ```
-
-**说明**
-
-默认预设 **`haughtyeyes+ota`**（子模块 `ipatool/` + OTA 补丁 → `server/bin/ipatool`）。官方 [releases](https://github.com/majd/ipatool/releases) v2.5.0 不含空响应修复 ([#538](https://github.com/majd/ipatool/issues/538)、[#547](https://github.com/majd/ipatool/issues/547)) 与 OTA ([#540](https://github.com/majd/ipatool/issues/540))，详见 [致谢](#致谢)。
-
-| 场景 | 命令 |
-| --- | --- |
-| 仅用官方 release（无上述修复） | `./dl_latest.sh` 后 `./build_zh.sh --no-fetch` |
-
-`build_ipatool_zh.sh` 无参数时进入交互菜单（直接回车 = 选项 1）：
-
-| 参数 | 说明 |
-| --- | --- |
-| `--choice N` | 非交互：`1` Linux（arm64+amd64）+ macOS，`2` 仅 macOS，`3` Linux arm64，`4` Linux amd64 |
-| `--arch ARCH` | 仅 Linux：`amd64` \| `arm64` \| `all`（与 `--darwin` 组合时跳过菜单） |
-| `--darwin` | 额外编译本机 macOS 二进制 → `server/bin/ipatool` |
-| `--source NAME` | `official` \| `haughtyeyes` \| `ota` \| `haughtyeyes+ota`（默认） |
-| `--repo URL` / `--ref REF` | 自定义源码（覆盖 `--source`） |
-| `-h, --help` | 完整帮助 |
-
-```bash
-./build_ipatool_zh.sh --choice 1                   # Linux 包 + macOS 开发二进制
-./build_ipatool_zh.sh --darwin                     # 仅 macOS 开发二进制
-./build_ipatool_zh.sh --arch arm64                 # 仅 Linux arm64 包
-./build_ipatool_zh.sh --source haughtyeyes+ota --arch all --darwin
-```
-
-升级 ipatool 后，OTA 用 IPA **须重新下载**。验证：`server/bin/ipatool download -h | grep ota-compat`
-
-Linux VPS 首次 Apple ID 登录需宿主机足够内存或 swap，见 [注意 → Linux VPS](#linux-vps首次-apple-id-登录与内存)。
 
 ## 致谢
 
-镜像内 ipatool 从源码编译（`haughtyeyes+ota`），感谢：
-
-- [majd/ipatool](https://github.com/majd/ipatool/) — 基础 CLI（MIT License）
-- [HaughtyEyes/ipatool](https://github.com/HaughtyEyes/ipatool/tree/fix-empty-volume-store-response) — 空 App Store 响应修复 ([#538](https://github.com/majd/ipatool/issues/538)、[#547](https://github.com/majd/ipatool/issues/547))
-- [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool/tree/feat/ota-compat-flag) — OTA `--ota-compat` 方案 ([#540](https://github.com/majd/ipatool/issues/540)、[#469](https://github.com/majd/ipatool/pull/469))
+- [majd/ipatool](https://github.com/majd/ipatool/) — CLI（MIT License）
+- [HaughtyEyes/ipatool](https://github.com/HaughtyEyes/ipatool) — 早期空 App Store 响应修复（已并入官方 v2.6.0）
+- [iosconstantine/ipatool](https://github.com/iosconstantine/ipatool) — 早期 OTA `--ota-compat` 方案（官方 v2.6.0 已取代）
 

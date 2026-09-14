@@ -454,7 +454,7 @@
         "APP_LIST_PURCHASES_ERROR": "获取已购项目时发生错误",
         "APP_LIST_PURCHASES_FAILED": "获取已购项目失败",
         "APP_LIST_PURCHASES_SUCCESS": "获取已购项目成功",
-        "APP_LIST_PURCHASES_UNSUPPORTED": "当前 ipatool 不支持 list-purchases。该命令在 v2.4.0 之后才加入，请在本机执行 ./build_ipatool.sh 从源码编译，或等待官方新版本发布",
+        "APP_LIST_PURCHASES_UNSUPPORTED": "当前 ipatool 不支持 list-purchases。请升级至 v2.6.0+（./scripts/dl_latest.sh 拉取官方 release，或从 GitHub releases 下载 macOS 二进制到 server/bin/ipatool）",
         "APP_PURCHASE_ALREADY_OWNED": "该应用已经购买过了",
         "APP_PURCHASE_BUNDLE_ID_REQUIRED": "Bundle ID是必需的参数",
         "APP_PURCHASE_ERROR": "购买/领取时发生错误",

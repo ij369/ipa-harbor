@@ -1,4 +1,0 @@
-[submodule "ipatool"]
-	path = ipatool
-	url = https://github.com/HaughtyEyes/ipatool.git
-	branch = fix-update-product-fallback

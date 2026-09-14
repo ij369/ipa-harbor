@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# DEPRECATED — pre-v2.6.0 source build; see scripts/legacy/README.md
 # Build ipatool from main branch source (includes list-purchases; not yet in official releases)
 # Interactive target selection by default; Linux packages are built natively in Docker per arch
 set -euo pipefail

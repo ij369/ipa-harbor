@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# 已废弃 — v2.6.0 前源码编译，见 scripts/legacy/README.md
 # 从 ipatool main 分支源码编译（含 list-purchases，官方 release 尚未包含）
 # 默认交互询问编译目标；Linux 包通过 Docker 在对应架构容器内原生编译
 set -euo pipefail

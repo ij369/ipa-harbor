@@ -74,7 +74,7 @@ async function listPurchasesHandler(req, res) {
 
             if (execError.stderr && execError.stderr.includes('unknown command')) {
                 return sendError(res, 500, {
-                    message: '当前 ipatool 不支持 list-purchases。该命令在 v2.4.0 之后才加入，请在本机执行 ./build_ipatool.sh 从源码编译，或等待官方新版本发布',
+                    message: '当前 ipatool 不支持 list-purchases。请升级至 v2.6.0+（./scripts/dl_latest.sh 拉取官方 release，或从 GitHub releases 下载 macOS 二进制到 server/bin/ipatool）',
                     errorMessageCode: 'APP_LIST_PURCHASES_UNSUPPORTED',
                     error: execError.stderr.trim() || execError.message,
                     errorCode: 'APP_LIST_PURCHASES_IPATOOL_UNSUPPORTED',

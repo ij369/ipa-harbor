@@ -6,14 +6,15 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 SERVER_DIR="$REPO_ROOT/server"
 BIN_DIR="$SERVER_DIR/bin"
-BUILD_IPATOOL_SCRIPT="$REPO_ROOT/build_ipatool_zh.sh"
-IPATOOL_SOURCE="${IPATOOL_SOURCE:-haughtyeyes+ota}"
+DL_LATEST_SCRIPT="$REPO_ROOT/scripts/dl_latest.sh"
+BUILD_IPATOOL_SCRIPT="$REPO_ROOT/scripts/build_ipatool.sh"
 
 IMAGE_NAME="${IMAGE_NAME:-ipaharbor}"
 TAG="${TAG:-latest}"
 FULL_IMAGE="${IMAGE_NAME}:${TAG}"
 
 FETCH=0
+BUILD_FROM_SOURCE=-1
 SKIP_FETCH_CHOICE=0
 PLATFORM_ARG=()
 
@@ -21,6 +22,13 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --fetch)
       FETCH=1
+      BUILD_FROM_SOURCE=0
+      SKIP_FETCH_CHOICE=1
+      shift
+      ;;
+    --fetch-source)
+      FETCH=1
+      BUILD_FROM_SOURCE=1
       SKIP_FETCH_CHOICE=1
       shift
       ;;
@@ -48,11 +56,24 @@ if [[ "${SKIP_FETCH_CHOICE}" -eq 0 ]]; then
       ''|[Yy]|[Yy][Ee][Ss]) FETCH=1 ;;
       *) FETCH=0 ;;
     esac
+    if [[ "$FETCH" -eq 1 ]]; then
+      read -r -p "从官方最新 main 源码编译 ipatool？[y/N] " ans || true
+      case "${ans}" in
+        [Yy]|[Yy][Ee][Ss]) BUILD_FROM_SOURCE=1 ;;
+        *) BUILD_FROM_SOURCE=0 ;;
+      esac
+    fi
   elif [[ -n "${AUTO_FETCH+x}" ]]; then
     case "${AUTO_FETCH}" in
       1|[Yy]|[Yy][Ee][Ss]) FETCH=1 ;;
       *) FETCH=0 ;;
     esac
+    if [[ "$FETCH" -eq 1 ]]; then
+      case "${AUTO_BUILD_FROM_SOURCE:-}" in
+        1|[Yy]|[Yy][Ee][Ss]) BUILD_FROM_SOURCE=1 ;;
+        *) BUILD_FROM_SOURCE=0 ;;
+      esac
+    fi
   fi
 fi
 
@@ -61,20 +82,32 @@ if [[ ! -d "$SERVER_DIR" ]]; then
   exit 1
 fi
 
+if [[ "$FETCH" -eq 1 && "$BUILD_FROM_SOURCE" -lt 0 ]]; then
+  BUILD_FROM_SOURCE=0
+fi
+
 if [[ "$FETCH" -eq 1 ]]; then
-  if [[ ! -x "$BUILD_IPATOOL_SCRIPT" ]]; then
-    echo "无法执行: $BUILD_IPATOOL_SCRIPT（可先 chmod +x build_ipatool_zh.sh）"
-    exit 1
+  if [[ "$BUILD_FROM_SOURCE" -eq 1 ]]; then
+    if [[ ! -x "$BUILD_IPATOOL_SCRIPT" ]]; then
+      echo "无法执行: $BUILD_IPATOOL_SCRIPT（可先 chmod +x scripts/build_ipatool.sh）"
+      exit 1
+    fi
+    echo "执行 scripts/build_ipatool.sh …"
+    "$BUILD_IPATOOL_SCRIPT" --linux-only
+  else
+    if [[ ! -x "$DL_LATEST_SCRIPT" ]]; then
+      echo "无法执行: $DL_LATEST_SCRIPT（可先 chmod +x scripts/dl_latest.sh）"
+      exit 1
+    fi
+    echo "执行 scripts/dl_latest.sh …"
+    "$DL_LATEST_SCRIPT"
   fi
-  echo "执行 build_ipatool_zh.sh（--source ${IPATOOL_SOURCE}）…"
-  git -C "${REPO_ROOT}" submodule update --init ipatool
-  "$BUILD_IPATOOL_SCRIPT" --source "${IPATOOL_SOURCE}" --choice 1
 fi
 
 # Dockerfile 需要 bin 下对应架构的 ipatool *.tar.gz
 if ! compgen -G "$BIN_DIR/ipatool-*-linux-*.tar.gz" > /dev/null; then
   echo "未在 $BIN_DIR 发现 ipatool-*-linux-*.tar.gz"
-  echo "请先运行: ./build_ipatool_zh.sh 或使用 $0 --fetch"
+  echo "请先运行 ./scripts/dl_latest.sh 或 ./scripts/build_ipatool.sh，或使用 $0 --fetch | --fetch-source"
   exit 1
 fi
 
