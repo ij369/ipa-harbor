@@ -3,6 +3,7 @@ import {
     Box, Stack, Typography, Divider, Link,
 } from '@mui/joy';
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
+import Person from '@mui/icons-material/Person';
 import MouseTooltip from './MouseTooltip';
 import IpaAppIcon from './IpaAppIcon';
 import { downloadApp, deleteTask, isRateLimitError, resolveClientErrorMessage } from '../utils/api';
@@ -27,6 +28,10 @@ function formatTooltipDate(dateString, t) {
     }
 }
 
+function normalizeAppleId(value) {
+    return value?.trim().toLowerCase() ?? '';
+}
+
 function buildTooltipLines(fields) {
     const details = fields
         .filter((field) => field.value != null && field.value !== '')
@@ -42,6 +47,8 @@ function areIpaIconPropsEqual(prev, next) {
         || prev.isDragging !== next.isDragging
         || prev.country !== next.country
         || prev.onOpenDetail !== next.onOpenDetail
+        || prev.showTooltipAppleId !== next.showTooltipAppleId
+        || prev.loggedInAppleId !== next.loggedInAppleId
     ) {
         return false;
     }
@@ -68,6 +75,7 @@ function areIpaIconPropsEqual(prev, next) {
         return (
             a.bundleDisplayName === b.bundleDisplayName
             && a.bundleShortVersionString === b.bundleShortVersionString
+            && a.appleId === b.appleId
             && a.size === b.size
         );
     }
@@ -82,6 +90,8 @@ function IpaIcon({
     onOpenDetail,
     subLabelMode = 'version',
     country,
+    showTooltipAppleId = false,
+    loggedInAppleId = null,
 }) {
     const { t } = useTranslation();
     const {
@@ -96,6 +106,7 @@ function IpaIcon({
         itemId,
         bundleDisplayName,
         artistName,
+        appleId,
         bundleShortVersionString,
         bundleVersion,
         productType,
@@ -126,6 +137,10 @@ function IpaIcon({
     };
 
     const { appId: extractedAppId, versionId } = extractAppInfo(name);
+    const sidecarFileBase = useMemo(() => {
+        const base = name?.replace(/\.ipa$/i, '') ?? '';
+        return /^\d+_\d+$/.test(base) ? base : undefined;
+    }, [name]);
     const finalAppId = appId || extractedAppId;
     const displayAppId = finalAppId || (itemId != null ? String(itemId) : null);
     const displayVersionId = softwareVersionExternalIdentifier || versionId;
@@ -189,6 +204,7 @@ function IpaIcon({
         name,
         bundleDisplayName,
         artistName,
+        appleId,
         bundleShortVersionString,
         bundleVersion,
         softwareVersionBundleId,
@@ -198,6 +214,25 @@ function IpaIcon({
         firstReleaseDate,
         createdAt,
     ]);
+
+    const tooltipAppleIdLine = useMemo(() => {
+        if (
+            !appleId
+            || status === 'pending'
+            || status === 'running'
+            || status === 'failed'
+        ) {
+            return null;
+        }
+
+        const differsFromLoggedIn = loggedInAppleId
+            && normalizeAppleId(appleId) !== normalizeAppleId(loggedInAppleId);
+        if (!showTooltipAppleId && !differsFromLoggedIn) {
+            return null;
+        }
+
+        return appleId;
+    }, [showTooltipAppleId, loggedInAppleId, appleId, status]);
 
     const tooltipHeaderPrimary = useMemo(() => {
         if (bundleDisplayName) {
@@ -309,7 +344,7 @@ function IpaIcon({
         }
     }, [name, taskId, t]);
 
-    const tooltipTitle = tooltipContent && (
+    const tooltipTitle = (tooltipContent || tooltipAppleIdLine) && (
         <Box sx={{ whiteSpace: 'pre-line', maxWidth: 300 }}>
             {(tooltipHeaderPrimary || tooltipHeaderSecondary) && (
                 <>
@@ -326,7 +361,21 @@ function IpaIcon({
                     <Divider sx={{ my: 0.5 }} />
                 </>
             )}
-            <Typography level="body-xs">{tooltipContent}</Typography>
+            {tooltipContent ? (
+                <Typography level="body-xs">{tooltipContent}</Typography>
+            ) : null}
+            {tooltipAppleIdLine ? (
+                <>
+                    <Divider sx={{ my: 0.5 }} />
+                    <Typography
+                        level="body-xs"
+                        sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}
+                    >
+                        <Person sx={{ fontSize: '1em', color: 'text.tertiary', flexShrink: 0 }} />
+                        {tooltipAppleIdLine}
+                    </Typography>
+                </>
+            ) : null}
         </Box>
     );
 
@@ -347,7 +396,7 @@ function IpaIcon({
     };
 
     const wrapLabelTooltip = (labels) => {
-        if (!tooltipContent) return labels;
+        if (!tooltipContent && !tooltipAppleIdLine) return labels;
         return (
             <MouseTooltip title={isDragging ? null : tooltipTitle} disabled={isDragging}>
                 {labels}
@@ -355,7 +404,9 @@ function IpaIcon({
         );
     };
 
-    const renderAppIcon = (iconProps) => <IpaAppIcon {...iconProps} />;
+    const renderAppIcon = (iconProps) => (
+        <IpaAppIcon {...iconProps} file={iconProps.file ?? sidecarFileBase} />
+    );
 
     const renderContent = () => {
         switch (status) {

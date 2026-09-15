@@ -1,13 +1,13 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import {
-    Box, Stack, Typography, Link, Button, IconButton, DialogTitle, DialogContent, ModalClose, Sheet,
+    Box, Stack, Typography, Chip, Link, Button, IconButton, DialogTitle, DialogContent, ModalClose, Sheet,
 } from '@mui/joy';
-import { Download as DownloadIcon, Search, InstallMobile } from '@mui/icons-material';
+import { Download as DownloadIcon, Search, InstallMobile, InfoOutlined } from '@mui/icons-material';
 import DeleteIcon from '@mui/icons-material/Delete';
 import HourglassTopIcon from '@mui/icons-material/HourglassTop';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
-import { useTranslation } from 'react-i18next';
+import { Trans, useTranslation } from 'react-i18next';
 import Swal from 'sweetalert2';
 import IpaAppIcon from './IpaAppIcon';
 import {
@@ -71,6 +71,53 @@ function extractAppInfo(fileName) {
     return match ? { appId: match[1], versionId: match[2] } : { appId: null, versionId: null };
 }
 
+const detailFieldSx = {
+    borderRadius: 'sm',
+    py: 0.25,
+};
+
+const detailFieldInteractiveSx = {
+    ...detailFieldSx,
+    cursor: 'pointer',
+    '&:hover': {
+        bgcolor: 'background.level1',
+    },
+};
+
+function DetailField({
+    label,
+    children,
+    interactive = false,
+    onActivate,
+}) {
+    const handleKeyDown = (event) => {
+        if (!interactive || !onActivate) {
+            return;
+        }
+        if (event.key === 'Enter' || event.key === ' ') {
+            event.preventDefault();
+            onActivate();
+        }
+    };
+
+    return (
+        <Box
+            {...(interactive && onActivate ? {
+                role: 'button',
+                tabIndex: 0,
+                onClick: onActivate,
+                onKeyDown: handleKeyDown,
+            } : {})}
+            sx={interactive ? detailFieldInteractiveSx : detailFieldSx}
+        >
+            {label ? (
+                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{label}</Typography>
+            ) : null}
+            {children}
+        </Box>
+    );
+}
+
 export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, onViewAppDetail }) {
     const { t } = useTranslation();
     const { user } = useAppSession();
@@ -79,6 +126,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
     const fullscreen = useFullscreenDialog();
     const drawerScrollRef = useRef(null);
     const drawerIconRef = useRef(null);
+    const signingNoticeRef = useRef(null);
     const shelfWrapperRef = useRef(null);
     const shelfDividerRef = useRef(null);
     const shelfMaterialActiveRef = useRef(false);
@@ -107,6 +155,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
         itemId,
         bundleDisplayName,
         artistName,
+        appleId,
         bundleShortVersionString,
         bundleVersion,
         productType,
@@ -119,13 +168,27 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
     } = item ?? {};
 
     const { appId: extractedAppId } = extractAppInfo(name);
+    const sidecarFileBase = (() => {
+        const base = name?.replace(/\.ipa$/i, '') ?? '';
+        return /^\d+_\d+$/.test(base) ? base : undefined;
+    })();
     const finalAppId = appId || extractedAppId;
     const displayAppId = finalAppId || (itemId != null ? String(itemId) : null);
     const isMetadataPending = ['completed', 'downloaded'].includes(status) && !bundleDisplayName;
-    const shelfIconSrc = finalAppId ? getAppIconUrl(finalAppId, 200, user?.region) : null;
+    const shelfIconSrc = finalAppId
+        ? getAppIconUrl(finalAppId, 200, user?.region, sidecarFileBase)
+        : null;
     const drawerOpen = open && Boolean(item);
+    const portalMounted = open || Boolean(item);
     const installBaseName = name.replace(/\.ipa$/i, '');
     const showInstall = otaInstallEnabled && isOtaSecureContext() && installBaseName.includes('_');
+    // 全屏/横屏时面板贴右缘，仅右侧需 safe-area inset
+    const drawerContentPadX = fullscreen
+        ? {
+            pl: 2,
+            pr: 'max(16px, env(safe-area-inset-right, 0px))',
+        }
+        : { px: 2 };
 
     const handleManifestInstall = async () => {
         try {
@@ -155,6 +218,13 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
         }
         onViewAppDetail(finalAppId);
     };
+
+    const handleScrollToSigningNotice = useCallback(() => {
+        signingNoticeRef.current?.scrollIntoView({
+            behavior: prefersReducedMotion ? 'auto' : 'smooth',
+            block: 'end',
+        });
+    }, [prefersReducedMotion]);
 
     const formatDate = (dateString) => {
         if (!dateString) return t('ui.unknown');
@@ -262,6 +332,20 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
     }, [open, item]);
 
     useEffect(() => {
+        if (!portalMounted) {
+            return undefined;
+        }
+
+        document.body.style.overflow = 'hidden';
+        document.getElementById('root')?.setAttribute('inert', '');
+
+        return () => {
+            document.body.style.overflow = '';
+            document.getElementById('root')?.removeAttribute('inert');
+        };
+    }, [portalMounted]);
+
+    useEffect(() => {
         if (!drawerOpen) {
             return undefined;
         }
@@ -354,7 +438,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
                             justifyContent="space-between"
                             gap={1}
                             sx={{
-                                px: 2,
+                                ...drawerContentPadX,
                                 pb: 2,
                                 pt: 'var(--safe-area-pad-top)',
                                 '@media (display-mode: standalone)': {
@@ -400,24 +484,49 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
             <DialogContent sx={{ flex: 1, minHeight: 0, overflow: 'hidden', p: 0 }}>
                 <Box
                     ref={drawerScrollRef}
-                    sx={{ height: '100%', overflow: 'auto', px: 2, pt: 2 }}
+                    sx={{
+                        height: '100%',
+                        overflow: 'auto',
+                        overscrollBehavior: 'contain',
+                        WebkitOverflowScrolling: 'touch',
+                        ...drawerContentPadX,
+                        pt: 2,
+                    }}
                 >
                     <Stack spacing={2}>
                         <Box
                             ref={drawerIconRef}
-                            sx={{ display: 'flex', justifyContent: 'center', mb: 2 }}
+                            sx={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                mb: 2,
+                            }}
                         >
-                            <IpaAppIcon appId={finalAppId} size={120} country={user?.region} />
-                        </Box>
-
-                        <Stack spacing={1}>
-                            <Stack direction="row" spacing={1} alignItems="flex-end">
-                                <Stack spacing={0.25} sx={{ flex: 1, minWidth: 0 }}>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>
-                                        {t('ui.appName_label')}
-                                    </Typography>
-                                    <Typography level="body-md">{bundleDisplayName || name}</Typography>
-                                </Stack>
+                            <IpaAppIcon
+                                appId={finalAppId}
+                                size={120}
+                                country={user?.region}
+                                file={sidecarFileBase}
+                            />
+                            <Box
+                                sx={{
+                                    position: 'relative',
+                                    mt: 1.5,
+                                    width: '100%',
+                                    minWidth: 0,
+                                    px: 5,
+                                }}
+                            >
+                                <Typography
+                                    level="title-lg"
+                                    sx={{
+                                        textAlign: 'center',
+                                        wordBreak: 'break-word',
+                                    }}
+                                >
+                                    {bundleDisplayName || name}
+                                </Typography>
                                 <IconButton
                                     variant="plain"
                                     color="primary"
@@ -425,90 +534,131 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
                                     title={t('ui.viewAppDetail')}
                                     onClick={handleViewAppDetail}
                                     disabled={!finalAppId}
-                                    sx={{ flexShrink: 0 }}
+                                    sx={{
+                                        position: 'absolute',
+                                        right: 0,
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                    }}
                                 >
                                     <Search />
                                 </IconButton>
-                            </Stack>
+                            </Box>
+                        </Box>
+
+                        <Stack spacing={1}>
                             {artistName && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.developer')}</Typography>
+                                <DetailField label={t('ui.developer')}>
                                     <Typography level="body-md">{artistName}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
-                            {bundleShortVersionString && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appVersion')}</Typography>
-                                    <Typography level="body-md">{bundleShortVersionString}</Typography>
-                                </Box>
-                            )}
-                            {bundleVersion && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.buildVersion')}</Typography>
-                                    <Typography level="body-md">{bundleVersion}</Typography>
-                                </Box>
+                            {(bundleShortVersionString || bundleVersion) && (
+                                <DetailField label={t('ui.appVersion')}>
+                                    <Stack direction="row" spacing={0.5} alignItems="center" useFlexGap>
+                                        {bundleShortVersionString && (
+                                            <Typography level="body-md">{bundleShortVersionString}</Typography>
+                                        )}
+                                        {bundleVersion && (
+                                            <Chip variant="plain" size="sm" color="neutral">
+                                                ({bundleVersion})
+                                            </Chip>
+                                        )}
+                                    </Stack>
+                                </DetailField>
                             )}
                             {softwareVersionBundleId && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.bundleId')}</Typography>
+                                <DetailField label={t('ui.bundleId')}>
                                     <Typography level="body-md">{softwareVersionBundleId}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
                             {isMetadataPending && (
-                                <Box>
+                                <DetailField>
                                     <Stack direction="row" spacing={0.5} alignItems="center">
                                         <HourglassTopIcon sx={{ fontSize: 18, color: 'text.secondary' }} />
                                         <Typography level="body-md" sx={{ color: 'text.secondary' }}>
                                             {t('ui.parsingMetadata')}
                                         </Typography>
                                     </Stack>
-                                </Box>
+                                </DetailField>
                             )}
                             {displayAppId && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.appId')}</Typography>
+                                <DetailField label={t('ui.appId')}>
                                     <Typography level="body-md">{displayAppId}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
                             {softwareVersionExternalIdentifier && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.versionId')}</Typography>
+                                <DetailField label={t('ui.versionId')}>
                                     <Typography level="body-md">{softwareVersionExternalIdentifier}</Typography>
-                                </Box>
+                                </DetailField>
+                            )}
+                            {appleId && (
+                                <DetailField
+                                    label={t('ui.ipaAcquiredAppleId')}
+                                    interactive
+                                    onActivate={handleScrollToSigningNotice}
+                                >
+                                    <Typography level="body-md">{appleId}</Typography>
+                                </DetailField>
                             )}
                             {productType && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.productType')}</Typography>
+                                <DetailField label={t('ui.productType')}>
                                     <Typography level="body-md">{productType}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
                             {fileSize && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.fileSize')}</Typography>
+                                <DetailField label={t('ui.fileSize')}>
                                     <Typography level="body-md">{formatFileSize(fileSize)}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
                             {releaseDate && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.releaseDate')}</Typography>
+                                <DetailField label={t('ui.releaseDate')}>
                                     <Typography level="body-md">{formatDate(releaseDate)}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
                             {firstReleaseDate && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.firstReleaseDate')}</Typography>
+                                <DetailField label={t('ui.firstReleaseDate')}>
                                     <Typography level="body-md">{formatDate(firstReleaseDate)}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
                             {createdAt && (
-                                <Box>
-                                    <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.downloadTime')}</Typography>
+                                <DetailField label={t('ui.downloadTime')}>
                                     <Typography level="body-md">{formatDate(createdAt)}</Typography>
-                                </Box>
+                                </DetailField>
                             )}
-                            <Box>
-                                <Typography level="body-sm" sx={{ fontWeight: 'bold' }}>{t('ui.fileName')}</Typography>
+                            <DetailField label={t('ui.fileName')}>
                                 <Typography level="body-md">{name}</Typography>
+                            </DetailField>
+                            <Box
+                                ref={signingNoticeRef}
+                                sx={{
+                                    py: 2,
+                                    mt: 0.5,
+                                    borderTop: '1px solid',
+                                    borderColor: 'divider',
+                                }}
+                            >
+                                <Typography
+                                    level="body-xs"
+                                    sx={{ color: 'text.secondary', lineHeight: 1.65 }}
+                                >
+                                    <Trans
+                                        i18nKey="ui.ipaAppleIdSigningNotice"
+                                        components={{
+                                            infoIcon: (
+                                                <InfoOutlined
+                                                    sx={{
+                                                        display: 'inline-block',
+                                                        verticalAlign: 'middle',
+                                                        fontSize: '1em',
+                                                        opacity: 0.85,
+                                                        mx: 0.25,
+                                                        mb: '2px',
+                                                    }}
+                                                />
+                                            ),
+                                        }}
+                                    />
+                                </Typography>
                             </Box>
                         </Stack>
                     </Stack>
@@ -522,8 +672,7 @@ export default function IpaDetailDrawer({ item, open, onClose, onExitComplete, o
                     borderTop: '1px solid',
                     borderColor: 'divider',
                     pt: 2,
-                    pl: 'max(16px, env(safe-area-inset-left, 0px))',
-                    pr: 'max(16px, env(safe-area-inset-right, 0px))',
+                    ...drawerContentPadX,
                     pb: 'max(16px, env(safe-area-inset-bottom, 0px))',
                 }}
             >

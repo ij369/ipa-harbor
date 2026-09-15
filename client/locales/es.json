@@ -114,6 +114,8 @@
         "parsingMetadata": "Procesando...",
         "transferredSize": "Transferido",
         "viewAppDetail": "Detalles de la app",
+        "ipaAcquiredAppleId": "Apple ID utilizado para adquirir",
+        "ipaAppleIdSigningNotice": "<infoIcon/>La misma app obtenida con diferentes Apple ID puede tener información de firma y permisos de uso distintos. Antes de instalar este IPA, asegúrate de que la App Store del dispositivo de destino haya iniciado sesión con el Apple ID utilizado para obtenerlo; de lo contrario, es posible que la app no pueda abrirse.",
         "waitingDownload": "Esperando la descarga...",
         "completed": "Completado",
         "failed": "Falló",

@@ -4,6 +4,10 @@ import { createPortal } from 'react-dom';
 const VIEWPORT_MARGIN = 8;
 const CURSOR_OFFSET = 14;
 
+function deviceSupportsHover() {
+    return typeof window !== 'undefined' && window.matchMedia('(hover: hover)').matches;
+}
+
 function computeTooltipPosition(clientX, clientY, width, height) {
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -39,7 +43,7 @@ export default function MouseTooltip({ title, children, disabled = false }) {
     }, []);
 
     const handleMouseMove = useCallback((event) => {
-        if (disabled || !title) return;
+        if (disabled || !title || !deviceSupportsHover()) return;
         mouseRef.current = { x: event.clientX, y: event.clientY };
         if (!visible) {
             setPosition({
@@ -63,7 +67,7 @@ export default function MouseTooltip({ title, children, disabled = false }) {
         setReady(true);
     }, [visible, title, reposition]);
 
-    if (!title) {
+    if (!title || !deviceSupportsHover()) {
         return children;
     }
 

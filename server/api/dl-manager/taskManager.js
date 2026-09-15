@@ -633,6 +633,8 @@ class TaskManager {
                         }
                         if (metadata.bundleDisplayName) fileInfo.bundleDisplayName = metadata.bundleDisplayName;
                         if (metadata.artistName) fileInfo.artistName = metadata.artistName;
+                        const appleId = metadata['apple-id'] || metadata.userName;
+                        if (appleId) fileInfo.appleId = appleId;
                         if (metadata.bundleShortVersionString) fileInfo.bundleShortVersionString = metadata.bundleShortVersionString;
                         if (metadata.bundleVersion) fileInfo.bundleVersion = metadata.bundleVersion;
                         if (metadata['product-type']) fileInfo.productType = metadata['product-type'];

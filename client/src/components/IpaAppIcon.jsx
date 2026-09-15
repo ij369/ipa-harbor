@@ -4,9 +4,9 @@ import { getAppIconUrl } from '../utils/api';
 
 const ICON_FETCH_SIZE = 128;
 
-export default function IpaAppIcon({ appId, size = 128, disabled = false, country }) {
+export default function IpaAppIcon({ appId, size = 128, disabled = false, country, file }) {
     const [loaded, setLoaded] = useState(false);
-    const iconUrl = appId ? getAppIconUrl(appId, ICON_FETCH_SIZE, country) : null;
+    const iconUrl = appId ? getAppIconUrl(appId, ICON_FETCH_SIZE, country, file) : null;
 
     return (
         <Box

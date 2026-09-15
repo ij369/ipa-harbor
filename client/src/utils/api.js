@@ -212,11 +212,16 @@ export async function getAppDetails(ids) {
  * 获取应用图标URL
  * @param {number} id - 应用ID
  * @param {number} size - 图标尺寸，默认100 支持512
+ * @param {string} [country] - iTunes 地区
+ * @param {string} [file] - sidecar 文件名
  */
-export function getAppIconUrl(id, size = 100, country) {
+export function getAppIconUrl(id, size = 100, country, file) {
     const params = new URLSearchParams({ size: String(size) });
     if (country) {
         params.set('country', country);
+    }
+    if (file) {
+        params.set('file', String(file).replace(/\.ipa$/i, ''));
     }
     return `${API_BASE_URL}/v1/app/icon/${id}?${params}`;
 }

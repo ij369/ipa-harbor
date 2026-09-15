@@ -160,7 +160,7 @@ export default function DownloadManager() {
         () => buildGridLayoutFromIconSize(gridIconSize),
         [gridIconSize],
     );
-    const { user } = useAppSession();
+    const { user, isAuthenticated } = useAppSession();
     const { taskList, fileList, downloadDataReady } = useAppDownload();
     const iconRegion = user?.region;
     const [searchParams, setSearchParams] = useSearchParams();
@@ -261,6 +261,7 @@ export default function DownloadManager() {
                                 itemId: matchingFile.itemId,
                                 bundleDisplayName: matchingFile.bundleDisplayName,
                                 artistName: matchingFile.artistName,
+                                appleId: matchingFile.appleId,
                                 bundleShortVersionString: matchingFile.bundleShortVersionString,
                                 bundleVersion: matchingFile.bundleVersion,
                                 productType: matchingFile.productType,
@@ -302,6 +303,7 @@ export default function DownloadManager() {
                     itemId: file.itemId,
                     bundleDisplayName: file.bundleDisplayName,
                     artistName: file.artistName,
+                    appleId: file.appleId,
                     bundleShortVersionString: file.bundleShortVersionString,
                     bundleVersion: file.bundleVersion,
                     productType: file.productType,
@@ -325,6 +327,18 @@ export default function DownloadManager() {
         return allItems.filter(item => item.status === selectedFilter);
     }, [allItems, selectedFilter]);
 
+    const showTooltipAppleId = useMemo(() => {
+        const appleIds = allItems
+            .filter((item) => DETAIL_OPEN_STATUSES.has(item.status) && item.appleId)
+            .map((item) => item.appleId);
+        if (appleIds.length === 0) {
+            return false;
+        }
+        return new Set(appleIds).size > 1;
+    }, [allItems]);
+
+    const loggedInAppleId = isAuthenticated ? user?.email ?? null : null;
+
     const renderGridItem = useCallback((index, item) => {
         if (!item) {
             return null;
@@ -336,9 +350,11 @@ export default function DownloadManager() {
                 country={iconRegion}
                 onOpenDetail={openDetailDrawer}
                 subLabelMode={subLabelMode}
+                showTooltipAppleId={showTooltipAppleId}
+                loggedInAppleId={loggedInAppleId}
             />
         );
-    }, [gridIconSize, iconRegion, openDetailDrawer, subLabelMode]);
+    }, [gridIconSize, iconRegion, openDetailDrawer, subLabelMode, showTooltipAppleId, loggedInAppleId]);
 
     const computeGridItemKey = useCallback(
         (index, item) => item?.name ?? index,

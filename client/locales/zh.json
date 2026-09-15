@@ -111,6 +111,8 @@
         "parsingMetadata": "正在解析...",
         "transferredSize": "已传输",
         "viewAppDetail": "应用详情",
+        "ipaAcquiredAppleId": "获取此 IPA 的 Apple ID",
+        "ipaAppleIdSigningNotice": "<infoIcon/>同一 App 由不同 Apple ID 获取时，其签名及授权状态可能不同。安装 IPA 前，请确保目标设备的 App Store 已登录用于获取此 IPA 的 Apple ID，否则可能导致 App 无法正常打开。",
         "waitingDownload": "等待下载...",
         "completed": "完成",
         "failed": "失败",
