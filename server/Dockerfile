@@ -1,14 +1,9 @@
 # syntax=docker/dockerfile:1.4
 
-FROM node:lts-bookworm-slim
-
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+FROM node:lts-bookworm-slim AS builder
 
 WORKDIR /app
 ARG TARGETARCH
-ARG APP_VERSION
 
 # 复制 package 文件并安装依赖
 COPY package*.json ./
@@ -37,6 +32,17 @@ RUN set -ex && \
     rm -f /app/Dockerfile /app/.dockerignore && \
     echo "ipatool installed successfully for $TARGETARCH"
 
+FROM node:lts-bookworm-slim
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && groupadd -g 1001 nodejs \
+    && useradd -r -u 1001 -g nodejs -d /app -s /usr/sbin/nologin ij369
+
+WORKDIR /app
+ARG APP_VERSION
+
 # 设置环境变量
 ENV NODE_ENV=production
 ENV APP_VERSION=${APP_VERSION}
@@ -52,11 +58,10 @@ ENV DBUS_SESSION_BUS_ADDRESS=unix:path=/nonexistent
 ENV HOME=/app/data
 # ipatool 首次 Apple ID 认证需 Unicorn/SAP 模拟，宿主机建议 ≥1GB 可用内存或配置 ≥2GB swap
 
-# 创建非 root 用户和数据目录
-RUN groupadd -g 1001 nodejs && \
-    useradd -r -u 1001 -g nodejs -d /app -s /usr/sbin/nologin ij369 && \
-    mkdir -p /app/data/.ipatool && \
-    chown -R ij369:nodejs /app
+COPY --from=builder --chown=ij369:nodejs /app /app
+
+# 数据卷挂载点（仅创建目录，避免 chown -R 整棵 /app）
+RUN install -d -o ij369 -g nodejs -m 755 /app/data/.ipatool
 
 USER ij369
 
