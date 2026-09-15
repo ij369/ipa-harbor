@@ -8,19 +8,17 @@ const {
 } = require('../../utils/userRegion');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
 const { execIpatool } = require('../../utils/ipatoolExec');
+const { parseIpatoolOutput } = require('../../utils/ipatoolOutput');
 
 async function getUserInfo() {
-    const { error, stdout } = await execIpatool(['auth', 'info'], { timeout: 15000 });
+    const { error, stdout, stderr } = await execIpatool(['auth', 'info'], { timeout: 15000 });
+    const parsed = parseIpatoolOutput(stdout, stderr);
 
-    if (error) {
-        throw new Error('用户未登录或认证信息已过期');
+    if (parsed.success && parsed.data?.email) {
+        return parsed.data;
     }
 
-    try {
-        return JSON.parse(stdout);
-    } catch (parseError) {
-        throw new Error('解析用户信息失败');
-    }
+    throw new Error(parsed.error || error?.message || '用户未登录或认证信息已过期');
 }
 
 async function handler(req, res) {

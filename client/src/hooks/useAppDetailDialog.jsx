@@ -4,6 +4,8 @@ import { useTranslation } from 'react-i18next';
 import Swal from 'sweetalert2';
 import Dialog from '../components/Dialog';
 import AppDetail, { toAppDetailPreview, toAppDetailPreviewFromId } from '../components/AppDetail';
+import RegionSelector from '../components/RegionSelector';
+import { useAppSession } from '../contexts/AppContext';
 import {
     getAppDetails,
     isRateLimitError,
@@ -30,13 +32,39 @@ function buildDialogTitle(detailApp) {
     return `${idPart}${namePart}`;
 }
 
+async function showDetailsFetchError({ t, source, onSpecifyRegion }) {
+    const text = source instanceof Error
+        ? resolveClientErrorMessage(source)
+        : (resolveApiMessage(source) || t('ui.getDetailsFailed'));
+
+    const showRegionEntry = source?.errorMessageCode === 'APP_DETAILS_NOT_FOUND'
+        || source?.errorCode === 'APP_DETAILS_IDS_NOT_FOUND';
+
+    const result = await Swal.fire({
+        icon: 'error',
+        title: t('ui.getDetailsFailed'),
+        text,
+        confirmButtonText: t('ui.confirm'),
+        ...(showRegionEntry && {
+            showCancelButton: true,
+            cancelButtonText: t('ui.specifyRegion'),
+        }),
+    });
+
+    if (showRegionEntry && result.dismiss === Swal.DismissReason.cancel) {
+        onSpecifyRegion?.();
+    }
+}
+
 export function useAppDetailDialog({
     syncQuery = true,
     queryKey = APP_DETAIL_QUERY_KEY,
 } = {}) {
     const { t } = useTranslation();
+    const { user, setUser } = useAppSession();
     const [searchParams, setSearchParams] = useSearchParams();
     const [isOpen, setIsOpen] = useState(false);
+    const [regionDialogOpen, setRegionDialogOpen] = useState(false);
     const [loading, setLoading] = useState(false);
     const [appDetails, setAppDetails] = useState([]);
     const [currentIndex, setCurrentIndex] = useState(0);
@@ -141,11 +169,14 @@ export function useAppDetailDialog({
                 return true;
             }
 
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.getDetailsFailed'),
-                text: resolveApiMessage(response) || t('ui.getDetailsFailed'),
-                confirmButtonText: t('ui.confirm'),
+            await showDetailsFetchError({
+                t,
+                source: {
+                    errorMessageCode: 'APP_DETAILS_NOT_FOUND',
+                    errorCode: 'APP_DETAILS_IDS_NOT_FOUND',
+                    ...response,
+                },
+                onSpecifyRegion: () => setRegionDialogOpen(true),
             });
             close();
             return false;
@@ -157,11 +188,10 @@ export function useAppDetailDialog({
                 return false;
             }
             console.error('获取应用详情失败:', error.message);
-            Swal.fire({
-                icon: 'error',
-                title: t('ui.getDetailsFailed'),
-                text: resolveClientErrorMessage(error),
-                confirmButtonText: t('ui.confirm'),
+            await showDetailsFetchError({
+                t,
+                source: error,
+                onSpecifyRegion: () => setRegionDialogOpen(true),
             });
             close();
             return false;
@@ -266,21 +296,35 @@ export function useAppDetailDialog({
     const enableNavigation = appDetails.length > 1;
 
     const dialog = useMemo(() => (
-        <Dialog
-            isOpen={isOpen}
-            onClose={close}
-            title={buildDialogTitle(detailApp)}
-            size="large"
-            onPrevious={enableNavigation ? goPrevious : undefined}
-            onNext={enableNavigation ? goNext : undefined}
-            hasPrevious={enableNavigation ? hasPrevious : undefined}
-            hasNext={enableNavigation ? hasNext : undefined}
-        >
-            <AppDetail
-                app={detailApp}
-                loading={loading}
+        <>
+            <Dialog
+                isOpen={isOpen}
+                onClose={close}
+                title={buildDialogTitle(detailApp)}
+                size="large"
+                onPrevious={enableNavigation ? goPrevious : undefined}
+                onNext={enableNavigation ? goNext : undefined}
+                hasPrevious={enableNavigation ? hasPrevious : undefined}
+                hasNext={enableNavigation ? hasNext : undefined}
+            >
+                <AppDetail
+                    app={detailApp}
+                    loading={loading}
+                />
+            </Dialog>
+            <RegionSelector
+                open={regionDialogOpen}
+                onClose={(updatedUserData) => {
+                    setRegionDialogOpen(false);
+                    if (updatedUserData) {
+                        setUser(updatedUserData);
+                    }
+                }}
+                currentRegion={user?.region}
+                storeRegion={user?.storeRegion}
+                regionSource={user?.regionSource}
             />
-        </Dialog>
+        </>
     ), [
         isOpen,
         close,
@@ -291,6 +335,11 @@ export function useAppDetailDialog({
         goNext,
         hasPrevious,
         hasNext,
+        regionDialogOpen,
+        user?.region,
+        user?.storeRegion,
+        user?.regionSource,
+        setUser,
     ]);
 
     return {

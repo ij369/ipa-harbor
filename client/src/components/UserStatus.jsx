@@ -140,6 +140,9 @@ function UserStatus() {
                         {user.region && (
                             <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
                                 {t('ui.currentRegion', { region: user.region.toUpperCase() })}
+                                {user.regionSource === 'manual' && (
+                                    <> · {t('ui.manualRegionOverride')}</>
+                                )}
                             </Typography>
                         )}
                     </Stack>

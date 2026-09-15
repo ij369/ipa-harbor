@@ -800,7 +800,11 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
     const storeRegionOption = storeRegion
         ? REGION.find((c) => c.code === storeRegion) || null
         : null;
-    const isManualOverride = regionSource === 'manual' && !!storeRegion;
+    const isManualOverride = regionSource === 'manual';
+    const hasUnsavedSelection = !!storeRegionOption
+        && !!selectedRegion
+        && selectedRegion.code !== (currentRegion || storeRegion);
+    const showResetButton = isManualOverride || hasUnsavedSelection;
 
     const groupedRegions = useMemo(() => {
         const order = [];
@@ -894,33 +898,44 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
         }
     };
 
-    const handleRestore = async () => {
-        if (!storeRegionOption) {
-            return;
-        }
-
-        // 已保存的手动覆盖：请求后端清除，恢复为账号 storefront
+    const handleReset = async () => {
+        // 已保存的手动覆盖：请求后端清除
         if (isManualOverride) {
             setLoading(true);
             try {
                 const response = await setUserRegion('');
-                Swal.fire({
-                    icon: 'success',
-                    title: t('ui.regionRestored'),
-                    text: t('ui.regionRestoredTo', {
-                        name: getRegionLabel(storeRegionOption),
-                        code: storeRegionOption.code.toUpperCase(),
-                    }),
-                    timer: 2000,
-                    showConfirmButton: false
-                });
-                setSelectedRegion(storeRegionOption);
+                const updatedStoreRegion = response.data?.storeRegion;
+                const restoredOption = updatedStoreRegion
+                    ? REGION.find((c) => c.code === updatedStoreRegion) || null
+                    : null;
+
                 onClose(response.data);
+
+                if (restoredOption) {
+                    Swal.fire({
+                        icon: 'success',
+                        title: t('ui.regionRestored'),
+                        text: t('ui.regionRestoredTo', {
+                            name: getRegionLabel(restoredOption),
+                            code: restoredOption.code.toUpperCase(),
+                        }),
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                } else {
+                    Swal.fire({
+                        icon: 'success',
+                        title: t('ui.regionCleared'),
+                        text: t('ui.usingDefaultRegion'),
+                        timer: 2000,
+                        showConfirmButton: false
+                    });
+                }
             } catch (error) {
                 if (isRateLimitError(error)) return;
                 Swal.fire({
                     icon: 'error',
-                    title: t('ui.failedToRestoreRegion'),
+                    title: t('ui.failedToClearRegion'),
                     text: resolveClientErrorMessage(error),
                     confirmButtonText: t('ui.ok')
                 });
@@ -931,7 +946,9 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
         }
 
         // 未保存：仅还原选择器中的选项
-        setSelectedRegion(storeRegionOption);
+        if (storeRegionOption) {
+            setSelectedRegion(storeRegionOption);
+        }
     };
 
     return (
@@ -948,22 +965,25 @@ export default function RegionSelector({ open, onClose, currentRegion, storeRegi
                         {selectedRegion?.code !== (currentRegion || storeRegion) && selectedRegion && ` ${selectedRegion.code.toUpperCase()}`}
                     </Button>
                     <Stack direction="row" spacing={1}>
-                        {storeRegionOption && (
+                        {showResetButton && (
                             <Button
                                 variant="outlined"
                                 color="neutral"
-                                onClick={handleRestore}
+                                onClick={handleReset}
                                 loading={loading}
                                 sx={{ flex: 1 }}
                             >
-                                {t('ui.restore')}
+                                {t('ui.resetToDefault')}
                             </Button>
                         )}
                         <Button
                             variant="outlined"
                             color="neutral"
                             onClick={() => onClose(false)}
-                            sx={{ flex: storeRegionOption ? 1 : undefined, ml: storeRegionOption ? 0 : 'auto' }}
+                            sx={{
+                                flex: showResetButton ? 1 : undefined,
+                                ml: showResetButton ? 0 : 'auto',
+                            }}
                         >
                             {t('ui.cancel')}
                         </Button>

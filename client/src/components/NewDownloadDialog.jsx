@@ -158,12 +158,21 @@ export default function NewDownloadDialog({ isOpen, onClose }) {
         } catch (error) {
             if (isRateLimitError(error)) return;
             console.error('下载失败:', error);
-            Swal.fire({
+            const showRegionEntry = error?.errorMessageCode === 'APP_DETAILS_NOT_FOUND'
+                || error?.errorCode === 'APP_DETAILS_IDS_NOT_FOUND';
+            const result = await Swal.fire({
                 icon: 'error',
                 title: t('ui.downloadFailed'),
                 text: resolveClientErrorMessage(error) || t('ui.downloadFailed'),
-                confirmButtonText: t('ui.confirm')
+                confirmButtonText: t('ui.confirm'),
+                ...(showRegionEntry && {
+                    showCancelButton: true,
+                    cancelButtonText: t('ui.specifyRegion'),
+                }),
             });
+            if (showRegionEntry && result.dismiss === Swal.DismissReason.cancel) {
+                setRegionDialogOpen(true);
+            }
         } finally {
             setLoading(false);
         }
