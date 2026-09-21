@@ -7,6 +7,8 @@ readonly IMAGE="${IMAGE:-uuphy/ipa-harbor:latest}"
 readonly HOST_PORT="${HOST_PORT:-3388}"
 readonly FALLBACK_HOST_PORT="${FALLBACK_HOST_PORT:-3399}"
 readonly CONTAINER_PORT="${CONTAINER_PORT:-3080}"
+readonly HTTPS_HOST_PORT="${HTTPS_HOST_PORT:-3443}"
+readonly CONTAINER_HTTPS_PORT="${CONTAINER_HTTPS_PORT:-3443}"
 readonly ADMIN_INIT_PIN="${ADMIN_INIT_PIN:-20251024}"
 readonly WEBAUTHN_RP_ID="localhost"
 readonly GITHUB_REPO_URL="https://github.com/ij369/ipa-harbor"
@@ -23,15 +25,6 @@ readonly REMOTE_SCRIPT_ZH="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/
 BROWSER_OPEN_CANCELLED=0
 
 promptRead() {
-  if [[ -t 0 ]]; then
-    read -r "$@"
-    return $?
-  fi
-  if [[ ! -r /dev/tty ]]; then
-    echo "错误: 需要交互式终端。" >&2
-    return 1
-  fi
-
   local prompt=""
   local args=()
   while [[ $# -gt 0 ]]; do
@@ -48,7 +41,20 @@ promptRead() {
   done
 
   if [[ -n "$prompt" ]]; then
-    printf '%s' "$prompt" >/dev/tty
+    if [[ -w /dev/tty ]] 2>/dev/null; then
+      printf '%s' "$prompt" >/dev/tty
+    else
+      printf '%s' "$prompt" >&2
+    fi
+  fi
+
+  if [[ -t 0 ]]; then
+    read -r "${args[@]}"
+    return $?
+  fi
+  if [[ ! -r /dev/tty ]]; then
+    echo "错误: 需要交互式终端。" >&2
+    return 1
   fi
   read -r "${args[@]}" </dev/tty
 }
@@ -273,6 +279,296 @@ isYes() {
 isInteractiveTerminal() {
   [[ -t 0 ]] && return 0
   ( : < /dev/tty ) 2>/dev/null
+}
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib/lan-network.sh
+source "${SCRIPT_DIR}/lib/lan-network.sh"
+# shellcheck source=lib/print-qr.sh
+source "${SCRIPT_DIR}/lib/print-qr.sh"
+
+buildLanHttpsWebAuthnOrigins() {
+  local lanIp="$1"
+  local lanHostname="$2"
+  local httpPort="$3"
+  local httpsPort="$4"
+  local origins="http://127.0.0.1:${httpPort},http://localhost:${httpPort}"
+  origins+=",http://${lanIp}:${httpPort},https://${lanIp}:${httpsPort}"
+  if [[ -n "$lanHostname" ]]; then
+    origins+=",http://${lanHostname}:${httpPort},https://${lanHostname}:${httpsPort}"
+  fi
+  echo "$origins"
+}
+
+buildLanHttpsWebAuthnRpId() {
+  local lanHostname="$1"
+  if [[ -n "$lanHostname" ]]; then
+    echo "${lanHostname%.local}"
+  else
+    echo "localhost"
+  fi
+}
+
+ensureHttpsPortInPortArgs() {
+  local hostPort="$1"
+  local containerPort="$2"
+  local i=0
+  while [[ $i -lt ${#PORT_ARGS[@]} ]]; do
+    if [[ "${PORT_ARGS[$i]}" == "-p" ]]; then
+      local mapping="${PORT_ARGS[$((i + 1))]}"
+      if [[ "$mapping" == *":${containerPort}" ]]; then
+        return 0
+      fi
+    fi
+    i=$((i + 2))
+  done
+  PORT_ARGS+=("-p" "${hostPort}:${containerPort}")
+}
+
+applyLanHttpsEnvToArgs() {
+  local lanIp="$1"
+  local lanHostname="$2"
+  local httpPort="$3"
+  local httpsPort="$4"
+  upsertEnvArg "ENABLE_AUTO_CERT" "true"
+  upsertEnvArg "LAN_IP" "$lanIp"
+  if [[ -n "$lanHostname" ]]; then
+    upsertEnvArg "LAN_HOSTNAME" "$lanHostname"
+  fi
+  upsertEnvArg "ALLOW_LAN_ACCESS" "true"
+  upsertEnvArg "PORT" "$CONTAINER_PORT"
+  upsertEnvArg "HTTPS_PORT" "$CONTAINER_HTTPS_PORT"
+  upsertEnvArg "WEBAUTHN_RP_ID" "$(buildLanHttpsWebAuthnRpId "$lanHostname")"
+  upsertEnvArg "WEBAUTHN_ALLOWED_ORIGINS" "$(buildLanHttpsWebAuthnOrigins "$lanIp" "$lanHostname" "$httpPort" "$httpsPort")"
+}
+
+getEnvArgValue() {
+  local key="$1"
+  local i=0
+  while [[ $i -lt ${#ENV_ARGS[@]} ]]; do
+    if [[ "${ENV_ARGS[$i]}" == "-e" && "${ENV_ARGS[$i+1]}" == "${key}="* ]]; then
+      printf '%s\n' "${ENV_ARGS[$i+1]#${key}=}"
+      return 0
+    fi
+    i=$((i + 2))
+  done
+  return 1
+}
+
+containerHasLanHttpsEnv() {
+  [[ "$(getEnvArgValue ENABLE_AUTO_CERT 2>/dev/null || true)" == "true" ]] && [[ -n "$(getEnvArgValue LAN_IP 2>/dev/null || true)" ]]
+}
+
+printLanAccessUrls() {
+  local lanIp="$1"
+  local httpPort="$2"
+  local lanHostname="${3:-}"
+
+  if [[ -n "$lanHostname" ]]; then
+    printf "HTTPS URL:  https://%s:%s\n" "$lanHostname" "$HTTPS_HOST_PORT"
+    printf "            https://%s:%s\n" "$lanIp" "$HTTPS_HOST_PORT"
+  else
+    printf "HTTPS URL:  https://%s:%s\n" "$lanIp" "$HTTPS_HOST_PORT"
+  fi
+  echo ""
+}
+
+ensureLanHttpsPortAvailable() {
+  local containerName="${1:-}"
+  ensureHttpsPortInPortArgs "$HTTPS_HOST_PORT" "$CONTAINER_HTTPS_PORT"
+  local newHttpsMapping="" i=0
+  while [[ $i -lt ${#PORT_ARGS[@]} ]]; do
+    if [[ "${PORT_ARGS[$i]}" == "-p" && "${PORT_ARGS[$((i + 1))]}" == *":${CONTAINER_HTTPS_PORT}" ]]; then
+      newHttpsMapping="${PORT_ARGS[$((i + 1))]}"
+      break
+    fi
+    i=$((i + 2))
+  done
+  [[ -z "$newHttpsMapping" ]] && return 0
+  local newHostHttpsPort="${newHttpsMapping%%:*}"
+  if isHostPortInUse "$newHostHttpsPort"; then
+    if [[ -n "$containerName" ]]; then
+      local currentPort=""
+      currentPort="$(docker port "$containerName" "${CONTAINER_HTTPS_PORT}/tcp" 2>/dev/null | cut -d: -f2 || true)"
+      [[ "$newHostHttpsPort" == "$currentPort" ]] && return 0
+    fi
+    printf "注意: HTTPS 端口 %s 已被占用。\n" "$newHostHttpsPort" >&2
+    return 1
+  fi
+  return 0
+}
+
+promptEnableAutoCert() {
+  local answer=""
+  echo "是否启用局域网 HTTPS？"
+  echo "启用后，iPhone 和 iPad 可通过局域网进行 OTA 安装。"
+  echo ""
+  echo "  0. 暂时跳过 (稍后可在网页设置页面中启用)"
+  echo "  1. 启用"
+  promptRead -p "请选择 [0-1, 默认 0]: " answer || true
+  answer="${answer//[[:space:]]/}"
+  [[ -z "$answer" ]] && answer=0
+  [[ "$answer" == "1" ]]
+}
+
+prepareLanHttpsCandidate() {
+  local httpPort="$1"
+  LAN_HTTPS_AVAILABLE=false
+  LAN_HTTPS_SKIP_REASON=""
+
+  if ! resolveLanHttpsSettings; then
+    LAN_HTTPS_SKIP_REASON="no_lan"
+    return 1
+  fi
+  if isHostPortInUse "$HTTPS_HOST_PORT"; then
+    LAN_HTTPS_SKIP_REASON="https_port"
+    return 1
+  fi
+  LAN_HTTPS_AVAILABLE=true
+  return 0
+}
+
+applyLanHttpsChoiceAfterPrompt() {
+  local httpPort="$1"
+  local containerName="${2:-}"
+
+  LAN_HTTPS_ENABLED=false
+  LAN_HTTPS_AVAILABLE=false
+  LAN_HTTPS_SKIP_REASON=""
+
+  if ! promptEnableAutoCert; then
+    return 1
+  fi
+
+  if ! prepareLanHttpsCandidate "$httpPort"; then
+    printLanHttpsSkipHint
+    return 1
+  fi
+
+  if [[ -n "$containerName" ]] && ! ensureLanHttpsPortAvailable "$containerName"; then
+    echo "注意: HTTPS 端口不可用，跳过此项配置。"
+    LAN_HTTPS_SKIP_REASON="https_port"
+    return 1
+  fi
+
+  LAN_HTTPS_ENABLED=true
+  return 0
+}
+
+printLanHttpsSkipHint() {
+  case "${LAN_HTTPS_SKIP_REASON:-}" in
+    no_lan)
+      echo "注意: 未能自动检测局域网 IP，HTTPS 访问未启用。可稍后运行 https 子命令手动配置。"
+      ;;
+    https_port)
+      printf "注意: HTTPS 端口 %s 已被占用，HTTPS 访问未启用。\n" "$HTTPS_HOST_PORT"
+      ;;
+  esac
+}
+
+printLanHttpsAccessHints() {
+  local containerName="$1"
+  local lanIp="$2"
+  local lanHostname="$3"
+  local httpPort="$4"
+  echo "请使用 iPhone / iPad 打开证书安装页"
+  echo ""
+  printTerminalQrCode "$containerName" "$lanIp" "$lanHostname" "$httpPort" || true
+  echo ""
+}
+
+restartContainerWithLanHttpsEnv() {
+  local targetContainer="$1"
+  local containerImage="$2"
+  local backupName="${targetContainer}-bak-$(date +%Y%m%d%H%M%S)"
+
+  echo "[1/2] 停止现有容器…"
+  if [[ "$(docker inspect --format '{{.State.Running}}' "$targetContainer")" == "true" ]]; then
+    docker stop "$targetContainer" >/dev/null
+  fi
+  docker rename "$targetContainer" "$backupName"
+
+  echo "[2/2] 更新环境变量并重启容器…"
+  if ! runContainerFromConfig "$targetContainer" "$containerImage" "false"; then
+    echo ""
+    echo "正在回滚…"
+    docker rm -f "$targetContainer" >/dev/null 2>&1 || true
+    docker rename "$backupName" "$targetContainer" >/dev/null 2>&1 || true
+    docker start "$targetContainer" >/dev/null 2>&1 || true
+    return 1
+  fi
+
+  if [[ "$(docker inspect --format '{{.State.Running}}' "$targetContainer")" == "true" ]]; then
+    docker rm -f "$backupName" >/dev/null
+    return 0
+  fi
+
+  printf "注意: 容器未运行，已保留备份: %s\n" "$backupName"
+  return 1
+}
+
+actionLanHttpsAccess() {
+  requireDocker
+
+  local existingContainer=""
+  if ! existingContainer="$(pickIpaHarborContainer)"; then
+    return 1
+  fi
+  if [[ -z "$existingContainer" ]]; then
+    echo "错误: 未找到 IPA-Harbor 容器，请先选择「1. 安装」。"
+    return 1
+  fi
+
+  if ! resolveLanHttpsSettings; then
+    return 1
+  fi
+
+  local lanIp="$PICKED_LAN_IP"
+  local lanHostname="$PICKED_LAN_HOSTNAME"
+  local httpHostPort=""
+
+  readContainerConfig "$existingContainer"
+  httpHostPort="$(getPrimaryHostPortFromPortArgs)"
+
+  clearScreen
+  echo ""
+  printDivider
+  echo "开启 HTTPS 访问"
+  printDivider
+  printf "网卡:       %s\n" "$PICKED_LAN_LABEL"
+  echo ""
+  printLanAccessUrls "$lanIp" "$httpHostPort" "$lanHostname"
+  echo ""
+
+  promptRead -p "按回车继续，或 Ctrl+C 取消… " _
+
+  if ! ensureLanHttpsPortAvailable "$existingContainer"; then
+    return 1
+  fi
+
+  ensureAdminInitPin
+  applyLanHttpsEnvToArgs "$lanIp" "$lanHostname" "$httpHostPort" "$HTTPS_HOST_PORT"
+
+  clearScreen
+  echo ""
+  printDivider
+  echo "应用 HTTPS 访问"
+  printDivider
+  echo ""
+
+  if ! restartContainerWithLanHttpsEnv "$existingContainer" "$OLD_IMAGE"; then
+    return 1
+  fi
+
+  clearScreen
+  printAppHeader
+  if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "HTTPS 访问已开启"
+  else
+    echo "✓ HTTPS 访问已开启"
+  fi
+  printLanHttpsAccessHints "$existingContainer" "$lanIp" "$lanHostname" "$httpHostPort"
+  pause
 }
 
 clearScreen() {
@@ -505,8 +801,8 @@ pickIpaHarborContainer() {
   done
   echo ""
   maxChoice="${#containers[@]}"
-  promptRead -p "请选择容器 [1-${maxChoice}]: " choice
-  if [[ "$choice" =~ ^[0-9]+$ ]] && choice -ge 1 && choice -le maxChoice; then
+  promptRead -p "请选择 [1-${maxChoice}]: " choice
+  if [[ "$choice" =~ ^[0-9]+$ && choice -ge 1 && choice -le maxChoice ]]; then
     echo "${containers[$((choice - 1))]}"
     return 0
   fi
@@ -697,6 +993,7 @@ actionInstall() {
     return 1
   fi
   visitUrl="$(visitUrlFromPorts "$installHostPort")"
+  LAN_HTTPS_ENABLED=false
 
   local keychainPassphrase
   keychainPassphrase="$(generateKeychainPassphrase)"
@@ -706,6 +1003,15 @@ actionInstall() {
   printDivider
   echo "即将安装 IPA-Harbor（本机快速部署）"
   printDivider
+  echo ""
+  applyLanHttpsChoiceAfterPrompt "$installHostPort" || true
+
+  clearScreen
+  echo ""
+  printDivider
+  echo "即将安装 IPA-Harbor（本机快速部署）"
+  printDivider
+  echo ""
   printf "镜像:       %s\n" "$IMAGE"
   echo ""
   printf "容器名:     %s\n" "$CONTAINER_NAME"
@@ -713,6 +1019,10 @@ actionInstall() {
   printf "数据卷:     %s\n" "$DATA_VOLUME"
   echo ""
   printf "访问地址:   %s\n" "$visitUrl"
+  if [[ "$LAN_HTTPS_ENABLED" == "true" ]]; then
+    echo ""
+    printLanAccessUrls "$PICKED_LAN_IP" "$installHostPort" "$PICKED_LAN_HOSTNAME"
+  fi
   echo ""
   printInitPinLine "初始化 PIN: " "$ADMIN_INIT_PIN"
   echo ""
@@ -727,14 +1037,33 @@ actionInstall() {
 
   echo "[2/3] 创建数据卷并启动容器…"
   docker volume create "$DATA_VOLUME" >/dev/null 2>&1 || true
+  local -a runPorts=( -p "${installHostPort}:${CONTAINER_PORT}" )
+  local -a runEnv=(
+    -e "KEYCHAIN_PASSPHRASE=${keychainPassphrase}"
+    -e "ADMIN_INIT_PIN=${ADMIN_INIT_PIN}"
+    -e "PORT=${CONTAINER_PORT}"
+  )
+  if [[ "$LAN_HTTPS_ENABLED" == "true" ]]; then
+    runPorts+=( -p "${HTTPS_HOST_PORT}:${CONTAINER_HTTPS_PORT}" )
+    runEnv+=(
+      -e "ENABLE_AUTO_CERT=true"
+      -e "LAN_IP=${PICKED_LAN_IP}"
+      -e "ALLOW_LAN_ACCESS=true"
+      -e "HTTPS_PORT=${CONTAINER_HTTPS_PORT}"
+      -e "WEBAUTHN_RP_ID=$(buildLanHttpsWebAuthnRpId "$PICKED_LAN_HOSTNAME")"
+      -e "WEBAUTHN_ALLOWED_ORIGINS=$(buildLanHttpsWebAuthnOrigins "$PICKED_LAN_IP" "$PICKED_LAN_HOSTNAME" "$installHostPort" "$HTTPS_HOST_PORT")"
+    )
+    [[ -n "$PICKED_LAN_HOSTNAME" ]] && runEnv+=( -e "LAN_HOSTNAME=${PICKED_LAN_HOSTNAME}" )
+  else
+    runEnv+=(
+      -e "WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID}"
+      -e "WEBAUTHN_ALLOWED_ORIGINS=${visitUrl}"
+    )
+  fi
   local runOutput=""
   if ! runOutput=$(docker run -d \
-    -p "${installHostPort}:${CONTAINER_PORT}" \
-    -e "KEYCHAIN_PASSPHRASE=${keychainPassphrase}" \
-    -e "ADMIN_INIT_PIN=${ADMIN_INIT_PIN}" \
-    -e "WEBAUTHN_RP_ID=${WEBAUTHN_RP_ID}" \
-    -e "WEBAUTHN_ALLOWED_ORIGINS=${visitUrl}" \
-    -e "PORT=${CONTAINER_PORT}" \
+    "${runPorts[@]}" \
+    "${runEnv[@]}" \
     -v "${DATA_VOLUME}:/app/data" \
     --name "$CONTAINER_NAME" \
     "$IMAGE" 2>&1); then
@@ -771,23 +1100,45 @@ actionUpgrade() {
 
   readContainerConfig "$targetContainer"
   ensureAdminInitPin
-  ensureWebAuthnEnv
+  local lanHttpsJustAdded=false
+  local httpHostPort=""
+  httpHostPort="$(getPrimaryHostPortFromPortArgs)"
 
   local upgradeImage
   upgradeImage="$(resolveUpgradeImage)"
+
+  if ! containerHasLanHttpsEnv; then
+    clearScreen
+    echo ""
+    printDivider
+    echo "IPA-Harbor 升级"
+    printDivider
+    echo ""
+    if applyLanHttpsChoiceAfterPrompt "$httpHostPort" "$targetContainer"; then
+      applyLanHttpsEnvToArgs "$PICKED_LAN_IP" "$PICKED_LAN_HOSTNAME" "$httpHostPort" "$HTTPS_HOST_PORT"
+      lanHttpsJustAdded=true
+    else
+      ensureWebAuthnEnv
+    fi
+  fi
 
   clearScreen
   echo ""
   printDivider
   echo "IPA-Harbor 升级"
   printDivider
+  echo ""
   printf "容器:     %s\n" "$targetContainer"
   echo ""
   printf "当前镜像: %s\n" "$OLD_IMAGE"
   echo ""
   printf "新镜像:   %s\n" "$upgradeImage"
   echo ""
-  [[ -n "$VISIT_URL" ]] && printf "访问地址:   %s\n" "$VISIT_URL" && echo ""
+  [[ -n "$VISIT_URL" ]] && printf "访问地址:   %s\n" "$VISIT_URL"
+  if [[ "$lanHttpsJustAdded" == "true" ]]; then
+    echo ""
+    printLanAccessUrls "$PICKED_LAN_IP" "$httpHostPort" "$PICKED_LAN_HOSTNAME"
+  fi
   echo ""
   echo "已下载的 IPA 与配置保存在数据卷中，升级不会清空。"
   echo ""
@@ -841,6 +1192,9 @@ actionUpgrade() {
     echo ""
     printInitPinLine "初始化 PIN: " "$initPin"
     echo ""
+    if [[ "$lanHttpsJustAdded" == "true" ]]; then
+      printLanHttpsAccessHints "$targetContainer" "$(getEnvArgValue LAN_IP)" "$(getEnvArgValue LAN_HOSTNAME)" "$(getPrimaryHostPortFromPortArgs)"
+    fi
     maybeOpenBrowser "$VISIT_URL"
   fi
 }
@@ -1050,6 +1404,7 @@ usage() {
   bash quick-deploy.zh.sh install      直接安装
   bash quick-deploy.zh.sh upgrade      直接升级
   bash quick-deploy.zh.sh uninstall    直接卸载
+  bash quick-deploy.zh.sh https        手动配置/修复 HTTPS 访问
 
 一键执行命令（推荐）:
   curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.zh.sh | bash
@@ -1100,6 +1455,9 @@ case "${1:-}" in
     ;;
   uninstall)
     actionUninstall
+    ;;
+  https | https-access)
+    actionLanHttpsAccess
     ;;
   -h | --help | help)
     usage
