@@ -1,4 +1,32 @@
 #!/usr/bin/env bash
+bootstrapQuickDeployFromRemote() {
+  local remoteUrl="$1"
+  local scriptName="${remoteUrl##*/}"
+  shift
+  local tmpRoot="" libBase=""
+
+  tmpRoot="$(mktemp -d "${TMPDIR:-/tmp}/ipa-harbor-deploy-XXXXXX")"
+  libBase="${remoteUrl%/scripts/*}/scripts/lib"
+  mkdir -p "${tmpRoot}/lib"
+  if ! curl -fsSL "$remoteUrl" -o "${tmpRoot}/${scriptName}"; then
+    echo "错误: 无法下载部署脚本，请检查网络后重试。" >&2
+    exit 1
+  fi
+  if ! curl -fsSL "${libBase}/lan-network.sh" -o "${tmpRoot}/lib/lan-network.sh"; then
+    echo "错误: 无法下载部署脚本依赖（lan-network.sh），请检查网络后重试。" >&2
+    exit 1
+  fi
+  if ! curl -fsSL "${libBase}/print-qr.sh" -o "${tmpRoot}/lib/print-qr.sh"; then
+    echo "错误: 无法下载部署脚本依赖（print-qr.sh），请检查网络后重试。" >&2
+    exit 1
+  fi
+  exec bash "${tmpRoot}/${scriptName}" "$@"
+}
+
+if [[ -z "${BASH_SOURCE[0]:-}" || "${BASH_SOURCE[0]:-}" == "-" ]]; then
+  bootstrapQuickDeployFromRemote "${QUICK_DEPLOY_REMOTE_URL:-https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.zh.sh}" ${1+"$@"}
+fi
+
 set -euo pipefail
 
 readonly CONTAINER_NAME="${CONTAINER_NAME:-ipa-harbor}"
@@ -21,6 +49,20 @@ readonly SCRIPT_NAME_EN="quick-deploy.sh"
 readonly SCRIPT_NAME_ZH="quick-deploy.zh.sh"
 readonly REMOTE_SCRIPT_EN="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/quick-deploy.sh"
 readonly REMOTE_SCRIPT_ZH="https://raw.githubusercontent.com/${IPA_HARBOR_REPO}/${IPA_HARBOR_BRANCH}/scripts/quick-deploy.zh.sh"
+
+resolveQuickDeploySelfPath() {
+  local path="${BASH_SOURCE[0]:-}"
+  if [[ -z "$path" || "$path" == "-" ]]; then
+    path="${0:-}"
+  fi
+  if [[ -z "$path" || "$path" == "-" || "$path" == "bash" || ! -f "$path" ]]; then
+    return 0
+  fi
+  (cd "$(dirname "$path")" && printf '%s/%s\n' "$(pwd)" "$(basename "$path")")
+}
+
+QUICK_DEPLOY_SELF="$(resolveQuickDeploySelfPath)"
+readonly QUICK_DEPLOY_SELF
 
 BROWSER_OPEN_CANCELLED=0
 
@@ -281,7 +323,22 @@ isInteractiveTerminal() {
   ( : < /dev/tty ) 2>/dev/null
 }
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+initQuickDeployScriptDir() {
+  local candidateDir=""
+
+  if [[ -n "$QUICK_DEPLOY_SELF" ]]; then
+    candidateDir="$(dirname "$QUICK_DEPLOY_SELF")"
+    if [[ -f "${candidateDir}/lib/lan-network.sh" && -f "${candidateDir}/lib/print-qr.sh" ]]; then
+      SCRIPT_DIR="$candidateDir"
+      return 0
+    fi
+  fi
+
+  echo "错误: 未找到部署脚本依赖 lib/，请使用 curl | bash 或仓库内 scripts/ 路径运行。" >&2
+  exit 1
+}
+
+initQuickDeployScriptDir
 # shellcheck source=lib/lan-network.sh
 source "${SCRIPT_DIR}/lib/lan-network.sh"
 # shellcheck source=lib/print-qr.sh
@@ -1344,7 +1401,7 @@ actionUninstall() {
 }
 
 switchLanguage() {
-  local targetName targetRemote
+  local targetName targetRemote scriptDir localScript
   if [[ "$MENU_LOCALE" == "zh" ]]; then
     echo "正在切换为 English…"
     echo ""
@@ -1357,15 +1414,20 @@ switchLanguage() {
     targetRemote="$REMOTE_SCRIPT_ZH"
   fi
 
-  if [[ -f "${BASH_SOURCE[0]:-}" ]]; then
-    local localScript
-    localScript="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/${targetName}"
+  if [[ -n "$QUICK_DEPLOY_SELF" ]]; then
+    scriptDir="$(dirname "$QUICK_DEPLOY_SELF")"
+    localScript="${scriptDir}/${targetName}"
     if [[ -f "$localScript" ]]; then
       exec bash "$localScript"
     fi
+    if [[ -f "${scriptDir}/lib/lan-network.sh" && -f "${scriptDir}/lib/print-qr.sh" ]]; then
+      if curl -fsSL "$targetRemote" -o "$localScript"; then
+        exec bash "$localScript"
+      fi
+    fi
   fi
 
-  exec bash <(curl -fsSL "$targetRemote")
+  bootstrapQuickDeployFromRemote "$targetRemote"
 }
 
 showAbout() {
@@ -1398,7 +1460,7 @@ showMenu() {
 }
 
 usage() {
-  cat <<EOF
+  cat <<'EOF'
 用法:
   bash quick-deploy.zh.sh              交互菜单
   bash quick-deploy.zh.sh install      直接安装
@@ -1407,7 +1469,9 @@ usage() {
   bash quick-deploy.zh.sh https        手动配置/修复 HTTPS 访问
 
 一键执行命令（推荐）:
+  curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/quick-deploy.sh | bash
   curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.zh.sh | bash
+  curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/quick-deploy.sh | bash
 EOF
 }
 
