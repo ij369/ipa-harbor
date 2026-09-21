@@ -414,6 +414,23 @@ body,
 
 }
 
+.download-manager-search-modal-backdrop {
+  overflow: hidden;
+  overscroll-behavior: none;
+  touch-action: none;
+}
+
+.download-manager-search-dialog {
+  max-height: var(--visual-viewport-height, 100%);
+}
+
+@media (orientation: landscape) {
+  .download-manager-search-safe-x {
+    padding-left: max(var(--safe-area-pad-x, 16px), env(safe-area-inset-left, 0px));
+    padding-right: max(var(--safe-area-pad-x, 16px), env(safe-area-inset-right, 0px));
+  }
+}
+
 /* iPhone 安全区 */
 
 /* SweetAlert2：弹窗/Toast 全局避开刘海与安全区，层级高于 Dialog/抽屉/灯箱 */

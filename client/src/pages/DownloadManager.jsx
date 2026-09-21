@@ -17,9 +17,11 @@ import {
     CheckCircle,
     CloudDone,
     InfoOutlined,
+    Search,
     StorageOutlined,
     TagOutlined,
 } from '@mui/icons-material';
+import DownloadManagerSearchLayer from '../components/DownloadManagerSearchLayer';
 import formatFileSize from '../utils/formatFileSize.js';
 import { useTranslation } from 'react-i18next';
 import { NewDownloadButton } from '../components/NewDownloadDialog';
@@ -168,6 +170,7 @@ export default function DownloadManager() {
     const [selectedFilter, setSelectedFilter] = useState('all');
     const [subLabelMode, setSubLabelMode] = useState('version');
     const [newDownloadDialogOpen, setNewDownloadDialogOpen] = useState(false);
+    const [searchLayerOpen, setSearchLayerOpen] = useState(false);
     const [detailDrawerOpen, setDetailDrawerOpen] = useState(false);
     const [selectedDetailItem, setSelectedDetailItem] = useState(null);
     const detailRestoreAttemptedRef = useRef(null);
@@ -495,7 +498,29 @@ export default function DownloadManager() {
                 sx={{ mb: 2, flexWrap: 'wrap', flexShrink: 0, alignItems: 'center' }}
             >
                 {filterChips}
+                <IconButton
+                    size="sm"
+                    variant="soft"
+                    color="neutral"
+                    aria-label={t('ui.downloadManagerSearch')}
+                    title={t('ui.downloadManagerSearch')}
+                    onClick={() => setSearchLayerOpen(true)}
+                    sx={{
+                        '--IconButton-size': isCompact ? '36px' : '40px',
+                        flexShrink: 0,
+                    }}
+                >
+                    <Search sx={{ fontSize: isCompact ? 20 : 22 }} />
+                </IconButton>
             </Stack>
+
+            <DownloadManagerSearchLayer
+                open={searchLayerOpen}
+                onClose={() => setSearchLayerOpen(false)}
+                items={allItems}
+                country={iconRegion}
+                onSelectItem={openDetailDrawer}
+            />
 
             {!downloadDataReady ? (
                 <Box sx={{

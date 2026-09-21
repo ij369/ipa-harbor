@@ -1,12 +1,20 @@
 import { ModalDialog } from '@mui/joy';
 import { useFullscreenDialog } from '../hooks/useJoyMedia';
 
-export default function ResponsiveModalDialog({ layout, sx, className, ...props }) {
+export default function ResponsiveModalDialog({
+    layout,
+    sx,
+    className,
+    safeAreaBottom,
+    ...props
+}) {
     const fullscreen = useFullscreenDialog();
+    const useSafeAreaBottom = safeAreaBottom ?? fullscreen;
     const mergedClassName = [
         'responsive-modal-dialog',
         className,
-        fullscreen ? 'safe-area-bottom safe-area-x' : '',
+        fullscreen ? 'safe-area-x' : '',
+        useSafeAreaBottom ? 'safe-area-bottom' : '',
     ].filter(Boolean).join(' ');
 
     return (
