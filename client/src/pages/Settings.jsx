@@ -34,6 +34,7 @@ import LanguageSwitcher from '../components/LanguageSwitcher';
 import AdminChangePassword from '../components/AdminChangePassword';
 import PasskeyManager from '../components/PasskeyManager';
 import AddToHomeScreenGuide from '../components/AddToHomeScreenGuide';
+import LanHttpsManager from '../components/LanHttpsManager';
 import Dialog from '../components/Dialog';
 import FilenameTemplateEditor from '../components/FilenameTemplateEditor';
 import { useJoyDown } from '../hooks/useJoyMedia';
@@ -977,6 +978,8 @@ function Settings() {
                             />
                         </Stack>
                     </Sheet>
+
+                    <LanHttpsManager />
 
                     <AddToHomeScreenGuide />
                 </Stack>

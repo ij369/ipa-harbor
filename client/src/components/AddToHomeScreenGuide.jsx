@@ -330,15 +330,85 @@ function AppleGuideScreenshotCarousel({ active, slides }) {
     );
 }
 
-export default function AddToHomeScreenGuide() {
+export function AddToHomeScreenGuideDialog({ isOpen, onClose }) {
     const { t, i18n } = useTranslation();
-    const [open, setOpen] = useState(false);
 
     const lang = normalizeLanguageCode(i18n.language);
 
     const appleDocUrl = useMemo(() => {
         return APPLE_DOC_URLS[lang] || APPLE_DOC_URLS.en;
     }, [lang]);
+
+    return (
+        <Dialog
+            isOpen={isOpen}
+            onClose={onClose}
+            title={t('ui.addToHomeScreenDialogTitle')}
+            size="large"
+            actions={(
+                <Stack direction="row" gap={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
+                    <Button variant="plain" color="neutral" onClick={onClose}>
+                        {t('ui.close')}
+                    </Button>
+                </Stack>
+            )}
+        >
+            <Stack
+                direction={{ xs: 'column', sm: 'row' }}
+                gap={2.5}
+                alignItems={{ xs: 'stretch', sm: 'flex-start' }}
+            >
+                <AppleGuideScreenshotCarousel active={isOpen} slides={APPLE_GUIDE_SCREENSHOT_SLIDES} />
+
+                <Stack gap={2} sx={{ flex: 1, minWidth: 0, width: '100%' }}>
+                    <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                        {t('ui.addToHomeScreenIntro')}
+                    </Typography>
+
+                    <Box
+                        component="ol"
+                        sx={{
+                            m: 0,
+                            pl: 2.25,
+                            '& > li': {
+                                pl: 0.5,
+                                mb: 1,
+                                '&:last-child': { mb: 0 },
+                            },
+                            typography: 'body-sm',
+                            color: 'text.primary',
+                        }}
+                    >
+                        {STEP_KEYS.map((stepKey) => (
+                            <Box component="li" key={stepKey}>
+                                <AddToHomeScreenStep stepKey={stepKey} />
+                            </Box>
+                        ))}
+                    </Box>
+
+                    <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
+                        {t('ui.addToHomeScreenFooter')}
+                    </Typography>
+
+                    <Link
+                        href={appleDocUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        level="body-sm"
+                        endDecorator={<OpenInNew sx={{ fontSize: 16 }} />}
+                        sx={{ alignSelf: 'flex-start' }}
+                    >
+                        {t('ui.addToHomeScreenAppleDoc')}
+                    </Link>
+                </Stack>
+            </Stack>
+        </Dialog>
+    );
+}
+
+export default function AddToHomeScreenGuide() {
+    const { t } = useTranslation();
+    const [open, setOpen] = useState(false);
 
     return (
         <>
@@ -369,69 +439,7 @@ export default function AddToHomeScreenGuide() {
                 </Stack>
             </Sheet>
 
-            <Dialog
-                isOpen={open}
-                onClose={() => setOpen(false)}
-                title={t('ui.addToHomeScreenDialogTitle')}
-                size="large"
-                actions={(
-                    <Stack direction="row" gap={1} sx={{ width: '100%', justifyContent: 'flex-end' }}>
-                        <Button variant="plain" color="neutral" onClick={() => setOpen(false)}>
-                            {t('ui.close')}
-                        </Button>
-                    </Stack>
-                )}
-            >
-                <Stack
-                    direction={{ xs: 'column', sm: 'row' }}
-                    gap={2.5}
-                    alignItems={{ xs: 'stretch', sm: 'flex-start' }}
-                >
-                    <AppleGuideScreenshotCarousel active={open} slides={APPLE_GUIDE_SCREENSHOT_SLIDES} />
-
-                    <Stack gap={2} sx={{ flex: 1, minWidth: 0, width: '100%' }}>
-                        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                            {t('ui.addToHomeScreenIntro')}
-                        </Typography>
-
-                        <Box
-                            component="ol"
-                            sx={{
-                                m: 0,
-                                pl: 2.25,
-                                '& > li': {
-                                    pl: 0.5,
-                                    mb: 1,
-                                    '&:last-child': { mb: 0 },
-                                },
-                                typography: 'body-sm',
-                                color: 'text.primary',
-                            }}
-                        >
-                            {STEP_KEYS.map((stepKey) => (
-                                <Box component="li" key={stepKey}>
-                                    <AddToHomeScreenStep stepKey={stepKey} />
-                                </Box>
-                            ))}
-                        </Box>
-
-                        <Typography level="body-sm" sx={{ color: 'text.secondary' }}>
-                            {t('ui.addToHomeScreenFooter')}
-                        </Typography>
-
-                        <Link
-                            href={appleDocUrl}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            level="body-sm"
-                            endDecorator={<OpenInNew sx={{ fontSize: 16 }} />}
-                            sx={{ alignSelf: 'flex-start' }}
-                        >
-                            {t('ui.addToHomeScreenAppleDoc')}
-                        </Link>
-                    </Stack>
-                </Stack>
-            </Dialog>
+            <AddToHomeScreenGuideDialog isOpen={open} onClose={() => setOpen(false)} />
         </>
     );
 }

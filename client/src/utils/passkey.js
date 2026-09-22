@@ -44,16 +44,24 @@ export function resolvePasskeyClientError(error) {
     if (error.errorMessageCode || error.errorCode) {
         return resolveClientErrorMessage(error);
     }
-    if (error.name === 'SecurityError') {
-        return i18n.t('ui.passkeySecurityError');
+
+    switch (error.name) {
+        // 当前环境无法使用通行密钥
+        case 'SecurityError':
+            return i18n.t('ui.passkeySecurityError');
+        // 通行密钥状态异常，请重试
+        case 'InvalidStateError':
+            return i18n.t('ui.passkeyInvalidState');
+        // 此设备不支持通行密钥
+        case 'NotSupportedError':
+            return i18n.t('ui.passkeyNotSupported');
+        default:
+            /* 因为 WebAuthn 对安全上下文要求比较严
+             如果用户在证书警告的情况下还会继续，这里没有设计 HSTS，没办法阻止用户绕过信任
+             浏览器此时会拒绝 WebAuthn 操作，而不会暴露对应错误和流程
+             用户此时会点击多次，在触发429后就拿这个万能的文案来指导用户检查 HTTPS 和证书信任 */
+            return i18n.t('ui.passkeyLoginFailed');
     }
-    if (error.name === 'InvalidStateError') {
-        return i18n.t('ui.passkeyInvalidState');
-    }
-    if (error.name === 'NotSupportedError') {
-        return i18n.t('ui.passkeyNotSupported');
-    }
-    return i18n.t('ui.passkeyLoginFailed');
 }
 
 const passkeyNonRetryableCodes = new Set([

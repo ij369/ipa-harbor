@@ -25,6 +25,12 @@ services:
       # Built-in HTTPS port (requires server.crt/server.key in certs/).
       # Optional: remove this and the 3443 port mapping if you use HTTP only or reverse-proxy HTTP.
       - HTTPS_PORT=3443
+      # Auto-generate LAN HTTPS certs (CA + server cert with /24 SAN). Requires openssl in container.
+      # - ENABLE_AUTO_CERT=true
+      # Host IP for /24 subnet SAN (e.g. 192.168.1.101). Persisted to data/.ipatool/LAN_IP
+      # - LAN_IP=192.168.1.101
+      # Local hostname for DNS + WebAuthn (e.g. ipa-harbor.local). Default: localhost, usually can get from scutil --get LocalHostName, + .local suffix as hostname
+      # - LAN_HOSTNAME=ipa-harbor.local
       # Browser access whitelist (CORS). Required when accessing via domain instead of localhost.
       - ALLOWED_DOMAINS=your-domain.com,another-domain.com
       # Public deployment: false. Local/LAN only: true (allows 192.168.x.x, 10.x.x.x, 172.16-31.x.x)
@@ -51,6 +57,6 @@ services:
     volumes:
       # Persist data: IPA files, partial downloads (tmp), admin database, and ipatool config ($HOME/.ipatool)
       - ./data:/app/data
-      # Persist TLS certs. For built-in HTTPS, place server.crt and server.key in certs/
-      - ./certs:/app/certs
+      # Optional: manual TLS certs (when ENABLE_AUTO_CERT is not used)
+      # - ./certs:/app/certs
     restart: unless-stopped

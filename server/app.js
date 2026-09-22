@@ -2,7 +2,6 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const http = require('http');
-const https = require('https');
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
@@ -20,6 +19,9 @@ const { sendError } = require('./utils/apiResponse');
 const { NODE_ENV, KEYCHAIN_PASSPHRASE } = require('./config/keychain');
 const { bootstrapAdminStartup, syncSetupMarkerWithUsers } = require('./utils/adminBootstrap');
 const passkeyService = require('./utils/passkeyService');
+const certService = require('./utils/certService');
+const httpsManager = require('./utils/httpsManager');
+const lanConfig = require('./utils/lanConfig');
 
 process.stdout.write('\x1Bc');
 console.clear();
@@ -57,8 +59,8 @@ const HTTPS_PORT = process.env.HTTPS_PORT || 3443;
 
 // 配置 helmet 以支持IP访问
 app.use(helmet({
-    crossOriginOpenerPolicy: { policy: "same-origin" },
-    crossOriginResourcePolicy: { policy: "same-origin" },
+    crossOriginOpenerPolicy: allowLAN ? false : { policy: 'same-origin' },
+    crossOriginResourcePolicy: allowLAN ? false : { policy: 'same-origin' },
     contentSecurityPolicy: (NODE_ENV === 'production' && !allowLAN) ? {
         useDefaults: true,
         directives: {
@@ -95,17 +97,32 @@ if (NODE_ENV === 'production') {
 // 局域网访问规则
 if (allowLAN) {
     patterns.push(
-        /^https?:\/\/localhost(:\d+)?$/,
+        /^https?:\/\/localhost(:\d+)?$/i,
         /^https?:\/\/127\.0\.0\.1(:\d+)?$/,
         /^https?:\/\/192\.168\.\d+\.\d+(:\d+)?$/,
         /^https?:\/\/10\.\d+\.\d+\.\d+(:\d+)?$/,
-        /^https?:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+(:\d+)?$/
+        /^https?:\/\/172\.(1[6-9]|2[0-9]|3[0-1])\.\d+\.\d+(:\d+)?$/,
+        // mDNS .local 主机名（Safari 会将 Origin 规范为小写）
+        /^https?:\/\/[a-z0-9-]+(\.[a-z0-9-]+)*\.local(?::\d+)?$/i
     );
 }
 
-app.use(cors({
+// 局域网 HTTPS 主机名（WebAuthn / 自定义 DNS）
+if (allowLAN || certService.isAutoCertEnabled()) {
+    const { lanHostname } = lanConfig.getLanConfig();
+    if (lanHostname && lanHostname !== lanConfig.DEFAULT_HOSTNAME) {
+        const escapedHostname = lanHostname.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        patterns.push(new RegExp(`^https?:\\/\\/${escapedHostname}(?::\\d+)?$`, 'i'));
+    }
+}
+
+// CORS 仅作用于 API；静态资源不走 CORS，避免 iPhone Safari 加载 JS/CSS 时被 403 拦截
+const corsOptions = {
     origin: (origin, callback) => {
-        const isAllowed = !origin || patterns.some(re => re.test(origin));
+        if (!origin || origin === 'null') {
+            return callback(null, true);
+        }
+        const isAllowed = patterns.some((re) => re.test(origin));
         return isAllowed
             ? callback(null, true)
             : callback(new Error('Not allowed by CORS'), false);
@@ -113,7 +130,7 @@ app.use(cors({
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-}));
+};
 
 
 if (process.env.ENABLE_MORE_LOGS === 'true') {
@@ -137,7 +154,26 @@ app.use('/v1/', rateLimit({
     legacyHeaders: false,     // 不使用旧的X-RateLimit头
 }));
 
+// === 局域网 CA 证书下载（HTTP，无需登录；安装页由前端 /lan-ca 路由承载）===
+// 终端 QR 由 utils/lanCaTerminalQr.js CLI 生成（部署脚本 docker exec 调用），不提供 HTTP /lan-ca/qr
+app.get('/lan-ca/download', (req, res) => {
+    if (!certService.isAutoCertEnabled()) {
+        return res.status(404).send('LAN auto-cert is not enabled');
+    }
+
+    const caPem = certService.getCaCertPem();
+    if (!caPem) {
+        return res.status(404).send('CA certificate not found');
+    }
+
+    res.setHeader('Content-Type', 'application/x-x509-ca-cert');
+    res.setHeader('Content-Disposition', 'attachment; filename="ipa-harbor-lan-ca.crt"');
+    res.setHeader('Cache-Control', 'no-store');
+    return res.send(caPem);
+});
+
 // === API 路由 ===
+app.use('/v1', cors(corsOptions));
 // 需要管理员认证的路由
 app.use('/v1/auth', authenticateToken, require('./api/auth'));
 app.use('/v1/app', require('./api/app')); // 有些接口不需要管理员认证，在api/app/index.js中通过authenticateToken判断
@@ -203,27 +239,49 @@ const httpServer = http.createServer(app);
 const wss = new WebSocket.Server({ server: httpServer });
 wsManager.attach(wss, 'http');
 
-let httpsServer = null;
-try {
-    const key = fs.readFileSync(path.join(__dirname, 'certs/server.key'));
-    const cert = fs.readFileSync(path.join(__dirname, 'certs/server.crt'));
-    httpsServer = https.createServer({ key, cert }, app);
+async function bootstrapHttpsServer() {
+    if (certService.isAutoCertEnabled()) {
+        if (!lanConfig.warnIfLanIpMissing()) {
+            return false;
+        }
 
-    if (allowedDomains.length === 0) {
-        console.log(hrLine);
-        console.warn(`${yellow}ALLOWED_DOMAINS is not set:${reset}\n └ Browser access from your domain may be blocked.\n ↳ See docker-compose.example.yml: https://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml\n`);
-        console.log(hrLine);
+        try {
+            const material = certService.bootstrapAutoCert();
+            if (material) {
+                await httpsManager.start(app, material.key, material.cert, HTTPS_PORT);
+                return true;
+            }
+        } catch (error) {
+            console.error('局域网 HTTPS 启动失败:', error.message);
+        }
+        return false;
     }
 
-    const wssSecure = new WebSocket.Server({ server: httpsServer });
-    wsManager.attach(wssSecure, 'https');
+    const manualKeyPath = path.join(__dirname, 'certs/server.key');
+    const manualCertPath = path.join(__dirname, 'certs/server.crt');
+    if (!fs.existsSync(manualKeyPath) || !fs.existsSync(manualCertPath)) {
+        const isLocalLanOnly = allowLAN && allowedDomains.length === 0;
+        if (process.env.NODE_ENV === 'production' && !isLocalLanOnly) {
+            console.log(hrLine);
+            console.warn(`${yellow}HTTPS Tutorial:${reset}\n Built-in HTTPS is not configured.\n ├ 1. Choose one:\n |    a) Set ENABLE_AUTO_CERT=true with LAN_IP\n |    b) Place certs/server.key and certs/server.crt in certs/\n |    c) Reverse-proxy the HTTP port (e.g. nginx, Caddy) to handle HTTPS\n └ 2. Set ALLOWED_DOMAINS to your public domain\n \n ↳ You can also refer to docker-compose.example.yml\n`);
+        }
+        return false;
+    }
 
-    httpsServer.listen(HTTPS_PORT);
-} catch (err) {
-    const isLocalLanOnly = allowLAN && allowedDomains.length === 0;
-    if (process.env.NODE_ENV === 'production' && !isLocalLanOnly) {
-        console.log(hrLine);
-        console.warn(`${yellow}HTTPS Tutorial:${reset}\n Built-in HTTPS is not configured.\n ├ 1. Choose one:\n |    a) Place certs/server.key and certs/server.crt in certs/\n |    b) Reverse-proxy the HTTP port (e.g. nginx, Caddy) to handle HTTPS\n └ 2. Set ALLOWED_DOMAINS to your public domain\n \n ↳ You can also refer to docker-compose.example.yml\n`);
+    try {
+        const key = fs.readFileSync(manualKeyPath);
+        const cert = fs.readFileSync(manualCertPath);
+        await httpsManager.start(app, key, cert, HTTPS_PORT);
+
+        if (allowedDomains.length === 0) {
+            console.log(hrLine);
+            console.warn(`${yellow}ALLOWED_DOMAINS is not set:${reset}\n └ Browser access from your domain may be blocked.\n ↳ See docker-compose.example.yml: https://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml\n`);
+            console.log(hrLine);
+        }
+        return true;
+    } catch (error) {
+        console.error('HTTPS 启动失败:', error.message);
+        return false;
     }
 }
 
@@ -245,18 +303,36 @@ async function startHttpServer() {
         process.exit(1);
     }
 
+    let httpsReady = false;
+    try {
+        httpsReady = await bootstrapHttpsServer();
+    } catch (error) {
+        console.error('HTTPS 初始化失败:', error.message);
+    }
+
     httpServer.listen(PORT, () => {
         console.log(hrLine);
         console.log(`${green}Server started successfully.${reset}`);
         if (NODE_ENV === 'production') {
             console.log(`${green}HTTP port:${reset} ${PORT}`);
-            if (httpsServer) {
+            if (httpsReady) {
                 console.log(`${green}HTTPS port:${reset} ${HTTPS_PORT}`);
             }
         } else {
-            console.log(`${green}HTTP:${reset} http://${HOST}:${PORT}`);
-            if (httpsServer) {
-                console.log(`${green}HTTPS:${reset} https://${HOST}:${HTTPS_PORT}`);
+            console.log(`${green}HTTP:${reset}  ${lanConfig.formatLanUrl('http', HOST, PORT)}`);
+            if (httpsReady) {
+                console.log(`${green}HTTPS:${reset} ${lanConfig.formatLanUrl('https', HOST, HTTPS_PORT)}`);
+            }
+        }
+        if (certService.isAutoCertEnabled()) {
+            const status = certService.getLanHttpsStatus();
+            if (status.lanIp && status.httpsUrl) {
+                if (status.httpsHostnameUrl) {
+                    console.log(`\n${cyan}LAN HTTPS:${reset} ${status.httpsHostnameUrl}`);
+                    console.log(`           ${status.httpsUrl}`);
+                } else {
+                    console.log(`\n${cyan}LAN HTTPS:${reset} ${status.httpsUrl}`);
+                }
             }
         }
         console.log(hrLine);

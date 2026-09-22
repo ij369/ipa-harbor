@@ -16,6 +16,7 @@ import AdminLogin from './pages/AdminLogin';
 import AdminSetup from './pages/AdminSetup';
 import AdminRecover from './pages/AdminRecover';
 import AppleIdLogin from './pages/AppleIdLogin';
+import LanCaInstall from './pages/LanCaInstall';
 import './App.css';
 
 function App() {
@@ -50,6 +51,9 @@ function App() {
                   <AppleIdLogin />
                 </AdminGuard>
               } />
+
+              {/* 局域网 CA 安装页：无需登录，启用 ENABLE_AUTO_CERT 即可访问 */}
+              <Route path="/lan-ca" element={<LanCaInstall />} />
 
               <Route element={
                 <AdminGuard>

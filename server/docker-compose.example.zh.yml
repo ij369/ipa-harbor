@@ -24,6 +24,12 @@ services:
       # 内置 HTTPS 端口（需在 certs/ 放置 server.crt、server.key）
       # 可选：仅用 HTTP、localhost 或反向代理 HTTP 时，可删除此项及 ports 中的 3443 映射
       - HTTPS_PORT=3443
+      # 自动生成 LAN HTTPS 证书（CA + 服务器证书，/24 子网）。需要容器中的 openssl。
+      # - ENABLE_AUTO_CERT=true
+      # LAN IP 用于 /24 子网 SAN（例如 192.168.1.101）。持久化到 data/.ipatool/LAN_IP
+      # - LAN_IP=192.168.1.101
+      # 本地主机名用于 DNS + WebAuthn（例如 ipa-harbor.local）。默认：localhost，通常 Mac 可以 scutil --get LocalHostName 获取到，+ .local 后缀作为主机名
+      # - LAN_HOSTNAME=ipa-harbor.local
       # 通过域名访问时的浏览器白名单（CORS），非 localhost 场景必填
       - ALLOWED_DOMAINS=your-domain.com,another-domain.com
       # 公网部署：false；仅本地/局域网：true（允许 192.168.x.x、10.x.x.x、172.16-31.x.x）
@@ -50,6 +56,6 @@ services:
     volumes:
       # 持久化 data：IPA、未完成下载(tmp)、管理员数据库、ipatool 配置($HOME/.ipatool)
       - ./data:/app/data
-      # 持久化证书目录, 如果自签需要server.crt，server.key在certs这个文件夹下，建议持久化为卷或者绑一个系统路径
-      - ./certs:/app/certs
+      # 可选: 手动 TLS 证书 (当 ENABLE_AUTO_CERT 未启用时)
+      # - ./certs:/app/certs
     restart: unless-stopped

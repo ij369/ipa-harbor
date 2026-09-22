@@ -12,6 +12,8 @@ const {
 const database = require('./database');
 const { generateToken } = require('../middleware/auth');
 const { setAuthTokenCookie, buildAuthSuccessPayload } = require('./adminAuthCookie');
+const lanConfig = require('./lanConfig');
+const certService = require('./certService');
 
 const RP_NAME = 'IPA Harbor';
 const EMPTY_AAGUID = '00000000-0000-0000-0000-000000000000';
@@ -22,15 +24,54 @@ const CHALLENGE_CLEANUP_INTERVAL_MINUTES = Math.min(
 );
 const CHALLENGE_CLEANUP_CRON = `*/${CHALLENGE_CLEANUP_INTERVAL_MINUTES} * * * *`;
 
+function getDynamicWebAuthnOrigins() {
+    if (!certService.isAutoCertEnabled()) {
+        return [];
+    }
+
+    const { lanHostname } = lanConfig.getLanConfig();
+    if (!lanHostname || lanHostname === lanConfig.DEFAULT_HOSTNAME) {
+        return [];
+    }
+
+    const httpsPort = process.env.HTTPS_PORT || 3443;
+    return [lanConfig.formatLanUrl('https', lanHostname, httpsPort)];
+}
+
 function parseAllowedOrigins() {
-    return (process.env.WEBAUTHN_ALLOWED_ORIGINS || '')
+    const configured = (process.env.WEBAUTHN_ALLOWED_ORIGINS || '')
         .split(',')
         .map((item) => item.trim())
         .filter(Boolean);
+
+    const merged = [...configured];
+    for (const origin of getDynamicWebAuthnOrigins()) {
+        if (!merged.includes(origin)) {
+            merged.push(origin);
+        }
+    }
+    return merged;
 }
 
 function isWebAuthnConfigured() {
     return parseAllowedOrigins().length > 0 && Boolean((process.env.WEBAUTHN_RP_ID || '').trim());
+}
+
+function attachLanPasskeyHint(err) {
+    if (process.env.ALLOW_LAN_ACCESS !== 'true') {
+        return;
+    }
+    const { lanHostname } = lanConfig.getLanConfig();
+    if (!lanHostname || lanHostname === lanConfig.DEFAULT_HOSTNAME) {
+        return;
+    }
+    const httpsPort = process.env.HTTPS_PORT || 3443;
+    err.lanPasskeyHint = true;
+    err.lanHttpsUrl = lanConfig.formatLanUrl(
+        'https',
+        lanConfig.normalizeHostname(lanHostname),
+        httpsPort,
+    );
 }
 
 function resolveWebAuthnContext(req) {
@@ -48,16 +89,20 @@ function resolveWebAuthnContext(req) {
         throw err;
     }
 
-    if (!allowedOrigins.includes(origin)) {
+    if (!lanConfig.isOriginAllowed(origin, allowedOrigins)) {
         const err = new Error('Origin 不在允许列表中');
         err.code = 'WEBAUTHN_ORIGIN_NOT_ALLOWED';
+        attachLanPasskeyHint(err);
         throw err;
     }
 
     const url = new URL(origin);
+    const { lanHostname } = lanConfig.getLanConfig();
     let rpId;
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
         rpId = 'localhost';
+    } else if (lanHostname && lanHostname !== lanConfig.DEFAULT_HOSTNAME && lanConfig.hostnameMatches(url.hostname, lanHostname)) {
+        rpId = lanConfig.normalizeHostname(url.hostname);
     } else {
         rpId = (process.env.WEBAUTHN_RP_ID || '').trim();
         if (!rpId) {

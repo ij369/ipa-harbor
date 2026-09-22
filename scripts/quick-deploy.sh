@@ -32,11 +32,6 @@ set -euo pipefail
 readonly CONTAINER_NAME="${CONTAINER_NAME:-ipa-harbor}"
 readonly DATA_VOLUME="${DATA_VOLUME:-ipa_data}"
 readonly IMAGE="${IMAGE:-uuphy/ipa-harbor:latest}"
-readonly HOST_PORT="${HOST_PORT:-3388}"
-readonly FALLBACK_HOST_PORT="${FALLBACK_HOST_PORT:-3399}"
-readonly CONTAINER_PORT="${CONTAINER_PORT:-3080}"
-readonly HTTPS_HOST_PORT="${HTTPS_HOST_PORT:-3443}"
-readonly CONTAINER_HTTPS_PORT="${CONTAINER_HTTPS_PORT:-3443}"
 readonly ADMIN_INIT_PIN="${ADMIN_INIT_PIN:-20251024}"
 readonly WEBAUTHN_RP_ID="localhost"
 readonly GITHUB_REPO_URL="https://github.com/ij369/ipa-harbor"
@@ -344,17 +339,135 @@ source "${SCRIPT_DIR}/lib/lan-network.sh"
 # shellcheck source=lib/print-qr.sh
 source "${SCRIPT_DIR}/lib/print-qr.sh"
 
+# 快速部署 HTTP/HTTPS 端口对（宿主机与容器内同端口，1:1 映射）
+QUICK_DEPLOY_PORT_PAIRS=(
+  "80:443"
+  "15080:15443"
+  "15580:15943"
+  "25080:25443"
+  "25580:25943"
+  "35080:35443"
+  "35580:35943"
+  "45080:45443"
+  "45580:45943"
+  "55080:55443"
+  "55580:55943"
+  "65080:65443"
+  "65580:65943"
+  "75080:75443"
+  "85080:85443"
+)
+
+SELECTED_HTTP_PORT=""
+SELECTED_HTTPS_PORT=""
+
+formatHttpUrlHost() {
+  local host="$1"
+  local port="$2"
+  if [[ "$port" == "80" ]]; then
+    printf 'http://%s' "$host"
+  else
+    printf 'http://%s:%s' "$host" "$port"
+  fi
+}
+
+formatHttpsUrlHost() {
+  local host="$1"
+  local port="$2"
+  if [[ "$port" == "443" ]]; then
+    printf 'https://%s' "$host"
+  else
+    printf 'https://%s:%s' "$host" "$port"
+  fi
+}
+
+isHostPortInUse() {
+  local port="$1"
+  if command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 && return 0
+  fi
+  if command -v nc >/dev/null 2>&1; then
+    nc -z localhost "$port" >/dev/null 2>&1 && return 0
+  fi
+  docker ps --format '{{.Ports}}' 2>/dev/null | grep -qE "(0\\.0\\.0\\.0|127\\.0\\.0\\.1|\\[::\\]):${port}->" && return 0
+  return 1
+}
+
+findQuickDeployHttpsPortForHttp() {
+  local httpPort="$1"
+  local pair="" http="" https=""
+  for pair in "${QUICK_DEPLOY_PORT_PAIRS[@]}"; do
+    http="${pair%%:*}"
+    https="${pair##*:}"
+    if [[ "$http" == "$httpPort" ]]; then
+      printf '%s\n' "$https"
+      return 0
+    fi
+  done
+  return 1
+}
+
+resolveQuickDeployPortPair() {
+  local pair="" http="" https=""
+  SELECTED_HTTP_PORT=""
+  SELECTED_HTTPS_PORT=""
+  for pair in "${QUICK_DEPLOY_PORT_PAIRS[@]}"; do
+    http="${pair%%:*}"
+    https="${pair##*:}"
+    if ! isHostPortInUse "$http" && ! isHostPortInUse "$https"; then
+      SELECTED_HTTP_PORT="$http"
+      SELECTED_HTTPS_PORT="$https"
+      return 0
+    fi
+  done
+  return 1
+}
+
+resolveQuickDeployHttpPortOnly() {
+  local pair="" http="" https=""
+  SELECTED_HTTP_PORT=""
+  SELECTED_HTTPS_PORT=""
+  for pair in "${QUICK_DEPLOY_PORT_PAIRS[@]}"; do
+    http="${pair%%:*}"
+    https="${pair##*:}"
+    if ! isHostPortInUse "$http"; then
+      SELECTED_HTTP_PORT="$http"
+      SELECTED_HTTPS_PORT="$https"
+      return 0
+    fi
+  done
+  return 1
+}
+
+resolveQuickDeployHttpsForExistingHttp() {
+  local httpPort="$1"
+  local httpsPort=""
+  SELECTED_HTTP_PORT="$httpPort"
+  SELECTED_HTTPS_PORT=""
+  if ! httpsPort="$(findQuickDeployHttpsPortForHttp "$httpPort")"; then
+    return 1
+  fi
+  if isHostPortInUse "$httpsPort"; then
+    return 1
+  fi
+  SELECTED_HTTPS_PORT="$httpsPort"
+  return 0
+}
+
 buildLanHttpsWebAuthnOrigins() {
   local lanIp="$1"
   local lanHostname="$2"
   local httpPort="$3"
   local httpsPort="$4"
-  local origins="http://127.0.0.1:${httpPort},http://localhost:${httpPort}"
-  origins+=",http://${lanIp}:${httpPort},https://${lanIp}:${httpsPort}"
+  local origins="" host=""
+  for host in "127.0.0.1" "localhost" "$lanIp"; do
+    [[ -z "$host" ]] && continue
+    origins+="$(formatHttpUrlHost "$host" "$httpPort"),$(formatHttpsUrlHost "$host" "$httpsPort"),"
+  done
   if [[ -n "$lanHostname" ]]; then
-    origins+=",http://${lanHostname}:${httpPort},https://${lanHostname}:${httpsPort}"
+    origins+="$(formatHttpUrlHost "$lanHostname" "$httpPort"),$(formatHttpsUrlHost "$lanHostname" "$httpsPort"),"
   fi
-  echo "$origins"
+  echo "${origins%,}"
 }
 
 buildLanHttpsWebAuthnRpId() {
@@ -366,20 +479,16 @@ buildLanHttpsWebAuthnRpId() {
   fi
 }
 
-ensureHttpsPortInPortArgs() {
-  local hostPort="$1"
-  local containerPort="$2"
+ensurePortMappingInPortArgs() {
+  local port="$1"
   local i=0
   while [[ $i -lt ${#PORT_ARGS[@]} ]]; do
-    if [[ "${PORT_ARGS[$i]}" == "-p" ]]; then
-      local mapping="${PORT_ARGS[$((i + 1))]}"
-      if [[ "$mapping" == *":${containerPort}" ]]; then
-        return 0
-      fi
+    if [[ "${PORT_ARGS[$i]}" == "-p" && "${PORT_ARGS[$((i + 1))]}" == "${port}:${port}" ]]; then
+      return 0
     fi
     i=$((i + 2))
   done
-  PORT_ARGS+=("-p" "${hostPort}:${containerPort}")
+  PORT_ARGS+=("-p" "${port}:${port}")
 }
 
 applyLanHttpsEnvToArgs() {
@@ -393,10 +502,12 @@ applyLanHttpsEnvToArgs() {
     upsertEnvArg "LAN_HOSTNAME" "$lanHostname"
   fi
   upsertEnvArg "ALLOW_LAN_ACCESS" "true"
-  upsertEnvArg "PORT" "$CONTAINER_PORT"
-  upsertEnvArg "HTTPS_PORT" "$CONTAINER_HTTPS_PORT"
+  upsertEnvArg "PORT" "$httpPort"
+  upsertEnvArg "HTTPS_PORT" "$httpsPort"
   upsertEnvArg "WEBAUTHN_RP_ID" "$(buildLanHttpsWebAuthnRpId "$lanHostname")"
   upsertEnvArg "WEBAUTHN_ALLOWED_ORIGINS" "$(buildLanHttpsWebAuthnOrigins "$lanIp" "$lanHostname" "$httpPort" "$httpsPort")"
+  ensurePortMappingInPortArgs "$httpPort"
+  ensurePortMappingInPortArgs "$httpsPort"
 }
 
 getEnvArgValue() {
@@ -418,38 +529,29 @@ containerHasLanHttpsEnv() {
 
 printLanAccessUrls() {
   local lanIp="$1"
-  local httpPort="$2"
+  local httpsPort="$2"
   local lanHostname="${3:-}"
 
   if [[ -n "$lanHostname" ]]; then
-    printf "HTTPS URL:  https://%s:%s\n" "$lanHostname" "$HTTPS_HOST_PORT"
-    printf "            https://%s:%s\n" "$lanIp" "$HTTPS_HOST_PORT"
+    printf "HTTPS URL:  %s\n" "$(formatHttpsUrlHost "$lanHostname" "$httpsPort")"
+    printf "            %s\n" "$(formatHttpsUrlHost "$lanIp" "$httpsPort")"
   else
-    printf "HTTPS URL:  https://%s:%s\n" "$lanIp" "$HTTPS_HOST_PORT"
+    printf "HTTPS URL:  %s\n" "$(formatHttpsUrlHost "$lanIp" "$httpsPort")"
   fi
   echo ""
 }
 
 ensureLanHttpsPortAvailable() {
   local containerName="${1:-}"
-  ensureHttpsPortInPortArgs "$HTTPS_HOST_PORT" "$CONTAINER_HTTPS_PORT"
-  local newHttpsMapping="" i=0
-  while [[ $i -lt ${#PORT_ARGS[@]} ]]; do
-    if [[ "${PORT_ARGS[$i]}" == "-p" && "${PORT_ARGS[$((i + 1))]}" == *":${CONTAINER_HTTPS_PORT}" ]]; then
-      newHttpsMapping="${PORT_ARGS[$((i + 1))]}"
-      break
-    fi
-    i=$((i + 2))
-  done
-  [[ -z "$newHttpsMapping" ]] && return 0
-  local newHostHttpsPort="${newHttpsMapping%%:*}"
-  if isHostPortInUse "$newHostHttpsPort"; then
+  local httpsPort="$2"
+  ensurePortMappingInPortArgs "$httpsPort"
+  if isHostPortInUse "$httpsPort"; then
     if [[ -n "$containerName" ]]; then
       local currentPort=""
-      currentPort="$(docker port "$containerName" "${CONTAINER_HTTPS_PORT}/tcp" 2>/dev/null | cut -d: -f2 || true)"
-      [[ "$newHostHttpsPort" == "$currentPort" ]] && return 0
+      currentPort="$(docker port "$containerName" "${httpsPort}/tcp" 2>/dev/null | cut -d: -f2 || true)"
+      [[ "$httpsPort" == "$currentPort" ]] && return 0
     fi
-    printf "Error: HTTPS port %s is already in use.\n" "$newHostHttpsPort" >&2
+    printf "Error: HTTPS port %s is already in use.\n" "$httpsPort" >&2
     return 1
   fi
   return 0
@@ -468,57 +570,70 @@ promptEnableAutoCert() {
   [[ "$answer" == "1" ]]
 }
 
-prepareLanHttpsCandidate() {
-  local httpPort="$1"
-  LAN_HTTPS_AVAILABLE=false
-  LAN_HTTPS_SKIP_REASON=""
-
-  if ! resolveLanHttpsSettings; then
-    LAN_HTTPS_SKIP_REASON="no_lan"
-    return 1
-  fi
-  if isHostPortInUse "$HTTPS_HOST_PORT"; then
-    LAN_HTTPS_SKIP_REASON="https_port"
-    return 1
-  fi
-  LAN_HTTPS_AVAILABLE=true
-  return 0
-}
-
 applyLanHttpsChoiceAfterPrompt() {
-  local httpPort="$1"
+  local existingHttpPort="${1:-}"
   local containerName="${2:-}"
 
   LAN_HTTPS_ENABLED=false
   LAN_HTTPS_AVAILABLE=false
   LAN_HTTPS_SKIP_REASON=""
+  SELECTED_HTTP_PORT=""
+  SELECTED_HTTPS_PORT=""
 
   if ! promptEnableAutoCert; then
     return 1
   fi
 
-  if ! prepareLanHttpsCandidate "$httpPort"; then
+  if ! resolveLanHttpsSettings; then
+    LAN_HTTPS_SKIP_REASON="no_lan"
     printLanHttpsSkipHint
     return 1
   fi
 
-  if [[ -n "$containerName" ]] && ! ensureLanHttpsPortAvailable "$containerName"; then
+  if [[ -n "$existingHttpPort" ]]; then
+    if ! resolveQuickDeployHttpsForExistingHttp "$existingHttpPort"; then
+      LAN_HTTPS_SKIP_REASON="https_port"
+      printLanHttpsSkipHint "$existingHttpPort"
+      return 1
+    fi
+  elif ! resolveQuickDeployPortPair; then
+    LAN_HTTPS_SKIP_REASON="no_ports"
+    printLanHttpsSkipHint
+    return 1
+  fi
+
+  if [[ -n "$containerName" ]] && ! ensureLanHttpsPortAvailable "$containerName" "$SELECTED_HTTPS_PORT"; then
     echo "Note: HTTPS port unavailable; skipping this configuration."
     LAN_HTTPS_SKIP_REASON="https_port"
+    printLanHttpsSkipHint "$SELECTED_HTTPS_PORT"
     return 1
   fi
 
   LAN_HTTPS_ENABLED=true
+  LAN_HTTPS_AVAILABLE=true
   return 0
 }
 
 printLanHttpsSkipHint() {
+  local detail="${1:-}"
   case "${LAN_HTTPS_SKIP_REASON:-}" in
     no_lan)
       echo "Note: No LAN IP detected; HTTPS access was not enabled. Run the https subcommand later if needed."
       ;;
+    no_ports)
+      echo "Note: All predefined HTTP/HTTPS port pairs are in use; HTTPS access was not enabled."
+      ;;
     https_port)
-      printf "Note: HTTPS port %s is in use; HTTPS access was not enabled.\n" "$HTTPS_HOST_PORT"
+      if [[ -n "$detail" && "$detail" =~ ^[0-9]+$ ]]; then
+        if findQuickDeployHttpsPortForHttp "$detail" >/dev/null 2>&1; then
+          printf "Note: HTTPS port %s is in use; HTTPS access was not enabled.\n" "$(findQuickDeployHttpsPortForHttp "$detail")"
+        else
+          printf "Note: HTTP port %s is not from a quick-deploy port pair; HTTPS access was not enabled.\n" "$detail"
+          echo "   Reinstall with quick deploy to use automatic port pairing."
+        fi
+      else
+        printf "Note: HTTPS port %s is in use; HTTPS access was not enabled.\n" "${detail:-unknown}"
+      fi
       ;;
   esac
 }
@@ -586,6 +701,11 @@ actionLanHttpsAccess() {
 
   readContainerConfig "$existingContainer"
   httpHostPort="$(getPrimaryHostPortFromPortArgs)"
+  if ! resolveQuickDeployHttpsForExistingHttp "$httpHostPort"; then
+    printf "Error: HTTP port %s is not from a quick-deploy port pair, or the paired HTTPS port is in use.\n" "$httpHostPort" >&2
+    echo "   Reinstall with quick deploy (option 1) to use automatic port pairing." >&2
+    return 1
+  fi
 
   clearScreen
   echo ""
@@ -594,17 +714,17 @@ actionLanHttpsAccess() {
   printDivider
   printf "Network:     %s\n" "$PICKED_LAN_LABEL"
   echo ""
-  printLanAccessUrls "$lanIp" "$httpHostPort" "$lanHostname"
+  printLanAccessUrls "$lanIp" "$SELECTED_HTTPS_PORT" "$lanHostname"
   echo ""
 
   promptRead -p "Press Enter to continue, or Ctrl+C to cancel… " _
 
-  if ! ensureLanHttpsPortAvailable "$existingContainer"; then
+  if ! ensureLanHttpsPortAvailable "$existingContainer" "$SELECTED_HTTPS_PORT"; then
     return 1
   fi
 
   ensureAdminInitPin
-  applyLanHttpsEnvToArgs "$lanIp" "$lanHostname" "$httpHostPort" "$HTTPS_HOST_PORT"
+  applyLanHttpsEnvToArgs "$lanIp" "$lanHostname" "$httpHostPort" "$SELECTED_HTTPS_PORT"
 
   clearScreen
   echo ""
@@ -699,19 +819,7 @@ generateKeychainPassphrase() {
 
 visitUrlFromPorts() {
   local hostPort="$1"
-  echo "http://localhost:${hostPort}"
-}
-
-isHostPortInUse() {
-  local port="$1"
-  if command -v lsof >/dev/null 2>&1; then
-    lsof -nP -iTCP:"${port}" -sTCP:LISTEN >/dev/null 2>&1 && return 0
-  fi
-  if command -v nc >/dev/null 2>&1; then
-    nc -z localhost "$port" >/dev/null 2>&1 && return 0
-  fi
-  docker ps --format '{{.Ports}}' 2>/dev/null | grep -qE "(0\\.0\\.0\\.0|127\\.0\\.0\\.1|\\[::\\]):${port}->" && return 0
-  return 1
+  formatHttpUrlHost "localhost" "$hostPort"
 }
 
 explainContainerStartFailure() {
@@ -732,7 +840,7 @@ getPrimaryHostPortFromPortArgs() {
   if [[ ${#PORT_ARGS[@]} -ge 2 ]]; then
     echo "${PORT_ARGS[1]%%:*}"
   else
-    echo "$HOST_PORT"
+    echo "80"
   fi
 }
 
@@ -776,29 +884,6 @@ isIpaHarborImage() {
       return 0
       ;;
   esac
-  return 1
-}
-
-resolveInstallHostPort() {
-  local preferred="$1"
-  local fallback="$2"
-
-  if ! isHostPortInUse "$preferred"; then
-    echo "$preferred"
-    return 0
-  fi
-
-  if [[ "$preferred" == "$fallback" ]]; then
-    printf "Error: Port %s is already in use; cannot install.\n" "$preferred" >&2
-    return 1
-  fi
-
-  if ! isHostPortInUse "$fallback"; then
-    echo "$fallback"
-    return 0
-  fi
-
-  printf "Error: Ports %s and %s are both in use; cannot install.\n" "$preferred" "$fallback" >&2
   return 1
 }
 
@@ -903,7 +988,7 @@ readContainerConfig() {
     [[ -z "$hostPort" || -z "$containerPortRaw" ]] && continue
     local containerPort="${containerPortRaw%%/*}"
     PORT_ARGS+=("-p" "${hostPort}:${containerPort}")
-    if [[ -z "$VISIT_URL" && "$containerPort" == "$CONTAINER_PORT" ]]; then
+    if [[ -z "$VISIT_URL" && "$hostPort" == "$containerPort" ]]; then
       VISIT_URL="$(visitUrlFromPorts "$hostPort")"
     fi
   done < <(
@@ -1045,12 +1130,10 @@ actionInstall() {
     return
   fi
 
-  local installHostPort visitUrl
-  if ! installHostPort="$(resolveInstallHostPort "$HOST_PORT" "$FALLBACK_HOST_PORT")"; then
-    return 1
-  fi
-  visitUrl="$(visitUrlFromPorts "$installHostPort")"
+  local installHttpPort installHttpsPort visitUrl
   LAN_HTTPS_ENABLED=false
+  SELECTED_HTTP_PORT=""
+  SELECTED_HTTPS_PORT=""
 
   local keychainPassphrase
   keychainPassphrase="$(generateKeychainPassphrase)"
@@ -1061,7 +1144,19 @@ actionInstall() {
   echo "Install IPA-Harbor (local quick setup)"
   printDivider
   echo ""
-  applyLanHttpsChoiceAfterPrompt "$installHostPort" || true
+  applyLanHttpsChoiceAfterPrompt "" || true
+
+  if [[ "$LAN_HTTPS_ENABLED" == "true" ]]; then
+    installHttpPort="$SELECTED_HTTP_PORT"
+    installHttpsPort="$SELECTED_HTTPS_PORT"
+  elif ! resolveQuickDeployHttpPortOnly; then
+    echo "Error: All predefined HTTP ports are in use; cannot install."
+    return 1
+  else
+    installHttpPort="$SELECTED_HTTP_PORT"
+    installHttpsPort=""
+  fi
+  visitUrl="$(visitUrlFromPorts "$installHttpPort")"
 
   clearScreen
   echo ""
@@ -1078,7 +1173,7 @@ actionInstall() {
   printf "Access URL:     %s\n" "$visitUrl"
   if [[ "$LAN_HTTPS_ENABLED" == "true" ]]; then
     echo ""
-    printLanAccessUrls "$PICKED_LAN_IP" "$installHostPort" "$PICKED_LAN_HOSTNAME"
+    printLanAccessUrls "$PICKED_LAN_IP" "$installHttpsPort" "$PICKED_LAN_HOSTNAME"
   fi
   echo ""
   printInitPinLine "Init PIN:    " "$ADMIN_INIT_PIN"
@@ -1094,21 +1189,21 @@ actionInstall() {
 
   echo "[2/3] Creating data volume and starting container…"
   docker volume create "$DATA_VOLUME" >/dev/null 2>&1 || true
-  local -a runPorts=( -p "${installHostPort}:${CONTAINER_PORT}" )
+  local -a runPorts=( -p "${installHttpPort}:${installHttpPort}" )
   local -a runEnv=(
     -e "KEYCHAIN_PASSPHRASE=${keychainPassphrase}"
     -e "ADMIN_INIT_PIN=${ADMIN_INIT_PIN}"
-    -e "PORT=${CONTAINER_PORT}"
+    -e "PORT=${installHttpPort}"
   )
   if [[ "$LAN_HTTPS_ENABLED" == "true" ]]; then
-    runPorts+=( -p "${HTTPS_HOST_PORT}:${CONTAINER_HTTPS_PORT}" )
+    runPorts+=( -p "${installHttpsPort}:${installHttpsPort}" )
     runEnv+=(
       -e "ENABLE_AUTO_CERT=true"
       -e "LAN_IP=${PICKED_LAN_IP}"
       -e "ALLOW_LAN_ACCESS=true"
-      -e "HTTPS_PORT=${CONTAINER_HTTPS_PORT}"
+      -e "HTTPS_PORT=${installHttpsPort}"
       -e "WEBAUTHN_RP_ID=$(buildLanHttpsWebAuthnRpId "$PICKED_LAN_HOSTNAME")"
-      -e "WEBAUTHN_ALLOWED_ORIGINS=$(buildLanHttpsWebAuthnOrigins "$PICKED_LAN_IP" "$PICKED_LAN_HOSTNAME" "$installHostPort" "$HTTPS_HOST_PORT")"
+      -e "WEBAUTHN_ALLOWED_ORIGINS=$(buildLanHttpsWebAuthnOrigins "$PICKED_LAN_IP" "$PICKED_LAN_HOSTNAME" "$installHttpPort" "$installHttpsPort")"
     )
     [[ -n "$PICKED_LAN_HOSTNAME" ]] && runEnv+=( -e "LAN_HOSTNAME=${PICKED_LAN_HOSTNAME}" )
   else
@@ -1126,7 +1221,7 @@ actionInstall() {
     "$IMAGE" 2>&1); then
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
     echo ""
-    explainContainerStartFailure "$runOutput" "$installHostPort"
+    explainContainerStartFailure "$runOutput" "$installHttpPort"
     return 1
   fi
 
@@ -1172,7 +1267,7 @@ actionUpgrade() {
     printDivider
     echo ""
     if applyLanHttpsChoiceAfterPrompt "$httpHostPort" "$targetContainer"; then
-      applyLanHttpsEnvToArgs "$PICKED_LAN_IP" "$PICKED_LAN_HOSTNAME" "$httpHostPort" "$HTTPS_HOST_PORT"
+      applyLanHttpsEnvToArgs "$PICKED_LAN_IP" "$PICKED_LAN_HOSTNAME" "$httpHostPort" "$SELECTED_HTTPS_PORT"
       lanHttpsJustAdded=true
     else
       ensureWebAuthnEnv
@@ -1194,7 +1289,7 @@ actionUpgrade() {
   [[ -n "$VISIT_URL" ]] && printf "Access URL:    %s\n" "$VISIT_URL"
   if [[ "$lanHttpsJustAdded" == "true" ]]; then
     echo ""
-    printLanAccessUrls "$PICKED_LAN_IP" "$httpHostPort" "$PICKED_LAN_HOSTNAME"
+    printLanAccessUrls "$PICKED_LAN_IP" "$SELECTED_HTTPS_PORT" "$PICKED_LAN_HOSTNAME"
   fi
   echo ""
   echo "Downloaded IPAs and settings are stored in the data volume; upgrade will not erase them."

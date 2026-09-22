@@ -14,10 +14,10 @@ export function resolveApiMessage(data) {
         }
     }
 
-    return data?.message ?? '';
+    return data?.message ?? data?.error ?? '';
 }
 
-/** 解析 API error 详情：优先 errorCode，回退后端中文 error */
+/** 解析 API error 详情：有 errorCode 时优先本地化，否则回退后端 error 原文 */
 export function resolveApiErrorDetail(data) {
     if (data?.errorCode) {
         const key = `apiErrorDetails.${data.errorCode}`;
@@ -42,14 +42,32 @@ export function resolveClientErrorMessage(error) {
             message: error.backendMessage,
             errorCode: error.errorCode,
             error: error.backendError,
-        }, error.status);
+            lanPasskeyHint: error.lanPasskeyHint,
+            lanHttpsUrl: error.lanHttpsUrl,
+        }, error.httpStatus);
     }
 
     return error?.message ?? '';
 }
 
+function resolveWebAuthnOriginNotAllowedLanMessage(data) {
+    if (data?.errorMessageCode !== 'WEBAUTHN_ORIGIN_NOT_ALLOWED' || !data?.lanPasskeyHint) {
+        return null;
+    }
+    const key = 'apiErrorMessages.WEBAUTHN_ORIGIN_NOT_ALLOWED_LAN';
+    if (!hasI18nTranslation(key)) {
+        return null;
+    }
+    return i18n.t(key, { lanHttpsUrl: data.lanHttpsUrl || '' });
+}
+
 /** 组合展示用错误文案 */
 export function buildApiErrorText(data, status) {
+    const lanPasskeyMessage = resolveWebAuthnOriginNotAllowedLanMessage(data);
+    if (lanPasskeyMessage) {
+        return lanPasskeyMessage;
+    }
+
     const message = resolveApiMessage(data);
     const detail = resolveApiErrorDetail(data);
     const messageFromCode = data?.errorMessageCode
@@ -57,7 +75,20 @@ export function buildApiErrorText(data, status) {
     const detailFromCode = data?.errorCode
         && hasI18nTranslation(`apiErrorDetails.${data.errorCode}`);
 
-    // 主文案已本地化时，不拼接未翻译的后端 error 原文（常见于 errorCode === errorMessageCode）
+    // 无 errorMessageCode 且 message/error 相同时，直接展示原文（非 ipatool 映射场景）
+    if (!data?.errorMessageCode && data?.error && data.message === data.error) {
+        return data.error;
+    }
+
+    // 有 errorMessageCode 但无对应 i18n 时，透传后端原文
+    if (data?.errorMessageCode && !messageFromCode) {
+        const raw = data?.error || data?.message;
+        if (raw) {
+            return raw;
+        }
+    }
+
+    // 主文案已本地化且无 detail 本地化时，不拼接重复信息
     if (messageFromCode && detail && !detailFromCode) {
         return message;
     }

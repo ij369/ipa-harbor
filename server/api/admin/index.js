@@ -10,6 +10,12 @@ const statusHandler = require('./status');
 const checkUpdateHandler = require('./checkUpdate');
 const updateSettingsHandler = require('./settings');
 const { authRouter: passkeyAuthRouter, manageRouter: passkeyManageRouter } = require('./passkey');
+const {
+    getLanHttpsHandler,
+    updateLanHttpsHandler,
+    renewLanHttpsHandler,
+    downloadCaCertHandler,
+} = require('./lanHttps');
 const { authenticateToken, optionalAuth } = require('../../middleware/auth');
 const setupRateLimit = require('../../middleware/setupRateLimit');
 
@@ -21,6 +27,10 @@ router.post('/logout', authenticateToken, logoutHandler); // 管理员退出登�
 router.get('/status', optionalAuth, statusHandler);       // 获取登录状态
 router.get('/check-update', optionalAuth, checkUpdateHandler); // 检查 ipa-harbor 新版本
 router.put('/settings', authenticateToken, updateSettingsHandler); // 更新应用设置
+router.get('/lan-https', optionalAuth, getLanHttpsHandler); // 获取 LAN HTTPS 状态
+router.get('/lan-https/ca.crt', authenticateToken, downloadCaCertHandler); // 下载 LAN HTTPS CA 证书
+router.put('/lan-https', authenticateToken, updateLanHttpsHandler); // 更新 LAN HTTPS 配置
+router.post('/lan-https/renew', authenticateToken, renewLanHttpsHandler); // 续期 LAN HTTPS 证书
 router.use('/passkey', passkeyAuthRouter);
 router.use('/passkeys', passkeyManageRouter);
 

@@ -54,27 +54,38 @@ function webauthnNotConfigured(res) {
     });
 }
 
+function getPasskeyErrorHttpStatus(code) {
+    switch (code) {
+        case 'PASSKEY_CHALLENGE_INVALID':
+        case 'PASSKEY_CREDENTIAL_NOT_FOUND':
+        case 'PASSKEY_VERIFICATION_FAILED':
+        case 'PASSKEY_REGISTRATION_FAILED':
+            return 401;
+        case 'PASSKEY_NOT_FOUND':
+        case 'PASSKEY_DELETE_LAST_FORBIDDEN':
+        case 'PASSKEY_ALREADY_REGISTERED':
+        case 'PASSKEY_NICKNAME_TOO_LONG':
+            return 400;
+        case 'WEBAUTHN_ORIGIN_NOT_ALLOWED':
+        case 'WEBAUTHN_ORIGIN_MISSING':
+            return 403;
+        default:
+            return 500;
+    }
+}
+
 function handlePasskeyError(res, error, fallbackCode) {
-    const status = error.code === 'PASSKEY_CHALLENGE_INVALID'
-        || error.code === 'PASSKEY_CREDENTIAL_NOT_FOUND'
-        || error.code === 'PASSKEY_VERIFICATION_FAILED'
-        || error.code === 'PASSKEY_REGISTRATION_FAILED'
-        ? 401
-        : error.code === 'PASSKEY_NOT_FOUND'
-            || error.code === 'PASSKEY_DELETE_LAST_FORBIDDEN'
-            || error.code === 'PASSKEY_ALREADY_REGISTERED'
-            || error.code === 'PASSKEY_NICKNAME_TOO_LONG'
-            ? 400
-            : error.code === 'WEBAUTHN_ORIGIN_NOT_ALLOWED'
-                || error.code === 'WEBAUTHN_ORIGIN_MISSING'
-                ? 403
-                : 500;
+    const status = getPasskeyErrorHttpStatus(error.code);
 
     return sendError(res, status, {
         message: error.message || 'Passkey 操作失败',
         errorMessageCode: error.code || fallbackCode,
         error: error.message,
         errorCode: error.code || fallbackCode,
+        ...(error.lanPasskeyHint ? {
+            lanPasskeyHint: true,
+            lanHttpsUrl: error.lanHttpsUrl,
+        } : {}),
     });
 }
 

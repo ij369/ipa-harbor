@@ -35,7 +35,7 @@ RUN set -ex && \
 FROM node:lts-bookworm-slim
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && apt-get install -y --no-install-recommends curl ca-certificates openssl \
     && rm -rf /var/lib/apt/lists/* \
     && groupadd -g 1001 nodejs \
     && useradd -r -u 1001 -g nodejs -d /app -s /usr/sbin/nologin ij369
@@ -68,7 +68,7 @@ USER ij369
 # 声明数据持久化卷
 VOLUME ["/app/data"]
 
-EXPOSE 3080
+EXPOSE 3080 3443
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:$PORT/health || exit 1

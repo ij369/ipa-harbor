@@ -34,13 +34,29 @@ async function executeIpatool(args, timeoutMs = INFO_TIMEOUT_MS) {
         };
     }
 
+    const rawError = parsed.error || error?.message || stderr?.trim() || '执行命令失败';
+
     throw {
         success: false,
-        error: parsed.error || error?.message || '执行命令失败',
+        error: rawError,
+        knownError: parsed.knownError || null,
         stderr,
         stdout,
         rawOutput: parsed.rawOutput,
     };
+}
+
+/** 附带 errorMessageCode 供前端 i18n；同时保留原文，无翻译时前端透传 */
+function sendIpatoolError(res, statusCode, rawError, knownError = null) {
+    const payload = {
+        message: rawError,
+        error: rawError,
+    };
+    if (knownError) {
+        payload.errorMessageCode = knownError.errorMessageCode;
+        payload.errorCode = knownError.errorCode;
+    }
+    return sendError(res, statusCode, payload);
 }
 
 /**
@@ -129,14 +145,6 @@ async function loginHandler(req, res) {
             );
 
             const combinedOutput = `${execError.stdout || ''}\n${execError.stderr || ''}`;
-            if (combinedOutput.includes('Could not allocate dynamic translator buffer')) {
-                return sendError(res, 500, {
-                    message: '服务器内存不足，无法完成 Apple ID 首次认证。请为宿主机增加内存或配置至少 2GB swap 后重试',
-                    errorMessageCode: 'AUTH_LOGIN_INSUFFICIENT_MEMORY',
-                    error: execError.error || 'ipatool 认证引擎初始化失败',
-                    errorCode: 'AUTH_LOGIN_TRANSLATOR_BUFFER_FAILED',
-                });
-            }
             if (!twoFactor && combinedOutput.includes('2FA code is required')) {
                 return sendError(res, 200, {
                     message: '请求错误 / 请输入二次验证码',
@@ -147,21 +155,8 @@ async function loginHandler(req, res) {
                 });
             }
 
-            if (twoFactor) {
-                return sendError(res, 401, {
-                    message: '登录失败，请检查 Apple ID、密码或二次验证码',
-                    errorMessageCode: 'AUTH_LOGIN_FAILED',
-                    error: execError.error || execError.stderr?.trim() || execError.stdout?.trim() || '认证失败',
-                    errorCode: 'AUTH_LOGIN_TWO_FACTOR_OR_CREDENTIALS_INVALID',
-                });
-            }
-
-            return sendError(res, 500, {
-                message: execError?.error || execError?.stdout || 'APPLE ID 登录过程中发生错误',
-                errorMessageCode: 'AUTH_LOGIN_ERROR',
-                error: execError.error || '执行命令失败',
-                errorCode: 'AUTH_LOGIN_EXEC_FAILED',
-            });
+            const statusCode = twoFactor ? 401 : 500;
+            return sendIpatoolError(res, statusCode, execError.error, execError.knownError);
         }
 
     } catch (error) {

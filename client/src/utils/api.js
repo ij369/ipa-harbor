@@ -7,6 +7,10 @@ import {
     resolveApiMessage,
     resolveClientErrorMessage,
 } from './resolveApiMessage';
+import {
+    getQuickDeployHttpsPort,
+    isQuickDeployHttpPort,
+} from './quickDeployPorts';
 
 export { buildApiErrorText, resolveApiErrorDetail, resolveApiMessage, resolveClientErrorMessage };
 
@@ -19,7 +23,11 @@ function getRequestLang() {
 const API_BASE_URL =
     import.meta.env.MODE === 'production' ?
         window.location.origin : // 生产环境使用当前域名
-        import.meta.env.VITE_API_BASE_URL; // 开发环境使用VITE_API_BASE_URL
+        (import.meta.env.VITE_API_BASE_URL || 'http://localhost:3080'); // 开发环境使用 VITE_API_BASE_URL
+
+export function getApiBaseUrl() {
+    return API_BASE_URL;
+}
 
 /** 是否为 429 限流 */
 export function isRateLimitError(error) {
@@ -114,6 +122,10 @@ export async function apiRequest(endpoint, options = {}) {
             }
             if (data.error) {
                 error.backendError = data.error;
+            }
+            if (data.lanPasskeyHint) {
+                error.lanPasskeyHint = true;
+                error.lanHttpsUrl = data.lanHttpsUrl;
             }
             error.httpStatus = response.status;
 
@@ -498,6 +510,88 @@ export async function deletePasskey(id) {
     return apiRequest(`/v1/admin/passkeys/${encodeURIComponent(id)}`, {
         method: 'DELETE',
     });
+}
+
+/** 当前页面 HTTP 端口 */
+export function resolveBrowserHttpPort() {
+    if (typeof window === 'undefined') {
+        return null;
+    }
+    if (window.location.port) {
+        return Number(window.location.port);
+    }
+    return window.location.protocol === 'https:' ? 443 : 80;
+}
+
+/**
+ * 快速部署下由 HTTP 端口推导 HTTPS 端口；非预设端口对则返回 null
+ */
+export function resolveQuickDeployHttpsPortFromBrowser() {
+    const httpPort = resolveBrowserHttpPort();
+    if (httpPort == null) {
+        return null;
+    }
+    return getQuickDeployHttpsPort(httpPort);
+}
+
+/**
+ * LAN CA 安装页 HTTP 端口：快速部署且 ALLOW_LAN_ACCESS 时用浏览器端口，否则回退服务端 PORT
+ */
+export function resolveLanCaInstallHttpPort({ allowLanAccess, serverHttpPort } = {}) {
+    const browserPort = resolveBrowserHttpPort();
+    if (allowLanAccess && browserPort != null && isQuickDeployHttpPort(browserPort)) {
+        return browserPort;
+    }
+    if (serverHttpPort != null) {
+        return Number(serverHttpPort);
+    }
+    return browserPort;
+}
+
+export async function getLanHttpsStatus() {
+    return apiRequest('/v1/admin/lan-https');
+}
+
+export async function updateLanHttpsConfig(payload) {
+    return apiRequest('/v1/admin/lan-https', {
+        method: 'PUT',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function renewLanHttpsCert(payload = {}) {
+    return apiRequest('/v1/admin/lan-https/renew', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+    });
+}
+
+export async function downloadLanCaCert() {
+    const url = `${API_BASE_URL}/v1/admin/lan-https/ca.crt`;
+    const response = await fetch(url, {
+        credentials: 'include',
+    });
+    if (response.status === 429) {
+        showRateLimitToast();
+        const error = new Error(i18n.t('ui.tooManyRequests'));
+        error.rateLimited = true;
+        throw error;
+    }
+    if (!response.ok) {
+        const data = await parseResponseBody(response);
+        const error = new Error(buildApiErrorText(data, response.status));
+        error.httpStatus = response.status;
+        throw error;
+    }
+    const blob = await response.blob();
+    const objectUrl = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = objectUrl;
+    link.download = 'ipa-harbor-lan-ca.crt';
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
 }
 
 /**
