@@ -77,12 +77,10 @@ function findDetailItem(items, detailParam) {
     }
 }
 
-// 尺寸切换：state 立即更新，仅 CSS 做短过渡；不动画 top/left，避免 Virtuoso 重排发黏
+// 尺寸切换：仅 Item 宽高做过渡；List 的 paddingTop/Bottom 由 Virtuoso 滚动驱动，禁止 transition
 const GRID_SIZE_EASE = '0.12s ease-out';
 const GRID_ITEM_TRANSITION = `width ${GRID_SIZE_EASE}, height ${GRID_SIZE_EASE}`;
-const GRID_LIST_TRANSITION = `gap ${GRID_SIZE_EASE}, padding-top ${GRID_SIZE_EASE}, padding-right ${GRID_SIZE_EASE}, padding-bottom ${GRID_SIZE_EASE}, padding-left ${GRID_SIZE_EASE}`;
 
-// Virtuoso 内联 style 可能带 padding 简写，与 paddingTop 等混用会触发 React 警告
 function stripPaddingShorthand(style) {
     if (!style) {
         return {};
@@ -104,25 +102,21 @@ const DownloadGridMetricsContext = createContext(buildGridLayoutFromIconSize(GRI
 
 const downloadGridComponents = {
     List: forwardRef(function DownloadGridList({ style, children, ...props }, ref) {
-        const { gap, listPadding } = useContext(DownloadGridMetricsContext);
+        const { gap } = useContext(DownloadGridMetricsContext);
         return (
             <div
                 ref={ref}
                 {...props}
                 style={{
-                    ...stripPaddingShorthand(style),
                     display: 'flex',
                     flexWrap: 'wrap',
                     width: '100%',
                     margin: 0,
-                    paddingTop: listPadding,
-                    paddingRight: listPadding,
-                    paddingBottom: listPadding,
-                    paddingLeft: listPadding,
                     gap,
                     overflowX: 'hidden',
                     boxSizing: 'border-box',
-                    transition: GRID_LIST_TRANSITION,
+                    // VirtuosoGrid 用 paddingTop/Bottom 做虚拟滚动占位，必须原样透传且不能 transition
+                    ...style,
                 }}
             >
                 {children}
@@ -543,7 +537,12 @@ export default function DownloadManager() {
                         position: 'relative',
                     }}
                 >
-                    <Box sx={{ position: 'absolute', inset: 0 }}>
+                    <Box sx={{
+                        position: 'absolute',
+                        inset: 0,
+                        p: `${gridLayout.listPadding}px`,
+                        boxSizing: 'border-box',
+                    }}>
                         <DownloadGridMetricsContext.Provider value={gridLayout}>
                             <VirtuosoGrid
                                 style={{ height: '100%', width: '100%' }}
