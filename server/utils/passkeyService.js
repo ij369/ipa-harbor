@@ -57,6 +57,14 @@ function isWebAuthnConfigured() {
     return parseAllowedOrigins().length > 0 && Boolean((process.env.WEBAUTHN_RP_ID || '').trim());
 }
 
+/** 是否应对当前请求暴露 Passkey（含 LAN 主机名限制） */
+function isPasskeyEnabledForRequest(req) {
+    if (!isWebAuthnConfigured()) {
+        return false;
+    }
+    return lanConfig.isPasskeyHostnameAllowed(req);
+}
+
 function attachLanPasskeyHint(err) {
     if (process.env.ALLOW_LAN_ACCESS !== 'true') {
         return;
@@ -102,7 +110,7 @@ function resolveWebAuthnContext(req) {
     if (url.hostname === 'localhost' || url.hostname === '127.0.0.1') {
         rpId = 'localhost';
     } else if (lanHostname && lanHostname !== lanConfig.DEFAULT_HOSTNAME && lanConfig.hostnameMatches(url.hostname, lanHostname)) {
-        rpId = lanConfig.normalizeHostname(url.hostname);
+        rpId = lanConfig.resolveLanWebAuthnRpId(url.hostname, lanHostname);
     } else {
         rpId = (process.env.WEBAUTHN_RP_ID || '').trim();
         if (!rpId) {
@@ -549,6 +557,7 @@ async function deletePasskey(userId, passkeyId) {
 module.exports = {
     CHALLENGE_TTL_MS,
     isWebAuthnConfigured,
+    isPasskeyEnabledForRequest,
     warmupAaguidRegistry,
     runChallengeCleanupOnStartup,
     startChallengeCleanupCron,

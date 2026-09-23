@@ -5,7 +5,8 @@ import {
 import i18n from '../i18n';
 import { resolveClientErrorMessage } from './resolveApiMessage';
 
-// 默认开启；设置 VITE_PASSKEY_CONDITIONAL_UI=false 可关闭
+// Conditional UI 为纯前端行为（mediation: conditional），后端无对应开关。
+// 默认开启；构建时设置 VITE_PASSKEY_CONDITIONAL_UI=false 可关闭。
 const conditionalUiEnabled = import.meta.env.VITE_PASSKEY_CONDITIONAL_UI !== 'false';
 
 export function isPasskeySupported() {
@@ -69,12 +70,29 @@ const passkeyNonRetryableCodes = new Set([
     'WEBAUTHN_ORIGIN_NOT_CONFIGURED',
     'WEBAUTHN_ORIGIN_NOT_ALLOWED',
     'WEBAUTHN_ORIGIN_MISSING',
+    'PASSKEY_OPTIONS_RATE_LIMITED',
 ]);
 
-/** 服务端未配置或 Origin 不匹配等错误，不应触发 Conditional UI 重试 */
+/** 浏览器 WebAuthn 错误：Conditional UI 自动重试无意义 */
+const passkeyNonRetryableErrorNames = new Set([
+    'SecurityError',
+    'InvalidStateError',
+    'NotSupportedError',
+]);
+
+/** 服务端未配置、Origin 不匹配、限流或浏览器 WebAuthn 错误，不应触发 Conditional UI 重试 */
 export function isPasskeyNonRetryableError(error) {
+    if (!error) {
+        return false;
+    }
+    if (error.rateLimited === true) {
+        return true;
+    }
     const code = error?.errorMessageCode || error?.errorCode;
-    return passkeyNonRetryableCodes.has(code);
+    if (passkeyNonRetryableCodes.has(code)) {
+        return true;
+    }
+    return passkeyNonRetryableErrorNames.has(error.name);
 }
 
 export async function performPasskeyLogin(optionsPayload) {
@@ -99,6 +117,10 @@ export async function supportsPasskeyConditionalUi() {
     }
 }
 
+/**
+ * 发起 Conditional Get（autofill）。
+ * AbortError / NotAllowedError 视为正常结束，返回 null，由调用方决定是否 re-arm。
+ */
 export async function startConditionalPasskeyLogin(optionsPayload, abortSignal) {
     if (!isPasskeyConditionalUiEnabled()) {
         return null;

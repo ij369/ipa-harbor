@@ -132,7 +132,53 @@ function hostnameMatches(actual, expected) {
     if (!expected) {
         return false;
     }
-    return normalizeHostname(actual) === normalizeHostname(expected);
+    const normalize = (hostname) => normalizeHostname(hostname).replace(/\.local$/, '');
+    return normalize(actual) === normalize(expected);
+}
+
+/**
+ * ALLOW_LAN_ACCESS 下，仅 localhost / 127.0.0.1 / LAN_HOSTNAME 允许暴露 Passkey UI。
+ * 请求 hostname 与 LAN_HOSTNAME 均 trim、小写、去 `.local` 后比对。
+ */
+function isPasskeyHostnameAllowed(req) {
+    if (!isAllowLanAccessEnabled()) {
+        return true;
+    }
+
+    const normalize = (hostname) => normalizeHostname(hostname).replace(/\.local$/, '');
+
+    let hostname = null;
+    const origin = req.get('Origin') || req.get('origin');
+    if (origin) {
+        try {
+            hostname = new URL(origin).hostname;
+        } catch {
+            // 继续尝试 Host
+        }
+    }
+    if (!hostname) {
+        const hostHeader = (req.get('Host') || req.get('host') || '').trim();
+        if (!hostHeader) {
+            return false;
+        }
+        if (hostHeader.startsWith('[')) {
+            const closing = hostHeader.indexOf(']');
+            hostname = closing > 0 ? hostHeader.slice(1, closing) : hostHeader;
+        } else {
+            const lastColon = hostHeader.lastIndexOf(':');
+            hostname = lastColon > -1 && /^\d+$/.test(hostHeader.slice(lastColon + 1))
+                ? hostHeader.slice(0, lastColon)
+                : hostHeader;
+        }
+    }
+
+    const normalized = normalize(hostname);
+    if (normalized === 'localhost' || normalized === '127.0.0.1') {
+        return true;
+    }
+
+    const { lanHostname } = getLanConfig();
+    return normalized === normalize(lanHostname);
 }
 
 function defaultPortForProtocol(protocol) {
@@ -164,6 +210,15 @@ function buildLanHttpsWebAuthnRpId(lanHostname) {
         return hostname.replace(/\.local$/i, '');
     }
     return 'localhost';
+}
+
+/** LAN 请求 rpId：env 存无 .local；浏览器 mDNS 访问带 .local 时须与 origin 一致 */
+function resolveLanWebAuthnRpId(requestHostname, lanHostname) {
+    const host = normalizeHostname(requestHostname);
+    if (isAllowLanAccessEnabled() && host.endsWith('.local') && hostnameMatches(requestHostname, lanHostname)) {
+        return host;
+    }
+    return host.replace(/\.local$/, '');
 }
 
 function formatLanUrl(protocol, host, port) {
@@ -233,10 +288,12 @@ module.exports = {
     isValidPort,
     warnIfLanIpMissing,
     normalizeHostname,
+    isPasskeyHostnameAllowed,
     hostnameMatches,
     originsMatch,
     isOriginAllowed,
     buildLanHttpsWebAuthnRpId,
+    resolveLanWebAuthnRpId,
     formatLanUrl,
     buildLanHttpsWebAuthnOrigins,
     applyLanHttpsWebAuthnEnv,

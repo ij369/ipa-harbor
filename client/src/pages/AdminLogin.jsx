@@ -24,6 +24,7 @@ import {
     isPasskeyUserCancelled,
     resolvePasskeyClientError,
     startConditionalPasskeyLogin,
+    supportsPasskeyConditionalUi,
 } from '../utils/passkey';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from '../components/LanguageSwitcher';
@@ -45,43 +46,17 @@ const AdminLogin = () => {
     const [loginLoading, setLoginLoading] = useState(false);
     const [passkeyLoading, setPasskeyLoading] = useState(false);
     const [loginError, setLoginError] = useState('');
-    const [conditionalRestartKey, setConditionalRestartKey] = useState(0);
     const [bgImage, setBgImage] = useState(null);
     const [loaded, setLoaded] = useState(false);
 
     const passkeyAvailable = statusLoaded && passkeyEnabled && isPasskeySupported();
     const conditionalUiActive = passkeyAvailable && isPasskeyConditionalUiEnabled();
 
-    const handleConditionalCredential = useCallback(async ({ challengeId, credential }) => {
-        setPasskeyLoading(true);
-        setLoginError('');
-        try {
-            await completePasskeyLogin(challengeId, credential);
-            setFormData({ username: '', password: '' });
-        } catch (err) {
-            const message = resolvePasskeyClientError(err);
-            if (message) {
-                setLoginError(message);
-            }
-        } finally {
-            setPasskeyLoading(false);
-            setConditionalRestartKey((key) => key + 1);
-        }
-    }, [completePasskeyLogin]);
-
-    const handleConditionalError = useCallback((err) => {
-        if (isPasskeyUserCancelled(err) || isPasskeyNonRetryableError(err)) {
-            return;
-        }
-        const message = resolvePasskeyClientError(err);
-        if (message) {
-            setLoginError(message);
-        }
-        setConditionalRestartKey((key) => key + 1);
-    }, []);
-
     const conditionalAbortRef = useRef(null);
     const conditionalActiveRef = useRef(false);
+    const conditionalPermanentlyDisabledRef = useRef(false);
+    const completePasskeyLoginRef = useRef(completePasskeyLogin);
+    completePasskeyLoginRef.current = completePasskeyLogin;
 
     const abortConditional = useCallback(() => {
         conditionalAbortRef.current?.abort();
@@ -89,60 +64,115 @@ const AdminLogin = () => {
         conditionalActiveRef.current = false;
     }, []);
 
-    useEffect(() => {
-        if (!conditionalUiActive || isLoggedIn || loading) {
-            return undefined;
+    const disableConditionalUi = useCallback((err) => {
+        conditionalPermanentlyDisabledRef.current = true;
+        abortConditional();
+        const message = resolvePasskeyClientError(err);
+        if (message) {
+            setLoginError(message);
+        }
+    }, [abortConditional]);
+
+    /**
+     * Conditional UI 单次挂载（Google/Yubico 推荐）：
+     * 1. 用户名输入框已渲染且带 autocomplete="username webauthn"
+     * 2. 拉取 options 后发起 mediation: conditional，保持长连接直至用户选择或 abort
+     * 3. 不在错误/取消后自动循环重试 options；仅按钮 Modal 被用户取消时 re-arm
+     */
+    const armConditionalAutofill = useCallback(async () => {
+        if (conditionalPermanentlyDisabledRef.current || !conditionalUiActive) {
+            return;
         }
 
-        let cancelled = false;
+        abortConditional();
+
         const abortController = new AbortController();
         conditionalAbortRef.current = abortController;
         conditionalActiveRef.current = true;
 
-        (async () => {
-            try {
-                const optionsResponse = await passkeyLoginOptions();
-                if (cancelled || !conditionalActiveRef.current) {
-                    return;
-                }
-
-                const { challengeId, options } = optionsResponse.data;
-                const credential = await startConditionalPasskeyLogin(
-                    options,
-                    abortController.signal,
-                );
-
-                if (cancelled || !credential) {
-                    return;
-                }
-
+        try {
+            const conditionalSupported = await supportsPasskeyConditionalUi();
+            if (abortController.signal.aborted) {
+                return;
+            }
+            if (!conditionalSupported) {
                 conditionalActiveRef.current = false;
                 conditionalAbortRef.current = null;
-                await handleConditionalCredential({ challengeId, credential });
+                return;
+            }
+
+            const optionsResponse = await passkeyLoginOptions();
+            if (abortController.signal.aborted) {
+                return;
+            }
+
+            const { challengeId, options } = optionsResponse.data;
+            const credential = await startConditionalPasskeyLogin(
+                options,
+                abortController.signal,
+            );
+
+            if (abortController.signal.aborted) {
+                return;
+            }
+
+            conditionalActiveRef.current = false;
+            conditionalAbortRef.current = null;
+
+            if (!credential) {
+                return;
+            }
+
+            setPasskeyLoading(true);
+            setLoginError('');
+            try {
+                await completePasskeyLoginRef.current(challengeId, credential);
+                setFormData({ username: '', password: '' });
             } catch (err) {
-                if (cancelled || isPasskeyUserCancelled(err)) {
-                    return;
+                const message = resolvePasskeyClientError(err);
+                if (message) {
+                    setLoginError(message);
                 }
                 if (isPasskeyNonRetryableError(err)) {
-                    return;
+                    disableConditionalUi(err);
                 }
-                handleConditionalError(err);
+            } finally {
+                setPasskeyLoading(false);
             }
-        })();
+        } catch (err) {
+            conditionalActiveRef.current = false;
+            conditionalAbortRef.current = null;
+
+            if (abortController.signal.aborted || isPasskeyUserCancelled(err)) {
+                return;
+            }
+            if (isPasskeyNonRetryableError(err)) {
+                disableConditionalUi(err);
+                return;
+            }
+            const message = resolvePasskeyClientError(err);
+            if (message) {
+                setLoginError(message);
+            }
+        }
+    }, [conditionalUiActive, abortConditional, disableConditionalUi]);
+
+    useEffect(() => {
+        if (
+            !conditionalUiActive
+            || isLoggedIn
+            || !statusLoaded
+            || conditionalPermanentlyDisabledRef.current
+        ) {
+            return undefined;
+        }
+
+        armConditionalAutofill();
 
         return () => {
-            cancelled = true;
             abortConditional();
         };
-    }, [
-        conditionalUiActive,
-        isLoggedIn,
-        loading,
-        conditionalRestartKey,
-        handleConditionalCredential,
-        handleConditionalError,
-        abortConditional,
-    ]);
+    }, [conditionalUiActive, isLoggedIn, statusLoaded, armConditionalAutofill, abortConditional]);
 
     useEffect(() => {
         if (isLoggedIn && user) {
@@ -200,17 +230,25 @@ const AdminLogin = () => {
         abortConditional();
         setPasskeyLoading(true);
         setLoginError('');
+        let passkeyErr = null;
         try {
             await passkeyLogin();
             setFormData({ username: '', password: '' });
         } catch (err) {
+            passkeyErr = err;
             const message = resolvePasskeyClientError(err);
             if (message) {
                 setLoginError(message);
             }
         } finally {
             setPasskeyLoading(false);
-            setConditionalRestartKey((key) => key + 1);
+            if (
+                passkeyErr
+                && isPasskeyUserCancelled(passkeyErr)
+                && !conditionalPermanentlyDisabledRef.current
+            ) {
+                armConditionalAutofill();
+            }
         }
     };
 
