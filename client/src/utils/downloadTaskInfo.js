@@ -60,6 +60,34 @@ export function getLatestTaskInfo(taskList, fileList, appTrackId, storeLatestVer
         };
     }
 
+    if (fromSummary && fromSummary.status === 'completed') {
+        const completedTask = (taskList?.completed || []).find((item) => (
+            String(item.appId) === appId
+            && (item.versionId === 'latest' || item.id === fromSummary.taskId)
+        ));
+        const fileFromList = getLocalFileForVersion(fileList, appTrackId, 'latest', storeLatestVersionId)
+            ?? (storeLatestVersionId
+                ? getLocalFileForVersion(fileList, appTrackId, storeLatestVersionId, storeLatestVersionId)
+                : null);
+
+        return {
+            status: 'completed',
+            taskId: fromSummary.taskId ?? completedTask?.id ?? null,
+            percentage: 100,
+            fileName: completedTask?.fileName ?? fileFromList?.name,
+        };
+    }
+
+    const latestPlaceholderFile = getLocalFileForVersion(fileList, appTrackId, 'latest', storeLatestVersionId);
+    if (latestPlaceholderFile) {
+        return {
+            status: 'completed',
+            taskId: null,
+            percentage: 100,
+            fileName: latestPlaceholderFile.name,
+        };
+    }
+
     if (!storeLatestVersionId) {
         return null;
     }

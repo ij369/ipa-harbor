@@ -164,6 +164,7 @@ function Settings() {
         getFormattedExpiresAt,
         isExpiringSoon,
         appVersion: harborAppVersion,
+        ipatoolVersion: harborIpatoolVersion,
     } = useAdmin();
     const [language, setLanguage] = useState(normalizeLanguageCode(i18n.language));
     const [logoutLoading, setLogoutLoading] = useState(false);
@@ -171,6 +172,7 @@ function Settings() {
     const [adminAccountExpanded, setAdminAccountExpanded] = useState(false);
     const [appleIdExpanded, setAppleIdExpanded] = useState(false);
     const [appVersion, setAppVersion] = useState('');
+    const [versionDetailExpanded, setVersionDetailExpanded] = useState(false);
     const [checkingUpdate, setCheckingUpdate] = useState(false);
     const [otaInstallEnabled, setOtaInstallEnabled] = useOtaInstallPreference();
     const [loadAppScreenshotsEnabled, setLoadAppScreenshotsEnabled] = useLoadAppScreenshotsPreference();
@@ -757,8 +759,36 @@ function Settings() {
                                             <Typography level="body-sm" sx={{ fontWeight: 'md' }}>
                                                 IPA Harbor
                                             </Typography>
-                                            <Typography level="body-xs" sx={{ color: 'text.tertiary' }}>
-                                                {t('ui.currentVersion')}：{appVersion ? `v${appVersion}` : '—'}
+                                            <Typography
+                                                level="body-xs"
+                                                role="button"
+                                                tabIndex={0}
+                                                sx={{
+                                                    color: 'text.tertiary',
+                                                    cursor: 'pointer',
+                                                    userSelect: 'none',
+                                                }}
+                                                onClick={() => setVersionDetailExpanded((expanded) => !expanded)}
+                                                onKeyDown={(event) => {
+                                                    if (event.key === 'Enter' || event.key === ' ') {
+                                                        event.preventDefault();
+                                                        setVersionDetailExpanded((expanded) => !expanded);
+                                                    }
+                                                }}
+                                            >
+                                                {t('ui.currentVersion')}：
+                                                {appVersion ? `v${appVersion}` : '—'}
+                                                {versionDetailExpanded ? (
+                                                    <Box
+                                                        component="span"
+                                                        sx={{
+                                                            color: 'neutral.400',
+                                                        }}
+                                                    >
+                                                        {' '}
+                                                        (ipatool: {harborIpatoolVersion || '—'})
+                                                    </Box>
+                                                ) : null}
                                             </Typography>
                                         </Stack>
 

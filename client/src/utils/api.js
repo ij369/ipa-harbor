@@ -220,6 +220,43 @@ export async function getAppDetails(ids) {
     });
 }
 
+/** iTunes Lookup 单次请求建议的应用 ID 数量上限 */
+export const APP_DETAILS_LOOKUP_BATCH_SIZE = 50;
+
+/**
+ * 分批获取应用详情（用于下载管理搜索页批量对比商店版本）
+ * @param {Array<number>} ids - 应用 ID 数组
+ */
+export async function getAppDetailsBatched(ids) {
+    const uniqueIds = [...new Set(
+        (ids ?? [])
+            .map((id) => Number(id))
+            .filter((id) => Number.isFinite(id) && id > 0),
+    )];
+
+    if (uniqueIds.length === 0) {
+        return { success: true, data: [] };
+    }
+
+    const merged = [];
+    for (let i = 0; i < uniqueIds.length; i += APP_DETAILS_LOOKUP_BATCH_SIZE) {
+        const batch = uniqueIds.slice(i, i + APP_DETAILS_LOOKUP_BATCH_SIZE);
+        try {
+            const response = await getAppDetails(batch);
+            if (response?.success && Array.isArray(response.data)) {
+                merged.push(...response.data);
+            }
+        } catch {
+            // 单批失败时继续下一批
+        }
+    }
+
+    return {
+        success: true,
+        data: merged,
+    };
+}
+
 /**
  * 获取应用图标URL
  * @param {number} id - 应用ID

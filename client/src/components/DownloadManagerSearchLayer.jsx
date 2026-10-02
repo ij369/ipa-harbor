@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-    Box, Chip, IconButton, Input, Modal, Stack, Typography,
+    Box, Button, Chip, CircularProgress, IconButton, Input, Modal, Stack, Typography,
 } from '@mui/joy';
-import { ArrowBack, Close, Search } from '@mui/icons-material';
+import { ArrowBack, AutoMode, Close, Search } from '@mui/icons-material';
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 import { GroupedVirtuoso } from 'react-virtuoso';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +22,16 @@ import {
     searchAppGroups,
 } from '../utils/localeSearch/downloadAppGroups';
 import formatFileSize from '../utils/formatFileSize.js';
+import {
+    deleteTask,
+    downloadApp,
+    getAppDetailsBatched,
+    isRateLimitError,
+    resolveClientErrorMessage,
+} from '../utils/api';
+import { AppDetailLatestDownloadControls } from './AppDetailDownloadControls';
 import { useFullscreenDialog } from '../hooks/useJoyMedia';
+import Swal from 'sweetalert2';
 
 const EASE_IN = [0.4, 0, 1, 1];
 
@@ -31,20 +40,127 @@ function extractSidecarFileBase(name) {
     return /^\d+_\d+$/.test(base) ? base : undefined;
 }
 
-function AppSearchResultRow({ appGroup, country, onSelect }) {
+/** 从下载条目提取 App Store trackId，去重 */
+function extractNumericAppIds(items) {
+    const ids = new Set();
+
+    for (const item of items ?? []) {
+        for (const candidate of [item.id, item.itemId]) {
+            const numeric = Number(candidate);
+            if (Number.isFinite(numeric) && numeric > 0) {
+                ids.add(numeric);
+            }
+        }
+
+        const match = item.name?.match(/^(\d+)_/);
+        if (match) {
+            const numeric = Number(match[1]);
+            if (Number.isFinite(numeric) && numeric > 0) {
+                ids.add(numeric);
+            }
+        }
+    }
+
+    return [...ids];
+}
+
+function normalizeVersionString(value) {
+    return String(value ?? '').trim();
+}
+
+function versionStringsMatch(localVersion, storeVersion) {
+    const local = normalizeVersionString(localVersion);
+    const store = normalizeVersionString(storeVersion);
+    if (!local || !store) {
+        return false;
+    }
+    return local === store;
+}
+
+function getVersionLabel(item) {
+    if (item.bundleShortVersionString) {
+        return item.bundleShortVersionString;
+    }
+    if (item.bundleVersion) {
+        return String(item.bundleVersion);
+    }
+    const match = item.name?.match(/^\d+_(.+)\.ipa$/i);
+    if (match?.[1]) {
+        return match[1];
+    }
+    return item.name?.replace(/\.ipa$/i, '') || '—';
+}
+
+function getItemVersionForCompare(item) {
+    if (item.bundleShortVersionString) {
+        return item.bundleShortVersionString;
+    }
+    return getVersionLabel(item);
+}
+
+function getStoreVersionForApp(storeVersionByAppId, appId) {
+    if (appId == null || !storeVersionByAppId) {
+        return null;
+    }
+    return storeVersionByAppId.get(String(appId)) ?? null;
+}
+
+function hasLocalStoreVersion(localItems, storeVersion) {
+    if (!storeVersion) {
+        return false;
+    }
+    return localItems.some((item) => versionStringsMatch(getItemVersionForCompare(item), storeVersion));
+}
+
+function resolveAppGroupBundleId(appGroup) {
+    for (const item of appGroup?.versions ?? []) {
+        if (item.bundleId) {
+            return item.bundleId;
+        }
+        if (item.softwareVersionBundleId) {
+            return item.softwareVersionBundleId;
+        }
+    }
+    return null;
+}
+
+/** 从本地条目推断最大 versionId，供 getLatestTaskInfo 匹配已下载文件 */
+function resolveStoreLatestVersionId(appGroup) {
+    let maxId = null;
+    for (const item of appGroup?.versions ?? []) {
+        const raw = item.softwareVersionExternalIdentifier ?? item.versionId;
+        const numeric = Number(raw);
+        if (!Number.isFinite(numeric)) {
+            continue;
+        }
+        if (maxId === null || numeric > maxId) {
+            maxId = numeric;
+        }
+    }
+    return maxId != null ? String(maxId) : null;
+}
+
+function getStoreVersionTextSx(isLatest) {
+    return {
+        color: isLatest ? 'success.plainColor' : 'warning.plainColor',
+    };
+}
+
+function AppSearchResultRow({
+    appGroup,
+    country,
+    onSelect,
+    storeVersionByAppId,
+    showStoreVersion,
+    storeVersionLoading,
+}) {
     const { t } = useTranslation();
+    const storeVersion = getStoreVersionForApp(storeVersionByAppId, appGroup.appId);
+    const isLatest = hasLocalStoreVersion(appGroup.versions, storeVersion);
     const newest = appGroup.versions[0];
     const sidecarFileBase = extractSidecarFileBase(newest?.name);
     const versionCount = appGroup.versions.length;
-    const sublineParts = [appGroup.artistName];
-
-    if (versionCount === 1 && newest?.bundleShortVersionString) {
-        sublineParts.push(newest.bundleShortVersionString);
-    } else if (versionCount > 1) {
-        sublineParts.push(t('ui.downloadManagerSearchVersionCount', { count: versionCount }));
-    }
-
-    const subline = sublineParts.filter(Boolean).join(' · ');
+    const artistSubline = appGroup.artistName ?? '';
 
     return (
         <Box
@@ -82,9 +198,29 @@ function AppSearchResultRow({ appGroup, country, onSelect }) {
                 <Typography level="title-sm" sx={{ wordBreak: 'break-word' }}>
                     {appGroup.displayName}
                 </Typography>
-                {subline ? (
+                {showStoreVersion ? (
+                    storeVersionLoading && !storeVersion ? (
+                        <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.25 }}>
+                            …
+                        </Typography>
+                    ) : storeVersion ? (
+                        <Typography
+                            level="body-xs"
+                            sx={{ mt: 0.25, ...getStoreVersionTextSx(isLatest) }}
+                            title={isLatest
+                                ? t('ui.downloadManagerSearchStoreVersionLatest')
+                                : t('ui.downloadManagerSearchStoreVersionNewer')}
+                        >
+                            {storeVersion}
+                        </Typography>
+                    ) : (
+                        <Typography level="body-xs" sx={{ color: 'text.tertiary', mt: 0.25 }}>
+                            {t('ui.downloadManagerSearchStoreVersionUnknown')}
+                        </Typography>
+                    )
+                ) : artistSubline ? (
                     <Typography level="body-xs" sx={{ color: 'text.secondary', mt: 0.25 }}>
-                        {subline}
+                        {artistSubline}
                     </Typography>
                 ) : null}
             </Box>
@@ -97,23 +233,10 @@ function AppSearchResultRow({ appGroup, country, onSelect }) {
     );
 }
 
-function getVersionLabel(item) {
-    if (item.bundleShortVersionString) {
-        return item.bundleShortVersionString;
-    }
-    if (item.bundleVersion) {
-        return String(item.bundleVersion);
-    }
-    const match = item.name?.match(/^\d+_(.+)\.ipa$/i);
-    if (match?.[1]) {
-        return match[1];
-    }
-    return item.name?.replace(/\.ipa$/i, '') || '—';
-}
-
-function VersionSelectRow({ item, onSelect }) {
+function VersionSelectRow({ item, onSelect, storeVersion, showStoreVersion }) {
     const { t } = useTranslation();
     const versionLabel = getVersionLabel(item);
+    const isLatest = versionStringsMatch(getItemVersionForCompare(item), storeVersion);
     const metaParts = [
         item.size ? formatFileSize(item.size) : null,
         item.createdAt ? new Date(item.createdAt).toLocaleDateString() : null,
@@ -148,8 +271,15 @@ function VersionSelectRow({ item, onSelect }) {
             }}
         >
             <Box sx={{ minWidth: 0, flex: 1 }}>
-                <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap>
-                    <Typography level="title-sm">{versionLabel}</Typography>
+                <Stack direction="row" spacing={0.75} alignItems="center" useFlexGap flexWrap="wrap">
+                    <Typography
+                        level="title-sm"
+                        sx={showStoreVersion && storeVersion
+                            ? getStoreVersionTextSx(isLatest)
+                            : undefined}
+                    >
+                        {versionLabel}
+                    </Typography>
                     {item.bundleShortVersionString && item.bundleVersion ? (
                         <Chip size="sm" variant="plain" color="neutral">
                             ({item.bundleVersion})
@@ -175,8 +305,17 @@ function VersionPickerPanel({
     onBack,
     onSelect,
     prefersReducedMotion,
+    storeVersionByAppId,
+    showStoreVersion,
+    downloadingLatest,
+    onDownload,
+    onDeleteTask,
 }) {
     const { t } = useTranslation();
+    const storeVersion = getStoreVersionForApp(storeVersionByAppId, appGroup.appId);
+    const bundleId = resolveAppGroupBundleId(appGroup);
+    const preferRedownload = hasLocalStoreVersion(appGroup.versions, storeVersion);
+    const storeLatestVersionId = resolveStoreLatestVersionId(appGroup);
 
     return (
         <Box
@@ -229,12 +368,28 @@ function VersionPickerPanel({
                 >
                     {appGroup.displayName}
                 </Typography>
+                {showStoreVersion && appGroup.appId && bundleId ? (
+                    <Box sx={{ flexShrink: 0, maxWidth: '46%', minWidth: 0 }}>
+                        <AppDetailLatestDownloadControls
+                            compact
+                            preferRedownload={preferRedownload}
+                            app={{ trackId: appGroup.appId, bundleId }}
+                            storeLatestVersionId={storeLatestVersionId}
+                            downloadingLatest={downloadingLatest}
+                            showOtaInstall={false}
+                            onDownload={(versionId, id) => onDownload(appGroup, versionId, id)}
+                            onDeleteTask={onDeleteTask}
+                        />
+                    </Box>
+                ) : null}
             </Stack>
             <Box sx={{ flex: 1, minHeight: 0, overflow: 'auto', overscrollBehavior: 'contain' }}>
                 {appGroup.versions.map((item) => (
                     <VersionSelectRow
                         key={item.name}
                         item={item}
+                        storeVersion={storeVersion}
+                        showStoreVersion={showStoreVersion}
                         onSelect={onSelect}
                     />
                 ))}
@@ -282,6 +437,18 @@ export default function DownloadManagerSearchLayer({
     const [query, setQuery] = useState('');
     const [selectedAppGroup, setSelectedAppGroup] = useState(null);
     const [searchInputFocused, setSearchInputFocused] = useState(false);
+    const [showStoreVersion, setShowStoreVersion] = useState(false);
+    const [storeVersionByAppId, setStoreVersionByAppId] = useState(() => new Map());
+    const [storeVersionCheckLoading, setStoreVersionCheckLoading] = useState(false);
+    const [downloadingLatestKeys, setDownloadingLatestKeys] = useState(() => new Set());
+    const storeVersionFetchSeqRef = useRef(0);
+    const lastFetchedAppIdsKeyRef = useRef('');
+
+    const appIds = useMemo(() => extractNumericAppIds(items), [items]);
+    const appIdsKey = useMemo(
+        () => [...appIds].sort((a, b) => a - b).join(','),
+        [appIds],
+    );
 
     useEffect(() => {
         if (!open || !window.visualViewport) {
@@ -341,6 +508,12 @@ export default function DownloadManagerSearchLayer({
             setQuery('');
             setSelectedAppGroup(null);
             setSearchInputFocused(false);
+            setShowStoreVersion(false);
+            setStoreVersionByAppId(new Map());
+            setStoreVersionCheckLoading(false);
+            setDownloadingLatestKeys(new Set());
+            lastFetchedAppIdsKeyRef.current = '';
+            storeVersionFetchSeqRef.current += 1;
             return undefined;
         }
 
@@ -373,12 +546,107 @@ export default function DownloadManagerSearchLayer({
     }, [onClose, onSelectItem]);
 
     const handleAppClick = useCallback((appGroup) => {
+        if (showStoreVersion) {
+            setSelectedAppGroup(appGroup);
+            return;
+        }
         if (appGroup.versions.length === 1) {
             handleOpenItem(appGroup.versions[0]);
             return;
         }
         setSelectedAppGroup(appGroup);
-    }, [handleOpenItem]);
+    }, [handleOpenItem, showStoreVersion]);
+
+    const handleDownload = useCallback(async (appGroup, versionId, bundleId) => {
+        const appId = appGroup?.appId;
+        if (!appId || !bundleId) {
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.retryFailed'),
+                text: t('ui.cannotGetAppId'),
+                confirmButtonText: t('ui.confirm'),
+            });
+            return;
+        }
+
+        const downloadKey = `${appId}:${versionId}`;
+        setDownloadingLatestKeys((prev) => new Set(prev).add(downloadKey));
+        try {
+            const response = await downloadApp(appId, versionId, bundleId);
+            if (response.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: t('ui.taskCreated'),
+                    text: `${t('ui.taskId')}: ${response.taskId}`,
+                    position: 'top',
+                    toast: true,
+                    timer: 1500,
+                    showConfirmButton: false,
+                });
+            }
+        } catch (error) {
+            if (isRateLimitError(error)) {
+                return;
+            }
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.failedToDownload'),
+                text: resolveClientErrorMessage(error, t('ui.downloadFailed')),
+                confirmButtonText: t('ui.confirm'),
+            });
+        } finally {
+            setDownloadingLatestKeys((prev) => {
+                const next = new Set(prev);
+                next.delete(downloadKey);
+                return next;
+            });
+        }
+    }, [t]);
+
+    const handleDeleteTask = useCallback(async (taskId, fileName) => {
+        const result = await Swal.fire({
+            title: t('ui.confirmDelete'),
+            text: t('ui.confirmDeleteTask'),
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonText: t('ui.delete'),
+            cancelButtonText: t('ui.cancel'),
+            confirmButtonColor: '#d33',
+        });
+
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        try {
+            const response = taskId
+                ? await deleteTask(taskId)
+                : await deleteTask(null, fileName);
+            if (response.success) {
+                Swal.fire({
+                    icon: 'success',
+                    title: t('ui.taskDeleted'),
+                    timer: 1500,
+                    showConfirmButton: false,
+                });
+            }
+        } catch (error) {
+            Swal.fire({
+                icon: 'error',
+                title: t('ui.deleteFailed'),
+                text: resolveClientErrorMessage(error, t('ui.deleteFailed')),
+                confirmButtonText: t('ui.confirm'),
+            });
+        }
+    }, [t]);
+
+    const versionPanelDownloadingLatest = useMemo(() => {
+        if (!selectedAppGroup?.appId) {
+            return false;
+        }
+        const key = `${selectedAppGroup.appId}:latest`;
+        return downloadingLatestKeys.has(key);
+    }, [downloadingLatestKeys, selectedAppGroup?.appId]);
 
     const handleJumpToLetter = useCallback((letter) => {
         const groupIndex = letterToGroupIndex.get(letter);
@@ -392,6 +660,82 @@ export default function DownloadManagerSearchLayer({
             behavior: 'auto',
         });
     }, [letterToGroupIndex]);
+
+    const fetchStoreVersions = useCallback(async (ids, idsKey) => {
+        if (ids.length === 0) {
+            return false;
+        }
+
+        const seq = storeVersionFetchSeqRef.current + 1;
+        storeVersionFetchSeqRef.current = seq;
+        setStoreVersionCheckLoading(true);
+
+        try {
+            const response = await getAppDetailsBatched(ids);
+            if (storeVersionFetchSeqRef.current !== seq) {
+                return false;
+            }
+
+            if (!response.success || !Array.isArray(response.data) || response.data.length === 0) {
+                throw new Error(t('ui.downloadManagerSearchStoreVersionCheckFailed'));
+            }
+
+            const nextMap = new Map();
+            for (const app of response.data) {
+                if (app.trackId != null && app.version) {
+                    nextMap.set(String(app.trackId), String(app.version));
+                }
+            }
+            setStoreVersionByAppId(nextMap);
+            lastFetchedAppIdsKeyRef.current = idsKey;
+            return true;
+        } catch (error) {
+            if (storeVersionFetchSeqRef.current === seq) {
+                Swal.fire({
+                    icon: 'error',
+                    title: resolveClientErrorMessage(error, t('ui.downloadManagerSearchStoreVersionCheckFailed')),
+                    confirmButtonText: t('ui.confirm'),
+                });
+            }
+            return false;
+        } finally {
+            if (storeVersionFetchSeqRef.current === seq) {
+                setStoreVersionCheckLoading(false);
+            }
+        }
+    }, [t]);
+
+    useEffect(() => {
+        if (!open || !showStoreVersion || appIds.length === 0) {
+            return;
+        }
+        if (lastFetchedAppIdsKeyRef.current === appIdsKey) {
+            return;
+        }
+        void fetchStoreVersions(appIds, appIdsKey);
+    }, [open, showStoreVersion, appIds, appIdsKey, fetchStoreVersions]);
+
+    const handleToggleStoreVersion = useCallback(() => {
+        if (storeVersionCheckLoading) {
+            return;
+        }
+
+        if (showStoreVersion) {
+            setShowStoreVersion(false);
+            return;
+        }
+
+        if (appIds.length === 0) {
+            Swal.fire({
+                icon: 'info',
+                text: t('ui.downloadManagerSearchNoAppIds'),
+                confirmButtonText: t('ui.confirm'),
+            });
+            return;
+        }
+
+        setShowStoreVersion(true);
+    }, [appIds.length, showStoreVersion, storeVersionCheckLoading, t]);
 
     return (
         <Modal
@@ -478,6 +822,57 @@ export default function DownloadManagerSearchLayer({
                         sx={{ flex: 1, '--Input-focusedThickness': '1px' }}
                     />
                     <IconButton
+                        variant={showStoreVersion ? 'soft' : 'plain'}
+                        color={showStoreVersion ? 'primary' : 'neutral'}
+                        aria-label={showStoreVersion
+                            ? t('ui.downloadManagerSearchHideStoreVersions')
+                            : t('ui.downloadManagerSearchCheckStoreVersions')}
+                        aria-pressed={showStoreVersion}
+                        title={showStoreVersion
+                            ? t('ui.downloadManagerSearchHideStoreVersions')
+                            : t('ui.downloadManagerSearchCheckStoreVersions')}
+                        disabled={storeVersionCheckLoading}
+                        onClick={handleToggleStoreVersion}
+                        sx={{
+                            flexShrink: 0,
+                            position: 'relative',
+                            overflow: 'visible',
+                        }}
+                    >
+                        {storeVersionCheckLoading ? (
+                            <CircularProgress size="sm" />
+                        ) : (
+                            <AutoMode />
+                        )}
+                        {!storeVersionCheckLoading ? (
+                            <Box
+                                component="span"
+                                aria-hidden
+                                sx={{
+                                    position: 'absolute',
+                                    bottom: 1,
+                                    right: 0,
+                                    px: 0.25,
+                                    py: '1px',
+                                    fontSize: '0.625rem',
+                                    fontWeight: 700,
+                                    lineHeight: 1,
+                                    letterSpacing: '-0.02em',
+                                    color: 'neutral.plainColor',
+                                    bgcolor: 'background.surface',
+                                    borderRadius: '3px',
+                                    border: '1px solid',
+                                    borderColor: 'neutral.outlinedBorder',
+                                    pointerEvents: 'none',
+                                    opacity: 0.96,
+                                    transform: 'translate(30%, 24%)',
+                                }}
+                            >
+                                Beta
+                            </Box>
+                        ) : null}
+                    </IconButton>
+                    <IconButton
                         variant="plain"
                         color="neutral"
                         aria-label={t('ui.close')}
@@ -514,6 +909,9 @@ export default function DownloadManagerSearchLayer({
                                                 appGroup={appGroup}
                                                 country={country}
                                                 onSelect={handleAppClick}
+                                                storeVersionByAppId={storeVersionByAppId}
+                                                showStoreVersion={showStoreVersion}
+                                                storeVersionLoading={storeVersionCheckLoading}
                                             />
                                         );
                                     }}
@@ -555,6 +953,11 @@ export default function DownloadManagerSearchLayer({
                                 onBack={() => setSelectedAppGroup(null)}
                                 onSelect={handleOpenItem}
                                 prefersReducedMotion={prefersReducedMotion}
+                                storeVersionByAppId={storeVersionByAppId}
+                                showStoreVersion={showStoreVersion}
+                                downloadingLatest={versionPanelDownloadingLatest}
+                                onDownload={handleDownload}
+                                onDeleteTask={handleDeleteTask}
                             />
                         ) : null}
                     </AnimatePresence>

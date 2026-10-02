@@ -1,5 +1,6 @@
 const database = require('../../utils/database');
 const { getAppVersion } = require('../../utils/version');
+const { getIpatoolVersion } = require('../../utils/ipatoolExec');
 const { readAppSettings } = require('../../utils/appSettings');
 const { sendSuccess, sendError } = require('../../utils/apiResponse');
 const {
@@ -15,22 +16,22 @@ async function statusHandler(req, res) {
     try {
         await syncSetupMarkerWithUsers(database);
 
-        const version = getAppVersion();
         const settings = await readAppSettings(req.user?.id);
-        const isInitialized = isSetupCompleted();
-        const setupRequiresInitPin = true;
-        const passkeyEnabled = isPasskeyEnabledForRequest(req);
+        const common = {
+            version: getAppVersion(),
+            ipatoolVersion: getIpatoolVersion(),
+            settings,
+            passkeyEnabled: isPasskeyEnabledForRequest(req),
+            setupRequiresInitPin: true,
+        };
 
         if (req.user) {
             return sendSuccess(res, {
                 errorMessageCode: 'ADMIN_STATUS_FETCH_SUCCESS',
                 data: {
-                    version,
-                    settings,
-                    passkeyEnabled,
+                    ...common,
                     isInitialized: true,
                     isLoggedIn: true,
-                    setupRequiresInitPin,
                     user: {
                         id: req.user.id,
                         username: req.user.username,
@@ -45,12 +46,9 @@ async function statusHandler(req, res) {
         return sendSuccess(res, {
             errorMessageCode: 'ADMIN_STATUS_FETCH_SUCCESS',
             data: {
-                version,
-                settings,
-                passkeyEnabled,
-                isInitialized,
+                ...common,
+                isInitialized: isSetupCompleted(),
                 isLoggedIn: false,
-                setupRequiresInitPin,
                 user: null,
                 expiresAt: null,
             },

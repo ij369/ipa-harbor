@@ -7,6 +7,25 @@ const { sendSuccess, sendError } = require('../../utils/apiResponse');
 const IPATOOL_PATH = path.join(__dirname, '../../bin/ipatool');
 const { KEYCHAIN_PASSPHRASE } = require('../../config/keychain');
 
+/** iTunes Lookup 单次请求的应用 ID 数量上限 */
+const LOOKUP_BATCH_SIZE = 50;
+
+function chunkIds(ids, size) {
+    const chunks = [];
+    for (let i = 0; i < ids.length; i += size) {
+        chunks.push(ids.slice(i, i + size));
+    }
+    return chunks;
+}
+
+function buildItunesLookupUrl(idBatch, userRegion, lang) {
+    const idParam = idBatch.join(',');
+    if (userRegion) {
+        return `https://itunes.apple.com/${userRegion}/lookup?id=${idParam}&lang=${lang}&entity=software`;
+    }
+    return `https://itunes.apple.com/lookup?id=${idParam}&lang=${lang}&entity=software`;
+}
+
 /**
  * 获取应用详情
  */
@@ -48,24 +67,30 @@ async function detailsHandler(req, res) {
         const { getEffectiveRegion } = require('../../utils/userRegion');
         const userRegion = await getEffectiveRegion();
 
-        let itunesUrl;
-        if (userRegion) {
-            itunesUrl = `https://itunes.apple.com/${userRegion}/lookup?id=${idArray.join(',')}&lang=${lang}&entity=software`;
-        } else {
-            itunesUrl = `https://itunes.apple.com/lookup?id=${idArray.join(',')}&lang=${lang}&entity=software`;
-        }
-
-        console.log(`调用iTunes API: ${itunesUrl}`);
+        const batches = chunkIds(idArray, LOOKUP_BATCH_SIZE);
+        const mergedResults = [];
 
         try {
-            const itunesResponse = await makeHttpsRequest(itunesUrl);
-            const data = JSON.parse(itunesResponse);
+            for (const batch of batches) {
+                const itunesUrl = buildItunesLookupUrl(batch, userRegion, lang);
+                console.log(`调用iTunes API: ${itunesUrl}`);
 
-            if (data?.results?.length > 0) {
+                try {
+                    const itunesResponse = await makeHttpsRequest(itunesUrl);
+                    const data = JSON.parse(itunesResponse);
+                    if (Array.isArray(data?.results) && data.results.length > 0) {
+                        mergedResults.push(...data.results);
+                    }
+                } catch (batchError) {
+                    console.error('调用iTunes API 批次失败:', batchError);
+                }
+            }
+
+            if (mergedResults.length > 0) {
                 return sendSuccess(res, {
                     message: '获取应用详情成功',
                     errorMessageCode: 'APP_DETAILS_FETCH_SUCCESS',
-                    data: data.results,
+                    data: mergedResults,
                 });
             }
 
@@ -117,7 +142,7 @@ function makeHttpsRequest(url) {
             reject(error);
         });
 
-        request.setTimeout(10000, () => {
+        request.setTimeout(15000, () => {
             request.destroy();
             reject(new Error('请求超时'));
         });

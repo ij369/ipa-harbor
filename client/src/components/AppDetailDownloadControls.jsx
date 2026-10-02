@@ -100,6 +100,13 @@ export function AppDetailVersionTitle({
     );
 }
 
+function compactToolbarStopPropagation(handler) {
+    return (event) => {
+        event.stopPropagation();
+        handler();
+    };
+}
+
 /** 最新版下载区：独立订阅 WS，避免 AppDetail 主体重渲染 */
 export function AppDetailLatestDownloadControls({
     app,
@@ -108,27 +115,58 @@ export function AppDetailLatestDownloadControls({
     showOtaInstall,
     onDownload,
     onDeleteTask,
+    compact = false,
+    preferRedownload = false,
 }) {
     const { t } = useTranslation();
     const { taskList, fileList } = useAppDownload();
     const taskInfo = getLatestTaskInfo(taskList, fileList, app?.trackId, storeLatestVersionId);
+    const compactSx = compact ? { flexShrink: 0, maxWidth: '100%', minWidth: 0 } : undefined;
 
     if (!taskInfo) {
+        const showRedownload = compact && preferRedownload;
         return (
             <Button
-                startDecorator={<Download />}
+                startDecorator={showRedownload ? <Refresh /> : <Download />}
                 size="sm"
-                fullWidth
+                fullWidth={!compact}
+                variant={compact ? 'outlined' : 'solid'}
+                color={compact ? 'primary' : 'primary'}
                 loading={downloadingLatest}
-                onClick={() => onDownload('latest', app.bundleId)}
+                onClick={compact
+                    ? compactToolbarStopPropagation(() => onDownload('latest', app.bundleId))
+                    : () => onDownload('latest', app.bundleId)}
+                sx={compactSx}
             >
-                {t('ui.downloadLatest')}
+                {showRedownload ? t('ui.redownloadLatest') : t('ui.downloadLatest')}
             </Button>
         );
     }
 
     switch (taskInfo.status) {
         case 'running':
+            if (compact) {
+                return (
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0, maxWidth: '100%', minWidth: 0 }}>
+                        <Button
+                            size="sm"
+                            variant="soft"
+                            sx={{ flex: 1, minWidth: 0, ...compactSx }}
+                            onClick={compactToolbarStopPropagation(() => {})}
+                        >
+                            {t('ui.downloading')} {taskInfo.percentage}%
+                        </Button>
+                        <IconButton
+                            size="sm"
+                            variant="outlined"
+                            color="danger"
+                            onClick={compactToolbarStopPropagation(() => onDeleteTask(taskInfo.taskId, taskInfo.fileName))}
+                        >
+                            <Delete />
+                        </IconButton>
+                    </Stack>
+                );
+            }
             return (
                 <>
                     <Button fullWidth>
@@ -148,6 +186,18 @@ export function AppDetailLatestDownloadControls({
             );
 
         case 'pending':
+            if (compact) {
+                return (
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0, maxWidth: '100%', minWidth: 0 }}>
+                        <Button size="sm" variant="soft" loading sx={{ flex: 1, minWidth: 0 }}>
+                            {t('ui.waitingDownload')}
+                        </Button>
+                        <IconButton size="sm" variant="outlined" color="danger" disabled>
+                            <Delete />
+                        </IconButton>
+                    </Stack>
+                );
+            }
             return (
                 <>
                     <Box sx={{ flex: 1 }}>
@@ -168,6 +218,21 @@ export function AppDetailLatestDownloadControls({
             );
 
         case 'completed': {
+            if (compact) {
+                const showRedownload = preferRedownload;
+                return (
+                    <Button
+                        size="sm"
+                        variant="outlined"
+                        color="primary"
+                        startDecorator={showRedownload ? <Refresh /> : <Download />}
+                        onClick={compactToolbarStopPropagation(() => onDownload('latest', app.bundleId))}
+                        sx={compactSx}
+                    >
+                        {showRedownload ? t('ui.redownloadLatest') : t('ui.downloadLatest')}
+                    </Button>
+                );
+            }
             const showInstall = showOtaInstall && canShowInstallForVersion(taskList, app.trackId, 'latest', storeLatestVersionId);
 
             return (
@@ -277,6 +342,23 @@ export function AppDetailLatestDownloadControls({
         }
 
         case 'failed':
+            if (compact) {
+                return (
+                    <Stack direction="row" spacing={0.5} alignItems="center" sx={{ flexShrink: 0, maxWidth: '100%', minWidth: 0 }}>
+                        <Button size="sm" variant="soft" color="danger" sx={{ flex: 1, minWidth: 0 }}>
+                            {taskInfo.status === 'failed' ? t('ui.downloadFailed') : t('ui.cancelled')}
+                        </Button>
+                        <IconButton
+                            size="sm"
+                            variant="outlined"
+                            color="danger"
+                            onClick={compactToolbarStopPropagation(() => onDeleteTask(taskInfo.taskId, taskInfo.fileName))}
+                        >
+                            <Delete />
+                        </IconButton>
+                    </Stack>
+                );
+            }
             return (
                 <>
                     <Box sx={{ flex: 1 }}>
@@ -302,9 +384,13 @@ export function AppDetailLatestDownloadControls({
                 <Button
                     startDecorator={<Download />}
                     size="sm"
-                    fullWidth
+                    fullWidth={!compact}
+                    variant={compact ? 'outlined' : 'solid'}
                     loading={downloadingLatest}
-                    onClick={() => onDownload('latest', app.bundleId)}
+                    onClick={compact
+                        ? compactToolbarStopPropagation(() => onDownload('latest', app.bundleId))
+                        : () => onDownload('latest', app.bundleId)}
+                    sx={compactSx}
                 >
                     {t('ui.downloadLatest')}
                 </Button>

@@ -1,6 +1,9 @@
 const { execFile } = require('child_process');
+const { promisify } = require('util');
 const path = require('path');
 const { KEYCHAIN_PASSPHRASE } = require('../config/keychain');
+
+const execFileAsync = promisify(execFile);
 
 const IPATOOL_PATH = path.join(__dirname, '../bin/ipatool');
 
@@ -48,8 +51,39 @@ function execIpatool(args, options = {}) {
     });
 }
 
+/** @type {string | null} 启动时探测 ipatool --version 后缓存 */
+let ipatoolVersion = null;
+
+async function probeIpatoolVersion() {
+    try {
+        const { stdout, stderr } = await execFileAsync(IPATOOL_PATH, ['--version'], {
+            env: IPATOOL_EXEC_ENV,
+            timeout: 15000,
+            maxBuffer: 8192,
+        });
+        const line = (stdout || stderr || '').trim().split('\n').find(Boolean) || '';
+        ipatoolVersion = line.match(/version\s+(\S+)/i)?.[1] || line || null;
+        if (process.env.ENABLE_MORE_LOGS === 'true') {
+            console.log('\x1b[32mipatool -v:\x1b[33m', ipatoolVersion, '\x1b[0m');
+        }
+        if (!ipatoolVersion) {
+            throw new Error('empty version');
+        }
+    } catch {
+        ipatoolVersion = null;
+        console.error('\x1b[31mFailed to verify ipatool dependency\x1b[0m');
+    }
+    return ipatoolVersion;
+}
+
+function getIpatoolVersion() {
+    return ipatoolVersion;
+}
+
 module.exports = {
     IPATOOL_PATH,
     IPATOOL_EXEC_ENV,
     execIpatool,
+    probeIpatoolVersion,
+    getIpatoolVersion,
 };

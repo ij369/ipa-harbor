@@ -22,6 +22,7 @@ const passkeyService = require('./utils/passkeyService');
 const certService = require('./utils/certService');
 const httpsManager = require('./utils/httpsManager');
 const lanConfig = require('./utils/lanConfig');
+const { probeIpatoolVersion } = require('./utils/ipatoolExec');
 
 process.stdout.write('\x1Bc');
 console.clear();
@@ -298,6 +299,7 @@ async function startHttpServer() {
                 console.warn('AAGUID 注册表预加载失败:', error.message);
             });
         }
+        await probeIpatoolVersion();
     } catch (error) {
         console.error('服务启动初始化失败:', error);
         process.exit(1);
