@@ -114,18 +114,36 @@ sync_cached_source() {
 sync_cached_source
 
 VERSION=$(git -C "$SRC_DIR" describe --tags --always | sed 's/^v//')
+PACKAGE_VERSION="$VERSION"
+IPATOOL_VERSION="$VERSION"
 if [[ "$VERSION" =~ ^[0-9a-f]{7,}$ ]]; then
-  VERSION="2.4.0-dev.${VERSION}"
+  short_hash="${VERSION:0:7}"
+  latest_tag=$(git -C "$SRC_DIR" tag -l 'v*' --sort=-version:refname 2>/dev/null | head -1)
+  latest_tag="${latest_tag#v}"
+  if [[ -z "$latest_tag" ]]; then
+    latest_tag=$(
+      git ls-remote --tags --refs --sort=-v:refname "$IPATOOL_REPO" 'refs/tags/v*' 2>/dev/null \
+        | head -1 \
+        | sed 's|.*/tags/v||'
+    )
+  fi
+  if [[ -z "$latest_tag" ]]; then
+    echo "Warning: cannot resolve latest ipatool tag, using 0.0.0 as base" >&2
+    latest_tag="0.0.0"
+  fi
+  # 注意这里，最终的 包名与 dl_latest / GitHub Release 一致（如 ipatool-2.6.0-linux-amd64.tar.gz）
+  PACKAGE_VERSION="$latest_tag"
+  IPATOOL_VERSION="${latest_tag}-dev.${short_hash}"
 fi
-echo "Build version: ${VERSION}"
+echo "Build version: ${IPATOOL_VERSION} (linux package: ${PACKAGE_VERSION})"
 
-LDFLAGS="-s -w -X github.com/majd/ipatool/v2/cmd.version=${VERSION}"
+LDFLAGS="-s -w -X github.com/majd/ipatool/v2/cmd.version=${IPATOOL_VERSION}"
 
 build_linux_docker() {
   local arch="$1"
-  local bin_name="ipatool-${VERSION}-linux-${arch}"
+  local bin_name="ipatool-${PACKAGE_VERSION}-linux-${arch}"
   local staging="${SRC_DIR}/dist/linux-${arch}"
-  local tar_path="${BIN_DIR}/ipatool-${VERSION}-linux-${arch}.tar.gz"
+  local tar_path="${BIN_DIR}/ipatool-${PACKAGE_VERSION}-linux-${arch}.tar.gz"
   local start_ts=$SECONDS
 
   rm -rf "$staging"
@@ -146,7 +164,7 @@ build_linux_docker() {
 
   chmod +x "${staging}/bin/${bin_name}"
   rm -f "$tar_path"
-  tar -czf "$tar_path" -C "$staging" bin
+  COPYFILE_DISABLE=1 tar -czf "$tar_path" -C "$staging" bin
   echo "  -> ${tar_path} ($(( SECONDS - start_ts ))s)"
 }
 
@@ -198,7 +216,7 @@ done
 [[ "$build_failed" -eq 0 ]] || exit 1
 echo "Linux build finished in $(( SECONDS - total_start ))s"
 
-sample_tar="${BIN_DIR}/ipatool-${VERSION}-linux-${BUILD_ARCHES[0]}.tar.gz"
+sample_tar="${BIN_DIR}/ipatool-${PACKAGE_VERSION}-linux-${BUILD_ARCHES[0]}.tar.gz"
 if tar -tzf "$sample_tar" | grep -q 'bin/ipatool-'; then
   echo "Linux tar.gz layout OK"
 else
