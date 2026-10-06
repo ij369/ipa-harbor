@@ -111,9 +111,9 @@ printInitPinLine() {
 
 printDeployCompleteTitle() {
   if [[ -t 1 ]] && [[ -z "${NO_COLOR:-}" ]]; then
-    printf '%b %s\n' $'\033[1;32m✓\033[0m' "IPA-Harbor 部署完成"
+    printf '%b %s\n' $'\033[1;32m✓\033[0m' "IPA Harbor 部署完成"
   else
-    echo "✓ IPA-Harbor 部署完成"
+    echo "✓ IPA Harbor 部署完成"
   fi
 }
 
@@ -768,7 +768,7 @@ writeEnvFile() {
 
   umask 077
   cat >"$envPath" <<EOF
-# IPA-Harbor 公网部署 — 含敏感信息，请勿提交到 Git
+# IPA Harbor 公网部署 — 含敏感信息，请勿提交到 Git
 TUNNEL_TOKEN=${tunnelToken}
 PUBLIC_HOST=${publicHost}
 PUBLIC_HTTPS_PORT=${httpsPort}
@@ -1018,7 +1018,7 @@ actionInstall() {
   local ipaWaitPid=0
   local tunnelWaitPid=0
 
-  # 与 IPA-Harbor 并行等待：cloudflared 连 Cloudflare 不依赖应用 health，顺序等待会白耗时间
+  # 与 IPA Harbor 并行等待：cloudflared 连 Cloudflare 不依赖应用 health，顺序等待会白耗时间
   waitForIpaHarbor &
   ipaWaitPid=$!
   waitForCloudflared &
@@ -1239,7 +1239,7 @@ usage() {
 
 环境变量:
   DEPLOY_DIR              部署目录（默认: ~/ipa-harbor-remote）
-  IMAGE                   IPA-Harbor 镜像（默认: uuphy/ipa-harbor:latest）
+  IMAGE                   IPA Harbor 镜像（默认: uuphy/ipa-harbor:latest）
   PUBLIC_HTTPS_PORT       公网 HTTPS 端口（默认: 443，Cloudflare 边缘端口）
   COMPOSE_INSTALL_METHOD  Compose 安装方式: binary（默认）| package
   COMPOSE_PLUGIN_VERSION  Compose 二进制版本（默认: v5.5.1，可设 latest）

@@ -133,4 +133,4 @@ fi
 
 printf '本地镜像已构建完成: %s\n' "${FULL_IMAGE}"
 printf '示例运行: \n'
-printf 'docker rm -f ipa-harbor-demo && docker run -d -p 3388:3080 -v ipa_data:/app/data -e KEYCHAIN_PASSPHRASE=1234567890 --name ipa-harbor-demo %s\n' "${FULL_IMAGE}"
+printf 'docker rm -f ipa-harbor-demo && docker run -d -p 3388:3080 -v ipa_data:/app/data -e KEYCHAIN_PASSPHRASE=1234567890 --name ipa-harbor-demo --restart unless-stopped %s\n' "${FULL_IMAGE}"

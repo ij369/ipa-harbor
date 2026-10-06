@@ -223,7 +223,7 @@
         "adminRecoverSuccessHint": "Password updated. Redirecting to login…",
         "adminRecoverLink": "Forgot password? Admin recovery",
         "passkeyLogin": "Sign in with passkey",
-        "passkeyLoginFailed": "Passkey sign-in failed. Please make sure you are accessing IPA-Harbor over HTTPS and have fully trusted the certificate.",
+        "passkeyLoginFailed": "Passkey sign-in failed. Please make sure you are accessing IPA Harbor over HTTPS and have fully trusted the certificate.",
         "passkeySecurityError": "Passkeys are not available in this environment",
         "passkeyInvalidState": "Passkey is in an invalid state. Please try again",
         "passkeyNotSupported": "Passkeys are not supported on this device",

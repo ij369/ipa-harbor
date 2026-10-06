@@ -768,7 +768,7 @@ writeEnvFile() {
 
   umask 077
   cat >"$envPath" <<EOF
-# IPA-Harbor public deployment — contains secrets, do not commit to Git
+# IPA Harbor public deployment — contains secrets, do not commit to Git
 TUNNEL_TOKEN=${tunnelToken}
 PUBLIC_HOST=${publicHost}
 PUBLIC_HTTPS_PORT=${httpsPort}
@@ -1239,7 +1239,7 @@ Prerequisites: a Cloudflare-managed domain and a host running Docker (VPS, cloud
 
 Environment:
   DEPLOY_DIR              Deploy directory (default: ~/ipa-harbor-remote)
-  IMAGE                   IPA-Harbor image (default: uuphy/ipa-harbor:latest)
+  IMAGE                   IPA Harbor image (default: uuphy/ipa-harbor:latest)
   PUBLIC_HTTPS_PORT       Public HTTPS port (default: 443, Cloudflare edge)
   COMPOSE_INSTALL_METHOD  Compose install: binary (default) | package
   COMPOSE_PLUGIN_VERSION  Compose binary version (default: v5.5.1, or latest)

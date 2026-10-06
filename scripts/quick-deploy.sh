@@ -140,7 +140,7 @@ printDivider() {
 printAppHeader() {
   echo ""
   printDivider
-  echo "IPA-Harbor local Docker manager"
+  echo "IPA Harbor local Docker manager"
   printDivider
   echo ""
 }
@@ -148,7 +148,7 @@ printAppHeader() {
 printInstallProgressHeader() {
   echo ""
   printDivider
-  echo "IPA-Harbor installing"
+  echo "IPA Harbor installing"
   printDivider
   echo ""
 }
@@ -156,7 +156,7 @@ printInstallProgressHeader() {
 printUpgradeProgressHeader() {
   echo ""
   printDivider
-  echo "IPA-Harbor upgrading"
+  echo "IPA Harbor upgrading"
   printDivider
   echo ""
 }
@@ -687,7 +687,7 @@ actionLanHttpsAccess() {
     return 1
   fi
   if [[ -z "$existingContainer" ]]; then
-    echo "Error: No IPA-Harbor container found. Choose install (1) first."
+    echo "Error: No IPA Harbor container found. Choose install (1) first."
     return 1
   fi
 
@@ -932,7 +932,7 @@ pickIpaHarborContainer() {
   fi
 
   echo ""
-  echo "Multiple IPA-Harbor containers found:"
+  echo "Multiple IPA Harbor containers found:"
   i=1
   for name in "${containers[@]}"; do
     status="stopped"
@@ -1084,8 +1084,14 @@ runContainerFromConfig() {
   local name="$1"
   local image="$2"
   local pullAlways="${3:-false}"
+  local restartPolicy
   local -a runArgs
   runArgs=(docker run -d --name "$name")
+  restartPolicy="$RESTART_POLICY"
+  if [[ -z "$restartPolicy" || "$restartPolicy" == "no" ]]; then
+    restartPolicy="unless-stopped"
+  fi
+  runArgs+=(--restart "$restartPolicy")
   if [[ "$pullAlways" == "true" ]]; then
     runArgs+=(--pull always)
   fi
@@ -1097,9 +1103,6 @@ runContainerFromConfig() {
   fi
   if [[ -n "$NETWORK_MODE" && "$NETWORK_MODE" != "default" && "$NETWORK_MODE" != "bridge" ]]; then
     runArgs+=(--network "$NETWORK_MODE")
-  fi
-  if [[ -n "$RESTART_POLICY" && "$RESTART_POLICY" != "no" ]]; then
-    runArgs+=(--restart "$RESTART_POLICY")
   fi
   runArgs+=("$image")
   local runOutput=""
@@ -1119,7 +1122,7 @@ actionInstall() {
   fi
 
   if [[ -n "$existingContainer" ]]; then
-    printf "Note: IPA-Harbor container already exists: %s\n" "$existingContainer"
+    printf "Note: IPA Harbor container already exists: %s\n" "$existingContainer"
     echo ""
     promptRead -p "Upgrade instead? (Y/n) " goUpgrade
     if [[ -z "$goUpgrade" ]] || isYes "$goUpgrade"; then
@@ -1141,7 +1144,7 @@ actionInstall() {
   clearScreen
   echo ""
   printDivider
-  echo "Install IPA-Harbor (local quick setup)"
+  echo "Install IPA Harbor (local quick setup)"
   printDivider
   echo ""
   applyLanHttpsChoiceAfterPrompt "" || true
@@ -1161,7 +1164,7 @@ actionInstall() {
   clearScreen
   echo ""
   printDivider
-  echo "Install IPA-Harbor (local quick setup)"
+  echo "Install IPA Harbor (local quick setup)"
   printDivider
   echo ""
   printf "Image:       %s\n" "$IMAGE"
@@ -1218,6 +1221,7 @@ actionInstall() {
     "${runEnv[@]}" \
     -v "${DATA_VOLUME}:/app/data" \
     --name "$CONTAINER_NAME" \
+    --restart unless-stopped \
     "$IMAGE" 2>&1); then
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
     echo ""
@@ -1263,7 +1267,7 @@ actionUpgrade() {
     clearScreen
     echo ""
     printDivider
-    echo "Upgrade IPA-Harbor"
+    echo "Upgrade IPA Harbor"
     printDivider
     echo ""
     if applyLanHttpsChoiceAfterPrompt "$httpHostPort" "$targetContainer"; then
@@ -1277,7 +1281,7 @@ actionUpgrade() {
   clearScreen
   echo ""
   printDivider
-  echo "Upgrade IPA-Harbor"
+  echo "Upgrade IPA Harbor"
   printDivider
   echo ""
   printf "Container:     %s\n" "$targetContainer"
@@ -1382,14 +1386,14 @@ actionUninstall() {
   fi
 
   if [[ "$hasContainer" == "false" && "$hasVolume" == "false" && "$hasImages" == "false" ]]; then
-    echo "No IPA-Harbor container, data volume, or image found; nothing to uninstall."
+    echo "No IPA Harbor container, data volume, or image found; nothing to uninstall."
     return
   fi
 
   clearScreen
   echo ""
   printDivider
-  echo "Uninstall IPA-Harbor"
+  echo "Uninstall IPA Harbor"
   printDivider
 
   if [[ "$hasContainer" == "true" ]]; then
@@ -1414,7 +1418,7 @@ actionUninstall() {
 
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    echo "Local IPA-Harbor Docker images:"
+    echo "Local IPA Harbor Docker images:"
     echo "$ipaHarborImages" | sed 's/^/  - /'
   fi
 
@@ -1438,7 +1442,7 @@ actionUninstall() {
   local deleteImages=false
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    promptRead -p "Delete local IPA-Harbor Docker images? (y/N) " deleteImagesAnswer
+    promptRead -p "Delete local IPA Harbor Docker images? (y/N) " deleteImagesAnswer
     if isYes "$deleteImagesAnswer"; then
       deleteImages=true
     fi
@@ -1478,12 +1482,12 @@ actionUninstall() {
       fi
     done <<< "$ipaHarborImages"
     if [[ $removed -gt 0 ]]; then
-      uninstallSummary+=("Removed ${removed} IPA-Harbor image(s).")
+      uninstallSummary+=("Removed ${removed} IPA Harbor image(s).")
     else
       uninstallSummary+=("Note: Could not remove images (they may still be in use by another container).")
     fi
   elif [[ "$hasImages" == "true" ]]; then
-    uninstallSummary+=("IPA-Harbor images kept for reuse on next install.")
+    uninstallSummary+=("IPA Harbor images kept for reuse on next install.")
   fi
 
   clearScreen

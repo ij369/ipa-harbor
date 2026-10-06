@@ -140,7 +140,7 @@ printDivider() {
 printAppHeader() {
   echo ""
   printDivider
-  echo "IPA-Harbor 本地 Docker 管理"
+  echo "IPA Harbor 本地 Docker 管理"
   printDivider
   echo ""
 }
@@ -148,7 +148,7 @@ printAppHeader() {
 printInstallProgressHeader() {
   echo ""
   printDivider
-  echo "IPA-Harbor 安装中"
+  echo "IPA Harbor 安装中"
   printDivider
   echo ""
 }
@@ -156,7 +156,7 @@ printInstallProgressHeader() {
 printUpgradeProgressHeader() {
   echo ""
   printDivider
-  echo "IPA-Harbor 升级中"
+  echo "IPA Harbor 升级中"
   printDivider
   echo ""
 }
@@ -687,7 +687,7 @@ actionLanHttpsAccess() {
     return 1
   fi
   if [[ -z "$existingContainer" ]]; then
-    echo "错误: 未找到 IPA-Harbor 容器，请先选择「1. 安装」。"
+    echo "错误: 未找到 IPA Harbor 容器，请先选择「1. 安装」。"
     return 1
   fi
 
@@ -932,7 +932,7 @@ pickIpaHarborContainer() {
   fi
 
   echo ""
-  echo "发现多个 IPA-Harbor 容器:"
+  echo "发现多个 IPA Harbor 容器:"
   i=1
   for name in "${containers[@]}"; do
     status="已停止"
@@ -1084,8 +1084,14 @@ runContainerFromConfig() {
   local name="$1"
   local image="$2"
   local pullAlways="${3:-false}"
+  local restartPolicy
   local -a runArgs
   runArgs=(docker run -d --name "$name")
+  restartPolicy="$RESTART_POLICY"
+  if [[ -z "$restartPolicy" || "$restartPolicy" == "no" ]]; then
+    restartPolicy="unless-stopped"
+  fi
+  runArgs+=(--restart "$restartPolicy")
   if [[ "$pullAlways" == "true" ]]; then
     runArgs+=(--pull always)
   fi
@@ -1097,9 +1103,6 @@ runContainerFromConfig() {
   fi
   if [[ -n "$NETWORK_MODE" && "$NETWORK_MODE" != "default" && "$NETWORK_MODE" != "bridge" ]]; then
     runArgs+=(--network "$NETWORK_MODE")
-  fi
-  if [[ -n "$RESTART_POLICY" && "$RESTART_POLICY" != "no" ]]; then
-    runArgs+=(--restart "$RESTART_POLICY")
   fi
   runArgs+=("$image")
   local runOutput=""
@@ -1119,7 +1122,7 @@ actionInstall() {
   fi
 
   if [[ -n "$existingContainer" ]]; then
-    printf "注意: 已存在 IPA-Harbor 容器: %s\n" "$existingContainer"
+    printf "注意: 已存在 IPA Harbor 容器: %s\n" "$existingContainer"
     echo ""
     promptRead -p "是否改为执行升级？(Y/n) " goUpgrade
     if [[ -z "$goUpgrade" ]] || isYes "$goUpgrade"; then
@@ -1141,7 +1144,7 @@ actionInstall() {
   clearScreen
   echo ""
   printDivider
-  echo "即将安装 IPA-Harbor（本机快速部署）"
+  echo "即将安装 IPA Harbor（本机快速部署）"
   printDivider
   echo ""
   applyLanHttpsChoiceAfterPrompt "" || true
@@ -1161,7 +1164,7 @@ actionInstall() {
   clearScreen
   echo ""
   printDivider
-  echo "即将安装 IPA-Harbor（本机快速部署）"
+  echo "即将安装 IPA Harbor（本机快速部署）"
   printDivider
   echo ""
   printf "镜像:       %s\n" "$IMAGE"
@@ -1218,6 +1221,7 @@ actionInstall() {
     "${runEnv[@]}" \
     -v "${DATA_VOLUME}:/app/data" \
     --name "$CONTAINER_NAME" \
+    --restart unless-stopped \
     "$IMAGE" 2>&1); then
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
     echo ""
@@ -1263,7 +1267,7 @@ actionUpgrade() {
     clearScreen
     echo ""
     printDivider
-    echo "IPA-Harbor 升级"
+    echo "IPA Harbor 升级"
     printDivider
     echo ""
     if applyLanHttpsChoiceAfterPrompt "$httpHostPort" "$targetContainer"; then
@@ -1277,7 +1281,7 @@ actionUpgrade() {
   clearScreen
   echo ""
   printDivider
-  echo "IPA-Harbor 升级"
+  echo "IPA Harbor 升级"
   printDivider
   echo ""
   printf "容器:     %s\n" "$targetContainer"
@@ -1382,14 +1386,14 @@ actionUninstall() {
   fi
 
   if [[ "$hasContainer" == "false" && "$hasVolume" == "false" && "$hasImages" == "false" ]]; then
-    echo "未找到 IPA-Harbor 容器、数据卷或镜像，无需卸载。"
+    echo "未找到 IPA Harbor 容器、数据卷或镜像，无需卸载。"
     return
   fi
 
   clearScreen
   echo ""
   printDivider
-  echo "IPA-Harbor 卸载"
+  echo "IPA Harbor 卸载"
   printDivider
 
   if [[ "$hasContainer" == "true" ]]; then
@@ -1414,7 +1418,7 @@ actionUninstall() {
 
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    echo "本机 IPA-Harbor Docker 镜像:"
+    echo "本机 IPA Harbor Docker 镜像:"
     echo "$ipaHarborImages" | sed 's/^/  - /'
   fi
 
@@ -1438,7 +1442,7 @@ actionUninstall() {
   local deleteImages=false
   if [[ "$hasImages" == "true" ]]; then
     echo ""
-    promptRead -p "是否删除本机 IPA-Harbor Docker 镜像？(y/N) " deleteImagesAnswer
+    promptRead -p "是否删除本机 IPA Harbor Docker 镜像？(y/N) " deleteImagesAnswer
     if isYes "$deleteImagesAnswer"; then
       deleteImages=true
     fi
@@ -1478,12 +1482,12 @@ actionUninstall() {
       fi
     done <<< "$ipaHarborImages"
     if [[ $removed -gt 0 ]]; then
-      uninstallSummary+=("已删除 ${removed} 个 IPA-Harbor 镜像。")
+      uninstallSummary+=("已删除 ${removed} 个 IPA Harbor 镜像。")
     else
       uninstallSummary+=("注意: 未能删除镜像（可能仍被其他容器占用）。")
     fi
   elif [[ "$hasImages" == "true" ]]; then
-    uninstallSummary+=("IPA-Harbor 镜像已保留，下次安装可复用。")
+    uninstallSummary+=("IPA Harbor 镜像已保留，下次安装可复用。")
   fi
 
   clearScreen

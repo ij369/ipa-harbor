@@ -1,19 +1,21 @@
-# IPA-Harbor
-This project is an open-source IPA web management tool based on [ipatool](https://github.com/majd/ipatool).  
-It can be accessed and used directly from a web browser, supporting App search, downloading previous versions, and IPA installation. A [Docker image](https://hub.docker.com/r/uuphy/ipa-harbor/tags) is also provided for easy deployment.
+# IPA Harbor
 
-本项目是一个基于 [ipatool](https://github.com/majd/ipatool) 的开源 IPA Web 管理工具。
-通过浏览器即可访问和使用，支持 App 搜索、历史版本下载及安装，并提供 [Docker 镜像](https://hub.docker.com/r/uuphy/ipa-harbor/tags) 方便部署。
+IPA Harbor is an open-source, self-hosted web UI for managing iOS apps and ipa files, powered by [ipatool](https://github.com/majd/ipatool).
+
+Use it in your browser to search apps, download previous versions, and install them on your iPhone or iPad.
+
+IPA Harbor 是基于 [ipatool](https://github.com/majd/ipatool) 的开源、自托管 web UI，
+可在浏览器中搜索 App、下载历史版本，并将其安装到 iPhone 或 iPad。
 
 [Quick Start](#quick-start) | [Script Deployment](#script-deployment) | [快速开始](#快速开始) | [脚本部署](#脚本部署)
 
-> Apple ID: IPA-Harbor is designed for self-hosted use; this project does not provide a public online instance.
+> Apple ID: IPA Harbor is designed for self-hosted use; this project does not provide a public online instance.
 > For security and privacy, we recommend deploying it yourself and using an Apple ID separate from your daily-use account.
 > Do not enter Apple ID credentials on unknown or untrusted third-party instances.
 
 > Official Docker image: [`uuphy/ipa-harbor`](https://hub.docker.com/r/uuphy/ipa-harbor) is the only official Docker image for this project, built and published from this repository's source. For most users, we recommend using the latest tag.
 
-> Apple ID： IPA-Harbor 设计为自托管使用，本项目不提供公共在线实例。
+> Apple ID： IPA Harbor 设计为自托管使用，本项目不提供公共在线实例。
 > 出于安全和隐私考虑，建议自行部署并与日常使用的 Apple ID 分开。
 > 请勿在来源不明或不可信的第三方实例中输入 Apple ID 凭据。
 
@@ -32,6 +34,7 @@ docker run -d \
   -e PORT=3080 \
   -v ipa_data:/app/data \
   --name ipa-harbor \
+  --restart unless-stopped \
   uuphy/ipa-harbor:latest
 ```
 
@@ -59,6 +62,7 @@ docker run -d \
   -v ipa_data:/app/data \
   -v ipa_certs:/app/certs \
   --name ipa-harbor \
+  --restart unless-stopped \
   uuphy/ipa-harbor:latest
 ```
 
@@ -92,6 +96,7 @@ docker run -d \
   -v ipa_certs:/app/certs \
   --hostname ipa_harbor \
   --name ipa-harbor \
+  --restart unless-stopped \
   uuphy/ipa-harbor:latest
 ```
 
@@ -171,7 +176,7 @@ On a low-memory host, [configure swap](#linux-host-memory--swap-first-apple-id-l
 
 `-e ALLOWED_DOMAINS=your-domain.com,another-domain.com`: When using domain connections outside of localhost, you need to specify the origin, otherwise access will be denied. When using Docker networks and proxying through other containers, it is recommended to include the hostname, separated by commas.
 
-`-v ipa_data:/app/data`: Persists data (IPA files, database, etc.).
+`-v ipa_data:/app/data`: Persists data (ipa files, database, etc.).
 
 `-v ipa_certs:/app/certs`: Persists certificates.
 
@@ -202,26 +207,26 @@ To enable this feature, configure at least the following environment variables:
 See [`server/docker-compose.example.yml`](https://github.com/ij369/ipa-harbor/blob/main/server/docker-compose.example.yml).
 
 
-## IPA Installation
+## ipa installation
 
-After downloading an IPA, you can install it with other tools.
+After downloading an ipa, you can install it with other tools.
 
-### How to install downloaded IPAs on iPad / iPhone?
+### How to install downloaded ipa files on iPad / iPhone?
 
 On recent iOS/iPadOS versions, AirDrop is the straightforward option. For older devices, use [Apple Configurator](https://apps.apple.com/app/id1037126344) on Mac, or iTunes 12.6.3 on Windows. Third-party sideloading tools are not recommended.
 
 > iTunes downloads: [ipsw.me/iTunes](https://ipsw.me/iTunes)
 
-IPA-Harbor also supports installing IPAs directly via Safari, but this requires additional deployment conditions:
+IPA Harbor also supports installing ipa files directly via Safari, but this requires additional deployment conditions:
 
 - Available on **iPhone / iPad / Apple Silicon Mac** only (open the site in Safari on the device).
 - The site must be served over **HTTPS** — the **Install** button is hidden on plain HTTP.
   - Built-in TLS: `-p 443:3443`, `-e HTTPS_PORT=3443`, `-v ipa_certs:/app/certs` with `server.crt` and `server.key` in the volume (or bind-mount those two files)
   - Or terminate HTTPS on nginx :443 — see [Public Network Startup](#public-network-startup-command-self-signed-certificate-or-specified-certificate)
 - Toggle in **Settings → Enable OTA install** (off by default on non-Apple devices).
-- OTA IPAs must be downloaded with **ipatool v2.6.0+**; see [ipatool & Docker](#ipatool--docker).
+- OTA ipa files must be downloaded with **ipatool v2.6.0+**; see [ipatool & Docker](#ipatool--docker).
 
-Therefore, if you only use IPA-Harbor to download IPAs, a standard Docker deployment is sufficient; if you need Safari direct install, see the [related configuration guide](#public-network-startup-command-self-signed-certificate-or-specified-certificate).
+Therefore, if you only use IPA Harbor to download ipa files, a standard Docker deployment is sufficient; if you need Safari direct install, see the [related configuration guide](#public-network-startup-command-self-signed-certificate-or-specified-certificate).
 
 
 ## Note
@@ -253,7 +258,7 @@ ipa-harbor/
 │   │   ├── ipatool                  - dev binary (local macOS or extracted)
 │   │   └── ipatool-*-linux-*.tar.gz - Linux packages for Docker build
 │   ├── certs/                       - HTTPS: server.crt, server.key
-│   ├── data/                        - IPA files, users.db, .ipatool config
+│   ├── data/                        - ipa files, users.db, .ipatool config
 │   ├── Dockerfile
 │   ├── docker-compose.example.yml
 │   └── static/                      - built frontend (production)
@@ -300,12 +305,12 @@ chmod +x scripts/dl_latest.sh && ./scripts/dl_latest.sh
 
 ---
 
-## 什么是 IPA
-IPA 文件是苹果 iOS 和 iPadOS 应用的存档文件，你可以理解成安装包，本工具下载的 IPA 都会经过签名，早期的 iTunes 就可以直接下载到一样的档案，如果当作压缩包解压后能看到详尽的元数据。
+## 什么是 ipa
+ipa 文件是苹果 iOS 和 iPadOS 应用的存档文件，你可以理解成安装包，本工具下载的 ipa 都会经过签名，早期的 iTunes 就可以直接下载到一样的档案，如果当作压缩包解压后能看到详尽的元数据。
 
-## IPA 安装
+## ipa 安装
 
-下载 IPA 后，用户可以使用其他工具进行安装。
+下载 ipa 后，用户可以使用其他工具进行安装。
 
 ### 下载后的 ipa 档案如何安装到 iPad / iPhone？
 
@@ -313,16 +318,16 @@ IPA 文件是苹果 iOS 和 iPadOS 应用的存档文件，你可以理解成安
 
 > iTunes 可以去 [ipsw.me/iTunes](https://ipsw.me/iTunes) 找到
 
-IPA-Harbor 也支持通过 Safari 直接安装 IPA，但此功能需要满足额外的部署条件：
+IPA Harbor 也支持通过 Safari 直接安装 ipa，但此功能需要满足额外的部署条件：
 
 - 仅 **iPhone / iPad / Apple 芯片 Mac** 可用，请在设备上用 **Safari** 打开站点。
 - 站点须为 **HTTPS**，HTTP 下不会显示「安装」按钮。
   - 容器内置 HTTPS：`-p 443:3443`、`-e HTTPS_PORT=3443`、`-v ipa_certs:/app/certs`，卷内放置 `server.crt` 与 `server.key`（也可绑定挂载这两个文件）
   - 亦可用 nginx 监听 443 反代，见 [公网环境启动命令](#公网环境启动命令自签证书或者指定证书)
 - 可在 **设置 → 启用 OTA 安装** 中开关（非 Apple 设备上默认关闭）。
-- OTA 用 IPA 须由 **ipatool v2.6.0+** 下载；见 [ipatool 与镜像](#ipatool-与镜像)。
+- OTA 用 ipa 须由 **ipatool v2.6.0+** 下载；见 [ipatool 与镜像](#ipatool-与镜像)。
 
-因此，如果只是使用 IPA-Harbor 下载 ipa，可以直接使用普通的 Docker 部署方式；如果需要通过 Safari 直接安装，请参考 [相关配置说明](#公网环境启动命令自签证书或者指定证书)。
+因此，如果只是使用 IPA Harbor 下载 ipa，可以直接使用普通的 Docker 部署方式；如果需要通过 Safari 直接安装，请参考 [相关配置说明](#公网环境启动命令自签证书或者指定证书)。
 
 ## 项目如何开始的
 我以前每次想下一个旧版 ipa 都要抓包，然后 AirDrop 给 iPhone 后面逛帖子时发现 ipatool ，后面拿电脑扣命令，是在是厌烦了，可读的版本号也没有，所以有了想法写这个。
@@ -344,6 +349,7 @@ docker run -d \
   -e PORT=3080 \
   -v ipa_data:/app/data \
   --name ipa-harbor \
+  --restart unless-stopped \
   uuphy/ipa-harbor:latest
 ```
 
@@ -371,6 +377,7 @@ docker run -d \
   -v ipa_data:/app/data \
   -v ipa_certs:/app/certs \
   --name ipa-harbor \
+  --restart unless-stopped \
   uuphy/ipa-harbor:latest
 ```
 
@@ -404,6 +411,7 @@ docker run -d \
   -v ipa_certs:/app/certs \
   --hostname ipa_harbor \
   --name ipa-harbor \
+  --restart unless-stopped \
   uuphy/ipa-harbor:latest
 ```
 
@@ -483,7 +491,7 @@ curl -fsSL https://raw.githubusercontent.com/ij369/ipa-harbor/main/scripts/publi
 
 `-e ALLOWED_DOMAINS=your-domain.com,another-domain.com`，在非 localhost 的情况下使用域名连接时，需要指定 origin，否则无法访问，使用 docker 的 network 时并通过其他容器代理访问时，建议加上主机名，使用 `,` 隔开
 
-`-v ipa_data:/app/data`：持久化数据（IPA 文件、数据库等）。
+`-v ipa_data:/app/data`：持久化数据（ipa 文件、数据库等）。
 
 `-v ipa_certs:/app/certs`：持久化证书。
 
@@ -542,7 +550,7 @@ ipa-harbor/
 │   │   ├── ipatool                  - 开发用二进制（本机 macOS 或解压产物）
 │   │   └── ipatool-*-linux-*.tar.gz - 构建 Docker 镜像用的 Linux 包
 │   ├── certs/                       - HTTPS 证书：server.crt、server.key
-│   ├── data/                        - IPA、users.db、.ipatool 配置
+│   ├── data/                        - ipa 文件、users.db、.ipatool 配置
 │   ├── Dockerfile
 │   ├── docker-compose.example.yml
 │   └── static/                      - 构建后的前端（生产环境）

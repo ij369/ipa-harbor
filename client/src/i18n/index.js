@@ -35,6 +35,7 @@ i18n
         fallbackLng: defaultLanguage,
         lng: localStorage.getItem('language') || defaultLanguage,
         debug: false,
+        showSupportNotice: false,
         interpolation: {
             escapeValue: false,
         },

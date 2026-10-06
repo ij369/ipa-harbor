@@ -226,7 +226,7 @@
         "adminRecoverSuccessHint": "Contraseña actualizada. Redirigiendo al inicio de sesión…",
         "adminRecoverLink": "¿Olvidaste la contraseña? Recuperación de admin",
         "passkeyLogin": "Iniciar sesión con passkey",
-        "passkeyLoginFailed": "No se pudo iniciar sesión con la clave de acceso. Asegúrate de acceder a IPA-Harbor mediante HTTPS y de haber confiado completamente en el certificado.",
+        "passkeyLoginFailed": "No se pudo iniciar sesión con la clave de acceso. Asegúrate de acceder a IPA Harbor mediante HTTPS y de haber confiado completamente en el certificado.",
         "passkeySecurityError": "Las passkeys no están disponibles en este entorno",
         "passkeyInvalidState": "Estado de passkey no válido. Inténtalo de nuevo",
         "passkeyNotSupported": "Este dispositivo no admite passkeys",

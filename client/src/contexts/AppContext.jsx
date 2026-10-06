@@ -331,13 +331,13 @@ export function AppDownloadProvider({ children }) {
                 ? window.location.port
                 : import.meta.env.VITE_WEBSOCKET_PORT;
         const wsUrl = `${wsProtocol}//${HOST}:${PORT}/download-task`;
-        console.log('连接WebSocket:', wsUrl);
+        console.debug('连接WebSocket:', wsUrl);
 
         try {
             wsRef.current = new WebSocket(wsUrl);
 
             wsRef.current.onopen = () => {
-                console.log('WebSocket连接成功');
+                console.debug('WebSocket连接成功');
                 downloadDispatch({ type: DownloadActionTypes.SET_WS_CONNECTED, payload: true });
 
                 if (reconnectTimeoutRef.current) {
@@ -379,11 +379,11 @@ export function AppDownloadProvider({ children }) {
                             break;
 
                         case 'system':
-                            console.log('系统消息:', message.data);
+                            console.debug('系统消息:', message.data);
                             break;
 
                         default:
-                            console.log('未知消息类型:', message.type, message.data);
+                            console.debug('未知消息类型:', message.type, message.data);
                     }
                 } catch (error) {
                     console.error('解析WebSocket消息失败:', error);
@@ -391,7 +391,7 @@ export function AppDownloadProvider({ children }) {
             };
 
             wsRef.current.onclose = () => {
-                console.log('WebSocket连接关闭');
+                console.debug('WebSocket连接关闭');
                 downloadDispatch({ type: DownloadActionTypes.SET_WS_CONNECTED, payload: false });
                 downloadDispatch({ type: DownloadActionTypes.RESET_DOWNLOAD_DATA_SYNC });
                 stopPing();
@@ -400,10 +400,10 @@ export function AppDownloadProvider({ children }) {
                     downloadDispatch({ type: DownloadActionTypes.SET_WS_RECONNECTING, payload: true });
                     reconnectTimeoutRef.current = setTimeout(() => {
                         if (adminLoggedInRef.current) {
-                            console.log('尝试重连WebSocket...');
+                            console.debug('尝试重连WebSocket...');
                             connectWebSocket();
                         } else {
-                            console.log('管理员已退出登录，取消WebSocket重连');
+                            console.debug('管理员已退出登录，取消WebSocket重连');
                             downloadDispatch({ type: DownloadActionTypes.SET_WS_RECONNECTING, payload: false });
                         }
                     }, 5000);
