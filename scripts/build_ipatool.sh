@@ -11,7 +11,7 @@ GO_MOD_CACHE="${CACHE_DIR}/go-mod"
 GO_BUILD_CACHE="${CACHE_DIR}/go-build"
 IPATOOL_REPO="${IPATOOL_REPO:-https://github.com/majd/ipatool.git}"
 IPATOOL_REF="${IPATOOL_REF:-main}"
-GO_IMAGE="${GO_IMAGE:-golang:1.25-bookworm}"
+GO_IMAGE="${GO_IMAGE:-golang:1.26-bookworm}"
 BUILD_ARCHES=(amd64 arm64)
 BUILD_DARWIN=1
 LINUX_ONLY=0
@@ -30,7 +30,7 @@ Options:
   -h, --help      Show this help
 
 Environment:
-  GO_IMAGE        Docker image for builds (default: golang:1.25-bookworm)
+  GO_IMAGE        Docker image for builds (default: golang:1.26-bookworm)
   IPATOOL_REF     Same as --ref
   IPATOOL_REPO    Same as --repo
 EOF
@@ -108,7 +108,7 @@ sync_cached_source() {
     git -C "$SRC_DIR" checkout -f FETCH_HEAD
   fi
 
-  git -C "$SRC_DIR" fetch --depth 1 origin 'refs/tags/v*' 2>/dev/null || true
+  git -C "$SRC_DIR" fetch origin '+refs/tags/v*:refs/tags/v*' 2>/dev/null || true
 }
 
 sync_cached_source
