@@ -130,6 +130,17 @@ const IPATOOL_KNOWN_ERRORS = [
         errorMessageCode: 'AUTH_LOGIN_MAC_ADDRESS_FAILED',
         errorCode: 'AUTH_LOGIN_MAC_ADDRESS_FAILED_DETAIL',
     },
+    // pkg/http/client.go — 写 .ipatool/cookies（磁盘满时会被包在 failed to get bag 链里）
+    {
+        match: 'no space left on device',
+        errorMessageCode: 'AUTH_LOGIN_DISK_FULL',
+        errorCode: 'AUTH_LOGIN_DISK_FULL_DETAIL',
+    },
+    {
+        match: 'failed to save cookies',
+        errorMessageCode: 'AUTH_LOGIN_COOKIES_SAVE_FAILED',
+        errorCode: 'AUTH_LOGIN_COOKIES_SAVE_FAILED_DETAIL',
+    },
     // pkg/appstore/appstore_login.go — Login（bag.xml）
     {
         match: 'failed to get bag',
